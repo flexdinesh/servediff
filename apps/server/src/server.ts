@@ -5,7 +5,7 @@ import { createServer } from "node:http";
 import { networkInterfaces } from "node:os";
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { DiffMode, RepositoryDiff } from "@serve-diff/shared";
+import type { DiffMode, RepositoryDiff } from "@servediff/shared";
 import { handleApi, respondWithProblem } from "./api.ts";
 import { openRepository } from "./git.ts";
 import { defaultReviewPath, ReviewStore } from "./review-store.ts";
@@ -54,7 +54,7 @@ export async function startServer(options: {
   if (!options.dev) {
     await stat(resolve(dist, "index.html")).catch(() => {
       throw new Error(
-        "Web assets missing. Run pnpm build in the serve-diff checkout, or start with serve-diff . --dev.",
+        "Web assets missing. Run pnpm build in the servediff checkout, or start with servediff . --dev.",
       );
     });
   }

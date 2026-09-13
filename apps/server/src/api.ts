@@ -11,7 +11,7 @@ import {
   type DiffMode,
   type RepositoryDiff,
   type ReviewComment,
-} from "@serve-diff/shared";
+} from "@servediff/shared";
 import { ReviewStore } from "./review-store.ts";
 import { type DiffSource, RequestError } from "./source.ts";
 

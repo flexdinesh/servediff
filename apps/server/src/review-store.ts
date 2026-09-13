@@ -6,7 +6,7 @@ import {
   type DiffMode,
   type ReviewComment,
   type ReviewMark,
-} from "@serve-diff/shared";
+} from "@servediff/shared";
 
 interface SessionReview {
   comments: ReviewComment[];
@@ -52,7 +52,7 @@ function parseData(raw: string): ReviewData {
     }
     return { version: 1, sessions };
   } catch {
-    throw new Error("Invalid serve-diff review data");
+    throw new Error("Invalid servediff review data");
   }
 }
 
@@ -63,7 +63,7 @@ function missingFile(error: unknown) {
 export function defaultReviewPath(sessionId: string) {
   const state =
     process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state");
-  return join(state, "serve-diff", "reviews", `${sessionId}.json`);
+  return join(state, "servediff", "reviews", `${sessionId}.json`);
 }
 
 export class ReviewStore {

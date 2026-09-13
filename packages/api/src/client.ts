@@ -1,7 +1,7 @@
 import createClient from "openapi-fetch";
 import type { components, paths } from "./schema.d.ts";
 
-const TOKEN_KEY = "serve-diff:api-token";
+const TOKEN_KEY = "servediff:api-token";
 
 function token() {
   if (typeof window === "undefined") return null;

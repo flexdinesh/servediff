@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: serve-diff API
+  title: servediff API
   version: 1.0.0
   description: Local diff review API.
 servers:

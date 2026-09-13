@@ -3,7 +3,7 @@ import type {
   DiffMode,
   FilePatch,
   RepositoryDiff,
-} from "@serve-diff/shared";
+} from "@servediff/shared";
 
 export interface DiffSource {
   root: string;

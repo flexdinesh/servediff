@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import type { DiffMode, RepositoryDiff } from "@serve-diff/shared";
+import type { DiffMode, RepositoryDiff } from "@servediff/shared";
 import type { Plugin } from "vite";
 import { handleApi, respondWithProblem } from "../../server/src/api.ts";
 import { ReviewStore } from "../../server/src/review-store.ts";
@@ -25,7 +25,7 @@ export async function fixtureApiPlugin(): Promise<Plugin> {
   };
 
   return {
-    name: "serve-diff-fixture-api",
+    name: "servediff-fixture-api",
     configureServer(server) {
       server.middlewares.use((request, response, next) => {
         const url = new URL(request.url ?? "/", "http://localhost");

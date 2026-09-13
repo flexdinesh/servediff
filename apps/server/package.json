@@ -1,5 +1,5 @@
 {
-  "name": "@serve-diff/server",
+  "name": "@servediff/server",
   "private": true,
   "license": "apache-2.0",
   "type": "module",
@@ -11,11 +11,11 @@
   },
   "dependencies": {
     "@pierre/diffs": "catalog:",
-    "@serve-diff/shared": "workspace:*",
+    "@servediff/shared": "workspace:*",
     "vite": "catalog:"
   },
   "devDependencies": {
-    "@serve-diff/api": "workspace:*",
+    "@servediff/api": "workspace:*",
     "@types/node": "catalog:",
     "typescript": "catalog:"
   }

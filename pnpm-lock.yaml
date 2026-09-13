@@ -89,14 +89,14 @@ importers:
       '@pierre/diffs':
         specifier: 'catalog:'
         version: 1.4.1(@shikijs/themes@4.4.3)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@serve-diff/shared':
+      '@servediff/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       vite:
         specifier: 'catalog:'
         version: 8.2.2(@types/node@26.4.1)(jiti@2.7.0)
     devDependencies:
-      '@serve-diff/api':
+      '@servediff/api':
         specifier: workspace:*
         version: link:../../packages/api
       '@types/node':
@@ -114,10 +114,10 @@ importers:
       '@pierre/diffs':
         specifier: 'catalog:'
         version: 1.4.1(@shikijs/themes@4.4.3)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@serve-diff/api':
+      '@servediff/api':
         specifier: workspace:*
         version: link:../../packages/api
-      '@serve-diff/shared':
+      '@servediff/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       class-variance-authority:

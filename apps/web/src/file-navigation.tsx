@@ -1,4 +1,4 @@
-import type { ChangedFile } from "@serve-diff/shared";
+import type { ChangedFile } from "@servediff/shared";
 import { MessageSquareIcon } from "lucide-react";
 import type { KeyboardEvent } from "react";
 import { Button } from "@/components/ui/button";

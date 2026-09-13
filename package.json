@@ -1,21 +1,21 @@
 {
-  "name": "serve-diff-workspace",
+  "name": "servediff-workspace",
   "private": true,
   "license": "apache-2.0",
   "bin": {
-    "serve-diff": "./apps/server/src/cli.ts"
+    "servediff": "./apps/server/src/cli.ts"
   },
   "type": "module",
   "scripts": {
-    "build": "pnpm generate:api && pnpm --filter @serve-diff/web build && pnpm --filter @serve-diff/server build",
-    "dev:web": "pnpm --filter @serve-diff/web dev",
-    "dev:server": "pnpm --filter @serve-diff/server dev",
-    "generate:api": "pnpm --filter @serve-diff/api generate",
+    "build": "pnpm generate:api && pnpm --filter @servediff/web build && pnpm --filter @servediff/server build",
+    "dev:web": "pnpm --filter @servediff/web dev",
+    "dev:server": "pnpm --filter @servediff/server dev",
+    "generate:api": "pnpm --filter @servediff/api generate",
     "typecheck": "pnpm --recursive --if-present typecheck",
     "test": "pnpm --recursive --if-present test",
-    "test:server": "pnpm --filter @serve-diff/server test",
-    "test:web": "pnpm --filter @serve-diff/web test",
-    "test:browser:install": "pnpm --filter @serve-diff/web test:browser:install",
+    "test:server": "pnpm --filter @servediff/server test",
+    "test:web": "pnpm --filter @servediff/web test",
+    "test:browser:install": "pnpm --filter @servediff/web test:browser:install",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
     "lint": "oxlint .",

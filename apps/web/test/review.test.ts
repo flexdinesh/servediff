@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { parsePatchFiles } from "@pierre/diffs";
-import type { ChangedFile, RepositoryDiff } from "@serve-diff/shared";
+import type { ChangedFile, RepositoryDiff } from "@servediff/shared";
 import { fileKind, gitDecoration } from "../src/file-decoration.ts";
 import {
   ancestorPaths,
@@ -234,7 +234,7 @@ test("copies unresolved comments by default and all comments when requested", ()
 test("groups comments by snapshot then file while preserving export order", () => {
   const firstOrigin: ReviewOrigin = {
     source: "local",
-    repository: "serve-diff",
+    repository: "servediff",
     branch: "main",
     head: "abc123",
     revision: "revision-1",
@@ -256,14 +256,14 @@ test("groups comments by snapshot then file while preserving export order", () =
     true,
   );
   assert.equal(output.match(/<review /g)?.length, 3);
-  assert.equal(output.match(/repository="serve-diff"/g)?.length, 2);
+  assert.equal(output.match(/repository="servediff"/g)?.length, 2);
   assert.equal(output.match(/<file path="src\/file.ts"/g)?.length, 3);
   assert.ok(output.includes('source="local"'));
   assert.ok(output.includes('source="stdin"'));
   assert.ok(output.includes('head="abc123"'));
   assert.ok(
     output.includes(
-      '<review source="stdin" repository="serve-diff" branch="main" revision="revision-2">',
+      '<review source="stdin" repository="servediff" branch="main" revision="revision-2">',
     ),
   );
   assert.ok(output.includes('<review origin="unknown">'));
@@ -401,7 +401,7 @@ test("reloads saved comments and rejects malformed storage without losing valid 
     ...comment,
     origin: {
       source: "local",
-      repository: "serve-diff",
+      repository: "servediff",
       branch: "main",
       head: null,
       revision: "revision",

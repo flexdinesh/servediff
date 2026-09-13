@@ -18,7 +18,7 @@ import { startServer } from "../src/server.ts";
 
 const execute = promisify(execFile);
 async function fixture(t: TestContext) {
-  const root = await mkdtemp(join(tmpdir(), "serve-diff-test-"));
+  const root = await mkdtemp(join(tmpdir(), "servediff-test-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   async function git(...args: string[]) {
     return (
@@ -286,7 +286,7 @@ test("serves browser assets and validates API paths, versions, modes, hosts, ori
   const contentsURL = `${server.url}/api/v1/diffs/${snapshot.revision}/files/${file.id}/contents?${query}`;
   const authorized = { headers: { Authorization: `Bearer ${server.token}` } };
   assert.equal((await fetch(server.url)).status, 200);
-  assert.match(await (await fetch(server.url)).text(), /serve-diff/);
+  assert.match(await (await fetch(server.url)).text(), /servediff/);
   assert.equal(
     (await fetch(`${server.url}/logo.png`)).headers.get("content-type"),
     "image/png",
@@ -377,7 +377,7 @@ test("serves browser assets and validates API paths, versions, modes, hosts, ori
 });
 
 test("rejects directories outside a Git working tree", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "serve-diff-not-git-"));
+  const root = await mkdtemp(join(tmpdir(), "servediff-not-git-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await assert.rejects(openRepository(root), /Not a Git working tree/);
 });
@@ -406,7 +406,7 @@ test("supports linked worktrees", async (t) => {
   await write("file.txt", "before\n");
   await git("add", ".");
   await git("commit", "-m", "Initial");
-  const directory = await mkdtemp(join(tmpdir(), "serve-diff-worktree-"));
+  const directory = await mkdtemp(join(tmpdir(), "servediff-worktree-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   await git("worktree", "add", "--detach", directory, "HEAD");
   await writeFile(join(directory, "file.txt"), "linked worktree\n");

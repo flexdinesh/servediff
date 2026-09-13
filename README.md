@@ -1,4 +1,4 @@
-# serve-diff
+# servediff
 
 Review local Git changes in your browser. Built with React, Vite, Tailwind CSS v4,
 [shadcn/ui](https://ui.shadcn.com) on Base UI, and
@@ -15,24 +15,24 @@ pnpm build
 pnpm add -g .
 ```
 
-This registers `serve-diff` globally, pointing to this checkout. Keep the checkout in place. If pnpm reports a missing global bin directory, run `pnpm setup`, restart your terminal, and retry.
+This registers `servediff` globally, pointing to this checkout. Keep the checkout in place. If pnpm reports a missing global bin directory, run `pnpm setup`, restart your terminal, and retry.
 
 ## Usage
 
 From any Git repository:
 
 ```sh
-serve-diff .
+servediff .
 ```
 
-serve-diff automatically opens the local address in your browser on macOS and
+servediff automatically opens the local address in your browser on macOS and
 Linux, except in SSH sessions. Stop with **Ctrl+C**. The network address is
 reachable by other devices on your local network.
 
 ```sh
-serve-diff .                  # current repository
-serve-diff /path/to/repo      # another repository
-serve-diff . --port 4000      # different port
+servediff .                  # current repository
+servediff /path/to/repo      # another repository
+servediff . --port 4000      # different port
 ```
 
 Subdirectories resolve to the repository root. Switch between all, staged, and unstaged changes; edits refresh automatically. Use the file tree to navigate and **+** beside a line to comment. **Copy unresolved** or **Copy all** exports agent-ready XML with instructions, short comment IDs, captured code context, and review provenance. Comments and reviewed-file marks persist through the local server; display preferences stay in your browser. The viewer never changes your Git files or index.
@@ -40,11 +40,11 @@ Subdirectories resolve to the repository root. Switch between all, staged, and u
 Or pipe Git output directly:
 
 ```sh
-git diff | serve-diff
-git show | serve-diff
-git show main..HEAD~1 | serve-diff
-git diff main HEAD~1 | serve-diff
-serve-diff - < saved.patch
+git diff | servediff
+git show | servediff
+git show main..HEAD~1 | servediff
+git diff main HEAD~1 | servediff
+servediff - < saved.patch
 ```
 
 Piped or redirected input takes priority over a directory argument; an empty pipe opens an empty diff. Without input redirection, a directory is required. Piped diffs are fixed snapshots; re-run the command to update. Commit ranges show each commit separately, including repeated files. `git diff` between two refs shows their net difference. Standard Git patches up to 16 MiB total / 2 MiB per file are supported; use `git show --diff-merges=separate` for merge commits.
@@ -67,12 +67,12 @@ check from the root:
 
 ```sh
 pnpm test:browser:install
-pnpm --filter @serve-diff/server test
-pnpm --filter @serve-diff/web test
+pnpm --filter @servediff/server test
+pnpm --filter @servediff/web test
 pnpm check
 ```
 
-Run `pnpm build` after frontend changes, then restart `serve-diff`. No global reinstall needed.
+Run `pnpm build` after frontend changes, then restart `servediff`. No global reinstall needed.
 
 UI work follows [DESIGN.md](DESIGN.md). Existing semantic tokens in
 `apps/web/src/tokens.css` remain canonical and are mapped into Tailwind/shadcn
@@ -94,5 +94,5 @@ after contract changes with `pnpm generate:api`.
 The versioned API exposes the active source, current diff snapshots, file
 patches and contents, comment CRUD/export, and reviewed-file marks under
 `/api/v1`. Piped input supports only the `all` scope and remains immutable.
-Comments persist by source under `$XDG_STATE_HOME/serve-diff/reviews` (or
-`~/.local/state/serve-diff/reviews`).
+Comments persist by source under `$XDG_STATE_HOME/servediff/reviews` (or
+`~/.local/state/servediff/reviews`).

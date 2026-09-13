@@ -1,5 +1,5 @@
 {
-  "name": "@serve-diff/shared",
+  "name": "@servediff/shared",
   "private": true,
   "license": "apache-2.0",
   "type": "module",
