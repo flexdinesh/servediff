@@ -26,7 +26,7 @@ async function seedReviewComments(page: Page) {
     if (typeof fingerprint !== "string")
       throw new Error("Missing fixture fingerprint");
     localStorage.setItem(
-      `serve-diff:comments:${root}`,
+      `servediff:comments:${root}`,
       JSON.stringify([
         {
           id: "open-review-comment",
@@ -36,7 +36,7 @@ async function seedReviewComments(page: Page) {
           side: "additions",
           start: 3,
           end: 3,
-          code: '+ export const label = "serve-diff";',
+          code: '+ export const label = "servediff";',
           body: "Open feedback",
           status: "open",
           createdAt: 1,
@@ -49,7 +49,7 @@ async function seedReviewComments(page: Page) {
           side: "additions",
           start: 3,
           end: 3,
-          code: '+ export const label = "serve-diff";',
+          code: '+ export const label = "servediff";',
           body: "Resolved feedback",
           status: "resolved",
           createdAt: 2,

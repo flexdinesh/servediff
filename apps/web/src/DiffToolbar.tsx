@@ -1,4 +1,4 @@
-import { isDiffMode } from "@serve-diff/shared";
+import { isDiffMode } from "@servediff/shared";
 import { Settings2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {

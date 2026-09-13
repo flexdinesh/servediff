@@ -1,5 +1,5 @@
 {
-  "name": "@serve-diff/api",
+  "name": "@servediff/api",
   "private": true,
   "license": "apache-2.0",
   "type": "module",

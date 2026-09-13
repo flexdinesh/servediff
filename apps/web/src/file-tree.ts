@@ -1,4 +1,4 @@
-import type { ChangedFile } from "@serve-diff/shared";
+import type { ChangedFile } from "@servediff/shared";
 
 export type FileTreeNode =
   | { kind: "folder"; name: string; path: string; children: FileTreeNode[] }

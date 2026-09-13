@@ -9,7 +9,7 @@ import {
   type CodeViewReactOptions,
   useWorkerPool,
 } from "@pierre/diffs/react";
-import { api, errorDetail } from "@serve-diff/api";
+import { api, errorDetail } from "@servediff/api";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { togglePath, useAppState } from "./app-state.tsx";
@@ -499,7 +499,7 @@ export function DiffWorkspace() {
     : filter
       ? "Try a different filename or clear the filter."
       : piped
-        ? "Run a command that emits a Git patch, then pipe it into serve-diff."
+        ? "Run a command that emits a Git patch, then pipe it into servediff."
         : mode === "staged"
           ? "Stage changes with Git to review them here."
           : "Changes will appear here as you edit. Ignored files stay hidden.";

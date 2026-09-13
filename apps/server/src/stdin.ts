@@ -2,11 +2,7 @@ import { createHash } from "node:crypto";
 import type { Readable } from "node:stream";
 import { stripVTControlCharacters } from "node:util";
 import { parsePatchFiles } from "@pierre/diffs";
-import type {
-  ChangedFile,
-  FilePatch,
-  RepositoryDiff,
-} from "@serve-diff/shared";
+import type { ChangedFile, FilePatch, RepositoryDiff } from "@servediff/shared";
 import { type DiffSource, RequestError } from "./source.ts";
 
 const MAX_INPUT_BYTES = 16 * 1024 * 1024;
@@ -35,7 +31,7 @@ export function openPatch(input: string): DiffSource {
   const data = stripVTControlCharacters(input);
   if (/^diff --(?:cc|combined) /m.test(data))
     throw new Error(
-      "Combined merge diffs are not supported. Use git show --diff-merges=separate | serve-diff instead.",
+      "Combined merge diffs are not supported. Use git show --diff-merges=separate | servediff instead.",
     );
   const revision = createHash("sha256").update(data).digest("hex");
   const root = `stdin:${revision}`;
@@ -118,7 +114,7 @@ export function openPatch(input: string): DiffSource {
     !/^(commit |From )[a-f\d]{40,64}/m.test(data)
   )
     throw new Error(
-      "No Git patch found on stdin. Pipe git diff or git show output into serve-diff.",
+      "No Git patch found on stdin. Pipe git diff or git show output into servediff.",
     );
   const manifest: RepositoryDiff = {
     source: "stdin",

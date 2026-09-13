@@ -52,11 +52,11 @@ export function Header() {
           <PanelLeftOpenIcon className="size-(--icon-lg)" />
         )}
       </Button>
-      <a className="brand" href="/" aria-label="serve-diff home">
+      <a className="brand" href="/" aria-label="servediff home">
         <span className="brand-mark" aria-hidden="true">
           <img src="/logo.png" alt="" width="32" height="32" />
         </span>
-        <span className="brand-name">serve-diff</span>
+        <span className="brand-name">servediff</span>
       </a>
       <Separator className="header-divider" orientation="vertical" />
       <div className="header-heading">

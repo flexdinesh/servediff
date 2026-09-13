@@ -4,12 +4,12 @@ import {
   parsePatchFiles,
   setLanguageOverride,
 } from "@pierre/diffs";
-import { api, errorDetail } from "@serve-diff/api";
+import { api, errorDetail } from "@servediff/api";
 import {
   type ChangedFile,
   type DiffMode,
   type RepositoryDiff,
-} from "@serve-diff/shared";
+} from "@servediff/shared";
 import {
   useCallback,
   useEffect,

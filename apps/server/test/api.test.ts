@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { createApiClient } from "@serve-diff/api";
+import { createApiClient } from "@servediff/api";
 import { ReviewStore } from "../src/review-store.ts";
 import { startServer } from "../src/server.ts";
 
@@ -16,7 +16,7 @@ const input = await readFile(
 test("persists comments and review marks through the authenticated API", async (t) => {
   const path = join(
     tmpdir(),
-    `serve-diff-review-${process.pid}-${Date.now()}.json`,
+    `servediff-review-${process.pid}-${Date.now()}.json`,
   );
   t.after(() => rm(path, { force: true }));
   const token = "test-token";

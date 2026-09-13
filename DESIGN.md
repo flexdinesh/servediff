@@ -2,7 +2,7 @@
 
 ## Design direction
 
-serve-diff is a focused review workspace around [Pierre diffs](https://diffs.com).
+servediff is a focused review workspace around [Pierre diffs](https://diffs.com).
 The code is the primary content. Navigation, display controls, comments, and
 review progress help people read and act on it.
 

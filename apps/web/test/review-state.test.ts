@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { ChangedFile } from "@serve-diff/shared";
+import type { ChangedFile } from "@servediff/shared";
 import { toggleReviewedFileState } from "../src/review-state.ts";
 
 const file: ChangedFile = {

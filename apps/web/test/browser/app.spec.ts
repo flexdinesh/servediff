@@ -206,7 +206,7 @@ test("inline comments use a distinct structured surface while sidebar comments r
       return fingerprint;
     };
     localStorage.setItem(
-      `serve-diff:comments:${root}`,
+      `servediff:comments:${root}`,
       JSON.stringify([
         {
           id: "styled-comment",
@@ -216,7 +216,7 @@ test("inline comments use a distinct structured surface while sidebar comments r
           side: "additions",
           start: 3,
           end: 3,
-          code: '  export const label = "serve-diff";',
+          code: '  export const label = "servediff";',
           body: "Keep the exported value stable.",
           status: "open",
           createdAt: 1,
@@ -727,7 +727,7 @@ test("fallback copy dialog traps and restores focus", async ({ page }) => {
     const root = Reflect.get(data, "root");
     if (typeof root !== "string") throw new Error("Missing fixture root");
     localStorage.setItem(
-      `serve-diff:comments:${root}`,
+      `servediff:comments:${root}`,
       JSON.stringify([
         {
           id: "browser-test",

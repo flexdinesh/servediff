@@ -1,6 +1,6 @@
 import type { CodeViewHandle } from "@pierre/diffs/react";
-import { api, errorDetail } from "@serve-diff/api";
-import type { ChangedFile, DiffMode } from "@serve-diff/shared";
+import { api, errorDetail } from "@servediff/api";
+import type { ChangedFile, DiffMode } from "@servediff/shared";
 import {
   createContext,
   type ReactNode,
@@ -233,7 +233,7 @@ function usePageState() {
     save("line-diff-type", lineDiffType);
   }, [lineDiffType]);
   useEffect(() => {
-    document.title = `serve-diff · ${piped ? "Piped diff" : "Local diff"}`;
+    document.title = `servediff · ${piped ? "Piped diff" : "Local diff"}`;
   }, [piped]);
 
   const revealFile = useCallback(

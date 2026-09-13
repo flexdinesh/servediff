@@ -1,5 +1,5 @@
 {
-  "name": "@serve-diff/web",
+  "name": "@servediff/web",
   "private": true,
   "license": "apache-2.0",
   "type": "module",
@@ -15,8 +15,8 @@
   "dependencies": {
     "@base-ui/react": "catalog:",
     "@pierre/diffs": "catalog:",
-    "@serve-diff/api": "workspace:*",
-    "@serve-diff/shared": "workspace:*",
+    "@servediff/api": "workspace:*",
+    "@servediff/shared": "workspace:*",
     "class-variance-authority": "catalog:",
     "cn": "catalog:",
     "lucide-react": "catalog:",
