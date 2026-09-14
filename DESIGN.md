@@ -7,8 +7,8 @@ The code is the primary content. Navigation, display controls, comments, and
 review progress help people read and act on it.
 
 Keep the interface **focused, compact, calm, precise, readable, and familiar**.
-Retain neutral surfaces, violet selection, the yellow brand mark, system UI
-type, and monospace code. Polish this direction rather than inventing a new one.
+Retain neutral surfaces, violet selection, system UI type, and monospace code.
+Polish this direction rather than inventing a new one.
 
 Avoid dashboard-like card grids, oversized headings, decorative gradients,
 floating toolbars, pill-shaped everything, decorative shadows, and colored
@@ -102,11 +102,12 @@ measured elements or replace the application tokens with framework defaults.
   it is not a separate visual identity.
 - Accent must explain an action or state. Do not outline every comment in violet.
   Open comments use a neutral edge; resolved comments add success plus text.
-- Reserve `--brand-bg` / `--on-brand` for the existing yellow logo, not buttons.
 - `--file-code`, `--file-data`, `--file-markup`, and `--file-config` preserve small
   file-kind hints. They are a bounded categorical palette, not extra UI accents.
 - Status always includes text, a sign, an icon, or a shape. Preserve staging's
   empty/half/full dot distinction; its half-fill is information, not decoration.
+- CPU and RAM in the status bar describe the ServeDiff Node server process, not
+  the browser or whole machine. Keep that scope explicit in the tooltip.
 - Pierre owns syntax colors, changed-line fills, word highlights, line selection,
   and code-theme surfaces. App status tokens govern the surrounding UI only.
 
@@ -139,7 +140,8 @@ and captured context. Keep the root at `100%` to respect browser font preference
 - Icons use `--icon-sm` (14), `--icon-base` (16), or `--icon-lg` (20).
   Brand/empty symbols are illustrations. SVG monogram text uses viewBox units.
 - Code stays at `--text-base` with `--leading-code` (22px rows by default).
-  Tree text uses `--leading-tree`; hit height is separate from text leading.
+  Structured text uses bundled JetBrains Mono through `--font-mono`; tree text
+  uses `--leading-tree`, with hit height separate from text leading.
 - New type styles require a new semantic role, not a request for “slightly bigger.”
 
 ## Spacing
@@ -175,6 +177,7 @@ such detail into a token. New layout spacing must use the scale.
   The diff receives all width remaining after navigation.
 - Header: `--topbar-height` (56 desktop, 48 narrow). Toolbar and sidebar tabs: `--toolbar-height`
   (44) as the desktop baseline; allow toolbar height to grow when controls wrap.
+- Status bar: `--statusbar-height` (28), with shortcuts shed before server metrics.
 - Desktop sidebar: `--sidebar-width` defaults to 330px. `use-sidebar.ts` owns
   the user's pixel width, bounded to 200–520px and available viewport space.
   Do not add competing CSS defaults or override a saved width at tablet sizes.
@@ -377,7 +380,7 @@ This audit records the starting points, not permission to reuse legacy values.
 | Surfaces         | White / `#f8f9fb`; dark `#151619` / `#1b1c20`                                               | Retain neutral shell; add a semantic elevated surface                          |
 | Text             | `#24252a` / `#e1e2e7`; most supporting text shared `#787c86` / `#91949e`                    | Distinguish secondary/muted; strengthen muted contrast                         |
 | Borders/hover    | `#e5e7ec` / `#303137`; `#eeeef4` / `#282930`                                                | Retain separators; distinguish control boundaries                              |
-| Accent/brand     | Violet `#6260df` / `#aba7ff`, pale violet fills; yellow `#facc15` logo                      | Preserve roles; add hover and on-accent counterparts                           |
+| Accent/brand     | Violet `#6260df` / `#aba7ff`, pale violet fills; former yellow logo                         | Preserve violet roles; remove the nonessential logo                            |
 | Status           | Green `#24844c` / `#70cc95`, red `#cf4b51` / `#ed8a8e`, shared gold `#b58a29`               | Semantic success/error/warning with theme-equivalent contrast                  |
 | File kinds       | Four inline light/dark blue, gold, orange, purple pairs                                     | Bounded semantic file-kind tokens                                              |
 | Type             | System sans/mono; 9, 10, 11, 12, 13, 14, 15, 17, 18px; 400/550/600/650/700 weights          | Five UI sizes; three weights; separate functional touch-input size             |

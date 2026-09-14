@@ -26,9 +26,6 @@
   --error: #b73840;
   --error-bg: #ffebe9;
   --error-border: #ff8182;
-  --brand-bg: #facc15;
-  --on-brand: #000;
-
   /* File-kind hints only; never use these as UI action/status colors. */
   --file-code: #2876b4;
   --file-data: #85620f;
@@ -63,6 +60,7 @@
   --touch-target: 2.75rem;
   --topbar-height: 3.5rem;
   --toolbar-height: 2.75rem;
+  --statusbar-height: 1.75rem;
   --page-gutter: var(--space-6);
   --sidebar-width: 330px;
   --reading-width: 42.5rem;

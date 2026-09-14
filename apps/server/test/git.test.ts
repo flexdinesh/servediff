@@ -287,10 +287,7 @@ test("serves browser assets and validates API paths, versions, modes, hosts, ori
   const authorized = { headers: { Authorization: `Bearer ${server.token}` } };
   assert.equal((await fetch(server.url)).status, 200);
   assert.match(await (await fetch(server.url)).text(), /servediff/);
-  assert.equal(
-    (await fetch(`${server.url}/logo.png`)).headers.get("content-type"),
-    "image/png",
-  );
+  assert.equal((await fetch(`${server.url}/logo.png`)).status, 404);
   assert.equal(
     (await fetch(`${server.url}/api/v1/diffs/current?scope=all`)).status,
     401,

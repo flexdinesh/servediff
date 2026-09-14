@@ -3,6 +3,26 @@ import { resetFixtureState } from "./fixture-state.ts";
 
 test.beforeEach(async ({ request }) => resetFixtureState(request));
 
+test("shows Node server process metrics in the compact status bar", async ({
+  page,
+}) => {
+  await page.route("**/api/v1/metrics", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ cpuUsage: 12.5, rssBytes: 52_428_800 }),
+    }),
+  );
+  await page.goto("/");
+
+  await expect(page.locator("#server-cpu")).toHaveText("12.5%");
+  await expect(page.locator("#server-ram")).toHaveText("50.0 MB");
+  await expect(page.locator("#server-metrics")).toHaveAttribute(
+    "title",
+    /ServeDiff server process/,
+  );
+  await expect(page.locator(".main-footer")).toHaveCSS("min-height", "28px");
+});
+
 test("renders and filters a piped diff", async ({ page }) => {
   await page.goto("/");
 
@@ -38,6 +58,29 @@ test("renders and filters a piped diff", async ({ page }) => {
   await expect(
     page.getByText("export const value = 2;", { exact: true }),
   ).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  const treeFonts = await page.evaluate(() => {
+    const folder = document.querySelector<HTMLElement>(".tree-folder");
+    const file = document.querySelector<HTMLElement>(".file-row");
+    const footer = document.querySelector<HTMLElement>(".main-footer");
+    const container = document.querySelector("diffs-container");
+    const code =
+      container?.shadowRoot?.querySelector<HTMLElement>("[data-code]");
+    if (!folder || !file || !footer || !code)
+      throw new Error("Missing monospace surface");
+    return {
+      folder: getComputedStyle(folder).fontFamily,
+      file: getComputedStyle(file).fontFamily,
+      footer: getComputedStyle(footer).fontFamily,
+      code: getComputedStyle(code).fontFamily,
+      loaded: document.fonts.check('14px "JetBrains Mono Variable"'),
+    };
+  });
+  expect(treeFonts.folder).toContain("JetBrains Mono Variable");
+  expect(treeFonts.file).toContain("JetBrains Mono Variable");
+  expect(treeFonts.footer).toContain("JetBrains Mono Variable");
+  expect(treeFonts.code).toContain("JetBrains Mono Variable");
+  expect(treeFonts.loaded).toBe(true);
 
   const openFolder = page.getByRole("button", {
     name: "Collapse folder docs",
@@ -638,6 +681,8 @@ test("header icons and sidebar tab indicator use design-system sizes", async ({
   page,
 }) => {
   await page.goto("/");
+  await expect(page.locator(".brand")).toHaveText("servediff");
+  await expect(page.locator('img[src="/logo.png"]')).toHaveCount(0);
 
   const styles = await page.evaluate(() => {
     const size = (selector: string) => {

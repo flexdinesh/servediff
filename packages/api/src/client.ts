@@ -46,6 +46,7 @@ api.use({
 });
 
 export type ApiSession = components["schemas"]["Session"];
+export type ApiServerMetrics = components["schemas"]["ServerMetrics"];
 export type ApiRepositoryDiff = components["schemas"]["RepositoryDiff"];
 export type ApiChangedFile = components["schemas"]["ChangedFile"];
 export type ApiFilePatch = components["schemas"]["FilePatch"];

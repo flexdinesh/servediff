@@ -17,6 +17,7 @@ import { DiffToolbar } from "./DiffToolbar.tsx";
 import { themesFor } from "./display-options.ts";
 import { DraftComment, ReviewCommentCard } from "./review.tsx";
 import type { CommentAnnotation } from "./review-model.ts";
+import { ServerMetrics } from "./ServerMetrics.tsx";
 
 const NAVIGATION_CUE_MS = 1_000;
 
@@ -618,14 +619,17 @@ export function DiffWorkspace() {
       </div>
       <footer className="main-footer">
         <span id="scope-description">{scopeDescription}</span>
-        <span>
-          <kbd>Alt+J</kbd> <kbd>Alt+K</kbd> files <kbd>Alt+/</kbd> filter
-          {!piped && (
-            <>
-              {" "}
-              <kbd>Alt+R</kbd> refresh
-            </>
-          )}
+        <span className="footer-details">
+          <span className="footer-shortcuts">
+            <kbd>Alt+J</kbd> <kbd>Alt+K</kbd> files <kbd>Alt+/</kbd> filter
+            {!piped && (
+              <>
+                {" "}
+                <kbd>Alt+R</kbd> refresh
+              </>
+            )}
+          </span>
+          <ServerMetrics />
         </span>
       </footer>
     </main>

@@ -53,10 +53,7 @@ export function Header() {
         )}
       </Button>
       <a className="brand" href="/" aria-label="servediff home">
-        <span className="brand-mark" aria-hidden="true">
-          <img src="/logo.png" alt="" width="32" height="32" />
-        </span>
-        <span className="brand-name">servediff</span>
+        servediff
       </a>
       <Separator className="header-divider" orientation="vertical" />
       <div className="header-heading">

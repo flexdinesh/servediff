@@ -8,6 +8,18 @@ servers:
 security:
   - bearerAuth: []
 paths:
+  /api/v1/metrics:
+    get:
+      operationId: getServerMetrics
+      responses:
+        "200":
+          description: CPU and resident memory used by the ServeDiff server process.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServerMetrics"
+        default:
+          $ref: "#/components/responses/Problem"
   /api/v1/session:
     get:
       operationId: getSession
@@ -299,6 +311,17 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
   schemas:
+    ServerMetrics:
+      type: object
+      additionalProperties: false
+      required: [rssBytes, cpuUsage]
+      properties:
+        rssBytes:
+          type: number
+          minimum: 0
+        cpuUsage:
+          type: number
+          minimum: 0
     DiffMode:
       type: string
       enum: [all, staged, unstaged]

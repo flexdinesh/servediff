@@ -32,6 +32,12 @@ test("persists comments and review marks through the authenticated API", async (
   const client = createApiClient({ baseUrl: first.url, token });
   assert.equal((await fetch(`${first.url}/openapi.yaml`)).status, 200);
   assert.equal((await fetch(`${api}/comments`)).status, 401);
+  assert.equal((await fetch(`${api}/metrics`)).status, 401);
+  const { data: metrics } = await client.GET("/api/v1/metrics");
+  assert.ok(metrics);
+  assert.ok(metrics.rssBytes > 0);
+  assert.ok(Number.isFinite(metrics.cpuUsage));
+  assert.ok(metrics.cpuUsage >= 0);
   const { data: session } = await client.GET("/api/v1/session");
   assert.ok(session);
   assert.deepEqual(session.capabilities, {

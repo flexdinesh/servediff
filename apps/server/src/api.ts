@@ -12,6 +12,7 @@ import {
   type RepositoryDiff,
   type ReviewComment,
 } from "@servediff/shared";
+import { getProcessMetrics } from "./metrics.ts";
 import { ReviewStore } from "./review-store.ts";
 import { type DiffSource, RequestError } from "./source.ts";
 
@@ -238,6 +239,10 @@ export async function handleApi(
   )
     throw new RequestError(401, "Missing or invalid API token");
 
+  if (url.pathname === "/api/v1/metrics" && request.method === "GET") {
+    json(response, 200, getProcessMetrics());
+    return true;
+  }
   if (url.pathname === "/api/v1/session" && request.method === "GET") {
     const snapshot = await context.snapshot(context.source.scopes[0] ?? "all");
     json(response, 200, {
