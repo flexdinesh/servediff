@@ -344,6 +344,8 @@ export function DiffWorkspace() {
       unsafeCSS: `
         [data-diffs-header] {
           cursor: pointer;
+          height: calc(2 * var(--space-4) + var(--space-1));
+          min-height: calc(2 * var(--space-4) + var(--space-1));
           background: var(--diff-file-header);
           box-shadow: inset 0 -1px var(--border);
         }
@@ -423,8 +425,8 @@ export function DiffWorkspace() {
       ...(lineHeight === undefined
         ? {}
         : {
-            // Pierre's default header adds 12px padding above and below the row.
-            itemMetrics: { lineHeight, diffHeaderHeight: lineHeight + 24 },
+            // Keep file headers aligned with the compact navigation toolbar.
+            itemMetrics: { lineHeight, diffHeaderHeight: lineHeight + 14 },
           }),
       enableGutterUtility: true,
       lineHoverHighlight: "both",
@@ -575,6 +577,7 @@ export function DiffWorkspace() {
                   type="button"
                   className="review-button"
                   variant="outline"
+                  size="sm"
                   aria-label={`Mark ${file.path} ${isReviewed(file) ? "unreviewed" : "reviewed"}`}
                   aria-pressed={isReviewed(file)}
                   onClick={() => toggleReviewed(file)}

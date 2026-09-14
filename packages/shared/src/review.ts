@@ -35,6 +35,12 @@ export interface ReviewRound {
   current: boolean;
 }
 
+export type CommentApplicability =
+  | "anchored"
+  | "stale"
+  | "other-scope"
+  | "unknown";
+
 export function lineContext(
   diff: FileDiffMetadata,
   side: AnnotationSide,
@@ -211,10 +217,20 @@ function snapshotKey(origin: ReviewOrigin | undefined) {
 export function formatComments(
   comments: readonly ReviewComment[],
   includeResolved: boolean,
+  repositories: readonly RepositoryDiff[] = [],
 ): string {
+  const applicability = (comment: ReviewComment) => {
+    const repository = repositories.find(
+      (candidate) => candidate.mode === comment.scope,
+    );
+    return commentApplicability(comment, repository ?? null);
+  };
   const selected = includeResolved
     ? comments
-    : comments.filter((comment) => comment.status === "open");
+    : comments.filter(
+        (comment) =>
+          comment.status === "open" && applicability(comment) !== "stale",
+      );
   if (selected.length === 0) return "";
   const reviews = new Map<
     string,
@@ -235,12 +251,16 @@ export function formatComments(
     reviews.set(key, review);
   }
   const instruction = [
-    "Address every unresolved review comment.",
+    includeResolved
+      ? "Address every anchored open review comment."
+      : "Address every unresolved review comment.",
     "Inspect the current working tree before editing because code and line numbers describe the reviewed snapshot.",
     "Preserve unrelated changes.",
-    "If a comment is stale or cannot be applied, report it using its comment ID.",
     ...(includeResolved
-      ? ["Resolved comments are context only; do not act on them."]
+      ? [
+          "Resolved and stale comments are context only; do not act on them.",
+          "If an anchored open comment cannot be applied, report it using its comment ID.",
+        ]
       : []),
   ].join(" ");
   const lines = [
@@ -269,8 +289,9 @@ export function formatComments(
       for (const { id, comment } of commentsForFile) {
         const selection =
           comment.start === comment.end ? "single-line" : "range";
+        const anchorState = applicability(comment);
         lines.push(
-          `      <comment id="${id}" selection="${selection}" line="${comment.start}" end-line="${comment.end}" side="${comment.side}" scope="${comment.scope}" status="${comment.status}">`,
+          `      <comment id="${id}" selection="${selection}" line="${comment.start}" end-line="${comment.end}" side="${comment.side}" scope="${comment.scope}" status="${comment.status}" applicability="${anchorState}">`,
           `        <code>${xml(comment.code)}</code>`,
           `        <body>${xml(comment.body)}</body>`,
           "      </comment>",
@@ -288,13 +309,21 @@ export function anchored(
   comment: ReviewComment,
   repository: RepositoryDiff | null,
 ) {
-  return (
-    comment.scope === repository?.mode &&
-    repository.files.some(
-      (file) =>
-        file.path === comment.path && file.fingerprint === comment.fingerprint,
-    )
-  );
+  return commentApplicability(comment, repository) === "anchored";
+}
+
+export function commentApplicability(
+  comment: ReviewComment,
+  repository: RepositoryDiff | null,
+): CommentApplicability {
+  if (!repository) return "unknown";
+  if (comment.scope !== repository.mode) return "other-scope";
+  return repository.files.some(
+    (file) =>
+      file.path === comment.path && file.fingerprint === comment.fingerprint,
+  )
+    ? "anchored"
+    : "stale";
 }
 
 function currentComment(

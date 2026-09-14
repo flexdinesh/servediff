@@ -80,6 +80,22 @@ test("persists comments and review marks through the authenticated API", async (
   );
   assert.ok(resolved);
   assert.equal(resolved.status, "resolved");
+  const { response: importResponse } = await client.POST(
+    "/api/v1/comments/import",
+    {
+      body: {
+        comments: [
+          {
+            ...created,
+            id: "stale-comment",
+            fingerprint: "earlier-file-version",
+            status: "open",
+          },
+        ],
+      },
+    },
+  );
+  assert.equal(importResponse.status, 200);
   const { response: markResponse } = await client.PUT(
     "/api/v1/review-marks/{fileId}",
     {
@@ -91,15 +107,32 @@ test("persists comments and review marks through the authenticated API", async (
     },
   );
   assert.equal(markResponse.status, 200);
-  assert.match(
+  const unresolvedExport = await client.GET("/api/v1/comments/export", {
+    params: { query: { includeResolved: false } },
+    parseAs: "text",
+  });
+  assert.equal(unresolvedExport.data ?? "", "");
+  const allExport =
     (
       await client.GET("/api/v1/comments/export", {
         params: { query: { includeResolved: true } },
         parseAs: "text",
       })
-    ).data ?? "",
-    /Keep the new value/,
-  );
+    ).data ?? "";
+  assert.match(allExport, /Keep the new value/);
+  assert.match(allExport, /status="open" applicability="stale"/);
+  assert.match(allExport, /status="resolved" applicability="anchored"/);
+  const singleExport =
+    (
+      await client.GET("/api/v1/comments/export", {
+        params: {
+          query: { includeResolved: true, commentId: "stale-comment" },
+        },
+        parseAs: "text",
+      })
+    ).data ?? "";
+  assert.match(singleExport, /status="open" applicability="stale"/);
+  assert.doesNotMatch(singleExport, /applicability="anchored"/);
   await first.close();
 
   const second = await startServer({
@@ -122,4 +155,45 @@ test("persists comments and review marks through the authenticated API", async (
   assert.deepEqual(marks.marks, [
     { fileId: file.id, fileVersion: file.fingerprint, scope: "all" },
   ]);
+  const { data: staleDeletion } = await secondClient.DELETE(
+    "/api/v1/comments",
+    { params: { query: { status: "stale" } } },
+  );
+  assert.ok(staleDeletion);
+  assert.equal(staleDeletion.deleted, 1);
+  assert.deepEqual(
+    staleDeletion.comments.map((comment) => comment.status),
+    ["resolved"],
+  );
+  const { data: resolvedDeletion } = await secondClient.DELETE(
+    "/api/v1/comments",
+    { params: { query: { status: "resolved" } } },
+  );
+  assert.ok(resolvedDeletion);
+  assert.equal(resolvedDeletion.deleted, 1);
+  assert.deepEqual(resolvedDeletion.comments, []);
+  const { data: restored } = await secondClient.POST(
+    "/api/v1/comments/import",
+    {
+      body: {
+        comments: [
+          { ...created, id: "bulk-open", status: "open" },
+          { ...resolved, id: "bulk-resolved", status: "resolved" },
+        ],
+      },
+    },
+  );
+  assert.equal(restored?.comments.length, 2);
+  const { data: openDeletion } = await secondClient.DELETE("/api/v1/comments", {
+    params: { query: { status: "open" } },
+  });
+  assert.ok(openDeletion);
+  assert.equal(openDeletion.deleted, 1);
+  assert.equal(openDeletion.comments[0]?.status, "resolved");
+  const { data: allDeletion } = await secondClient.DELETE("/api/v1/comments", {
+    params: { query: { status: "all" } },
+  });
+  assert.ok(allDeletion);
+  assert.equal(allDeletion.deleted, 1);
+  assert.deepEqual(allDeletion.comments, []);
 });

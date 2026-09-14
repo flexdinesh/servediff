@@ -3,12 +3,12 @@ import {
   CheckCircle2Icon,
   ChevronDownIcon,
   CircleDotIcon,
-  MessageSquareIcon,
-  MessageSquarePlusIcon,
+  CopyIcon,
   PencilIcon,
   RotateCcwIcon,
   SendIcon,
   Trash2Icon,
+  TriangleAlertIcon,
   XIcon,
 } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
@@ -31,10 +31,10 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { useAppState } from "./app-state.tsx";
-import { anchored, type ReviewComment } from "./review-model.ts";
+import { commentApplicability, type ReviewComment } from "./review-model.ts";
 
 function location(comment: ReviewComment) {
-  return `${comment.path}:${comment.start}${comment.end !== comment.start ? `–${comment.end}` : ""} · ${comment.side === "additions" ? "new" : "old"} · ${comment.scope}`;
+  return `${comment.path}:${comment.start}${comment.end !== comment.start ? `–${comment.end}` : ""}`;
 }
 
 // Both the diff annotations and sidebar edit the same page-level draft.
@@ -81,6 +81,7 @@ export function ReviewCommentCard({
       }}
       onToggle={review.toggle}
       onDelete={review.remove}
+      onCopy={review.copyComment}
     />
   );
 }
@@ -126,7 +127,6 @@ export function CommentEditor({
       <Card size="sm" className="comment-editor">
         <CardHeader className="comment-editor-header">
           <CardTitle className="comment-editor-title">
-            <MessageSquarePlusIcon aria-hidden="true" />
             <span>
               New comment <small>· {location(draft)}</small>
             </span>
@@ -168,11 +168,11 @@ export function CommentEditor({
         </CardContent>
         <CardFooter className="comment-actions">
           <span>⌘ / Ctrl + Enter to save</span>
-          <Button type="button" variant="ghost" onClick={onCancel}>
+          <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
             <XIcon aria-hidden="true" />
             Cancel
           </Button>
-          <Button type="submit">
+          <Button type="submit" size="sm">
             <SendIcon aria-hidden="true" />
             Save comment
           </Button>
@@ -192,6 +192,7 @@ export function CommentCard({
   onEdit,
   onToggle,
   onDelete,
+  onCopy,
 }: {
   comment: ReviewComment;
   sidebar?: boolean;
@@ -202,17 +203,23 @@ export function CommentCard({
   onEdit: (comment: ReviewComment) => void;
   onToggle: (comment: ReviewComment) => void;
   onDelete: (comment: ReviewComment) => void;
+  onCopy: (comment: ReviewComment) => void;
 }) {
   const resolved = comment.status === "resolved";
-  const [expanded, setExpanded] = useState(!resolved);
+  const applicability = commentApplicability(comment, repository);
+  const stale = applicability === "stale";
+  const [expanded, setExpanded] = useState(!resolved && !stale);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const contentId = useId();
-  useEffect(() => setExpanded(!resolved), [comment.id, resolved]);
+  useEffect(
+    () => setExpanded(!resolved && !stale),
+    [comment.id, resolved, stale],
+  );
   return (
     <article data-comment-id={comment.id}>
       <Card
         size="sm"
-        className={`comment-card${resolved ? " resolved" : ""}`}
+        className={`comment-card${resolved ? " resolved" : ""}${stale ? " stale" : ""}`}
         data-expanded={expanded}
         data-diff-layout={sidebar ? undefined : layout}
         data-one-sided={!sidebar && oneSided ? "" : undefined}
@@ -225,7 +232,7 @@ export function CommentCard({
             size="icon-xs"
             aria-controls={contentId}
             aria-expanded={expanded}
-            aria-label={`${expanded ? "Collapse" : "Expand"} ${resolved ? "resolved " : ""}comment at ${location(comment)}`}
+            aria-label={`${expanded ? "Collapse" : "Expand"} ${stale ? "stale " : resolved ? "resolved " : ""}comment at ${location(comment)}`}
             onClick={() => setExpanded((current) => !current)}
           >
             <ChevronDownIcon aria-hidden="true" />
@@ -240,29 +247,32 @@ export function CommentCard({
                 title={location(comment)}
                 onClick={() => onNavigate(comment)}
               >
-                <MessageSquareIcon aria-hidden="true" />
                 {location(comment)}
               </Button>
             ) : (
               <>
-                <MessageSquareIcon aria-hidden="true" />
                 <strong>Review comment</strong>
                 <span>
-                  · {comment.side === "additions" ? "new" : "old"} line{" "}
-                  {comment.start}
+                  · line {comment.start}
                   {comment.end !== comment.start ? `–${comment.end}` : ""}
                 </span>
               </>
             )}
           </CardTitle>
           <CardAction>
-            <Badge variant="outline" className="comment-state">
-              {resolved ? (
+            <Badge
+              variant="outline"
+              className="comment-state"
+              title={`Lifecycle: ${comment.status}; applicability: ${applicability}`}
+            >
+              {stale ? (
+                <TriangleAlertIcon aria-hidden="true" />
+              ) : resolved ? (
                 <CheckCircle2Icon aria-hidden="true" />
               ) : (
                 <CircleDotIcon aria-hidden="true" />
               )}
-              {resolved ? "Resolved" : "Open"}
+              {stale ? "Stale" : resolved ? "Resolved" : "Open"}
             </Badge>
           </CardAction>
         </CardHeader>
@@ -275,11 +285,13 @@ export function CommentCard({
             <p className="comment-body">{comment.body}</p>
             {sidebar && (
               <>
-                {!anchored(comment, repository) && (
+                {applicability !== "anchored" && (
                   <p className="comment-outdated">
-                    {comment.scope !== repository?.mode
+                    {applicability === "other-scope"
                       ? `From ${comment.scope} changes`
-                      : "Earlier diff — original code preserved"}
+                      : applicability === "stale"
+                        ? "Stale — file changed; original code preserved"
+                        : "Original code preserved"}
                   </p>
                 )}
                 <details>
@@ -292,8 +304,19 @@ export function CommentCard({
           <CardFooter className="comment-actions">
             <Button
               type="button"
+              className="copy-comment"
               variant="ghost"
-              size={sidebar ? "xs" : "default"}
+              size={sidebar ? "icon-xs" : "icon-sm"}
+              aria-label={`Copy comment at ${location(comment)}`}
+              title="Copy comment"
+              onClick={() => onCopy(comment)}
+            >
+              <CopyIcon aria-hidden="true" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size={sidebar ? "xs" : "sm"}
               onClick={() => onEdit(comment)}
             >
               <PencilIcon aria-hidden="true" />
@@ -302,7 +325,7 @@ export function CommentCard({
             <Button
               type="button"
               variant="outline"
-              size={sidebar ? "xs" : "default"}
+              size={sidebar ? "xs" : "sm"}
               onClick={() => onToggle(comment)}
             >
               {resolved ? (
@@ -315,7 +338,7 @@ export function CommentCard({
             <Button
               type="button"
               variant="destructive"
-              size={sidebar ? "xs" : "default"}
+              size={sidebar ? "xs" : "sm"}
               onClick={() => setConfirmDelete(true)}
             >
               <Trash2Icon aria-hidden="true" />

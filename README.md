@@ -59,8 +59,9 @@ pnpm dev:server
 ```
 
 Both development commands use `test/fixtures/sample.diff`. The web workspace
-runs the production API handler with an in-memory fixture store; the server
-workspace runs the Node CLI with the same diff piped to stdin.
+runs the production API handler with an in-memory fixture store preloaded with
+comments and reviewed-file state; the server workspace runs the Node CLI with
+the same diff piped to stdin.
 
 Install Chromium once, then test either workspace independently or run every
 check from the root:

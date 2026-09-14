@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAppState } from "./app-state.tsx";
 import { save, saved } from "./preferences.ts";
+import { commentApplicability } from "./review-model.ts";
 
 export function ReviewTools() {
   const {
@@ -25,8 +26,10 @@ export function ReviewTools() {
   const allFiles = repository?.files ?? [];
   const additions = allFiles.reduce((sum, file) => sum + file.additions, 0);
   const deletions = allFiles.reduce((sum, file) => sum + file.deletions, 0);
-  const unresolved = review.currentComments.filter(
-    (comment) => comment.status === "open",
+  const unresolved = review.comments.filter(
+    (comment) =>
+      comment.status === "open" &&
+      commentApplicability(comment, repository) !== "stale",
   ).length;
   const reviewedCount = allFiles.filter(isReviewed).length;
   return (
@@ -53,10 +56,10 @@ export function ReviewTools() {
                 <Button
                   type="button"
                   id="copy-review"
+                  size="sm"
+                  disabled={!unresolved}
                   onClick={() => {
-                    if (review.currentComments.length)
-                      void review.copyCurrent(unresolved === 0);
-                    else void review.copy(true);
+                    void review.copy(false);
                   }}
                 >
                   <CopyIcon aria-hidden="true" />
@@ -69,7 +72,7 @@ export function ReviewTools() {
                         type="button"
                         className="copy-comments-menu-trigger"
                         variant="outline"
-                        size="icon"
+                        size="icon-sm"
                         aria-label="Copy options"
                         title="Copy options"
                       />
@@ -82,19 +85,10 @@ export function ReviewTools() {
                       className="copy-comments-menu-item"
                       disabled={!unresolved}
                       onClick={() => {
-                        void review.copyCurrent(false);
+                        void review.copy(false);
                       }}
                     >
-                      Current unresolved
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="copy-comments-menu-item"
-                      disabled={!review.currentComments.length}
-                      onClick={() => {
-                        void review.copyCurrent(true);
-                      }}
-                    >
-                      Current all
+                      Open
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       className="copy-comments-menu-item"
@@ -102,7 +96,7 @@ export function ReviewTools() {
                         void review.copy(true);
                       }}
                     >
-                      All rounds
+                      All
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>

@@ -139,30 +139,66 @@ test("review actions use progressive disclosure, status filters, and confirmed d
   await expect(page.getByRole("button", { name: "Copy review" })).toBeVisible();
   await page.getByRole("button", { name: "Copy options" }).click();
   const options = page.getByRole("menu", { name: "Copy options" });
-  await expect(
-    options.getByRole("menuitem", { name: "Current unresolved" }),
-  ).toBeVisible();
-  await expect(
-    options.getByRole("menuitem", { name: "Current all" }),
-  ).toBeVisible();
-  await expect(
-    options.getByRole("menuitem", { name: "All rounds" }),
-  ).toBeVisible();
+  await expect(options.getByRole("menuitem", { name: "Open" })).toBeVisible();
+  await expect(options.getByRole("menuitem", { name: "All" })).toBeVisible();
+  await expect(options.getByRole("menuitem")).toHaveCount(2);
   await page.keyboard.press("Escape");
 
-  await page.getByRole("tab", { name: /Comments/ }).click();
+  await page.getByRole("tab", { name: /Review/ }).click();
   const panel = page.locator("#comments-panel");
-  const openFilter = panel.getByRole("button", { name: "Open", exact: true });
-  const resolvedFilter = panel.getByRole("button", {
-    name: "Resolved",
-    exact: true,
+  await expect(panel.locator(".comment-summary")).toHaveCount(0);
+  const filterTrigger = panel.locator(".comment-filter-trigger");
+  await expect(filterTrigger).toHaveAccessibleName("Filter comments: Open");
+  await expect(panel.locator(".comment-panel-header")).toHaveCSS(
+    "justify-content",
+    "flex-start",
+  );
+  await expect(filterTrigger.locator(".comment-filter-count")).toHaveText("1");
+  await expect(filterTrigger.locator(".comment-filter-count")).toHaveCSS(
+    "height",
+    "16px",
+  );
+  await filterTrigger.click();
+  const filters = page.getByRole("menu", { name: "Filter comments" });
+  const openFilter = filters.getByRole("menuitemradio", { name: "Open 1" });
+  const resolvedFilter = filters.getByRole("menuitemradio", {
+    name: "Resolved 1",
   });
-  await expect(openFilter).toHaveAttribute("aria-pressed", "true");
+  const staleFilter = filters.getByRole("menuitemradio", { name: "Stale 0" });
+  await expect(openFilter.locator(".comment-filter-count")).toHaveText("1");
+  await expect(resolvedFilter.locator(".comment-filter-count")).toHaveText("1");
+  await expect(staleFilter.locator(".comment-filter-count")).toHaveText("0");
+  await expect(
+    filters.getByRole("menuitemradio", { name: "All 2" }),
+  ).toBeVisible();
+  const filterMenuBox = await filters.boundingBox();
+  expect(filterMenuBox?.width ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(
+    120,
+  );
+  await expect(openFilter).toHaveAttribute("aria-checked", "true");
+  const selectedOptionAlignment = await openFilter.evaluate((option) => {
+    const indicator = option.querySelector(
+      '[data-slot="dropdown-menu-radio-item-indicator"]',
+    );
+    const label = Array.from(option.children).find(
+      (child) => child.textContent === "Open",
+    );
+    if (!indicator || !label) throw new Error("Missing filter option content");
+    return {
+      indicatorRight: indicator.getBoundingClientRect().right,
+      labelLeft: label.getBoundingClientRect().left,
+    };
+  });
+  expect(
+    selectedOptionAlignment.labelLeft - selectedOptionAlignment.indicatorRight,
+  ).toBeGreaterThanOrEqual(4);
+  await page.keyboard.press("Escape");
   await expect(panel.getByText("Open feedback")).toBeVisible();
   await expect(panel.getByText("Resolved feedback")).toBeHidden();
 
+  await filterTrigger.click();
   await resolvedFilter.click();
-  await expect(resolvedFilter).toHaveAttribute("aria-pressed", "true");
+  await expect(filterTrigger).toHaveAccessibleName("Filter comments: Resolved");
   await expect(panel.getByText("Open feedback")).toBeHidden();
   const resolvedCard = panel.locator(
     '[data-comment-id="resolved-review-comment"]',
@@ -188,7 +224,9 @@ test("review actions use progressive disclosure, status filters, and confirmed d
     .getByRole("button", { name: "Delete comment" })
     .click();
   await expect(resolvedCard).toHaveCount(0);
+  await expect(filterTrigger.locator(".comment-filter-count")).toHaveText("0");
 
+  await filterTrigger.click();
   await openFilter.click();
   const openCard = panel.locator('[data-comment-id="open-review-comment"]');
   await openCard.getByRole("button", { name: "Edit", exact: true }).click();
@@ -202,6 +240,73 @@ test("review actions use progressive disclosure, status filters, and confirmed d
   await expect(
     page.getByRole("alert").getByText("Enter a comment before saving."),
   ).toBeVisible();
+});
+
+test("bulk comment deletion selects a status and defaults to all", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await seedReviewComments(page);
+  await page.getByRole("tab", { name: /Review/ }).click();
+
+  const panel = page.locator("#comments-panel");
+  const filter = panel.locator(".comment-filter-trigger");
+  const remove = panel.locator(".bulk-delete-primary");
+  const removeOptions = panel.getByRole("button", { name: "Delete options" });
+  await expect(remove).toHaveAttribute("data-variant", "destructive");
+  await expect(remove).toHaveCSS("height", "24px");
+  const controls = await panel.locator(".comment-panel-header").evaluate(() => {
+    const filter = document.querySelector<HTMLElement>(
+      "#comments-panel .comment-filter-trigger",
+    );
+    const remove = document.querySelector<HTMLElement>(
+      "#comments-panel .bulk-delete-actions",
+    );
+    if (!filter || !remove) throw new Error("Missing review controls");
+    const header = filter.parentElement;
+    if (!header) throw new Error("Missing review controls header");
+    return {
+      marginLeft: getComputedStyle(remove).marginLeft,
+      rightInset:
+        header.getBoundingClientRect().right -
+        remove.getBoundingClientRect().right,
+    };
+  });
+  expect(controls.marginLeft).not.toBe("0px");
+  expect(Math.abs(controls.rightInset)).toBeLessThanOrEqual(0.5);
+
+  await removeOptions.click();
+  const menu = page.getByRole("menu", { name: "Delete options" });
+  await expect(menu.getByRole("menuitem", { name: "All 2" })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Open 1" })).toBeVisible();
+  await menu.getByRole("menuitem", { name: "Resolved 1" }).click();
+  const resolvedDialog = page.getByRole("dialog", {
+    name: "Delete resolved comments?",
+  });
+  await expect(resolvedDialog).toContainText(
+    "This permanently removes 1 resolved comment.",
+  );
+  await resolvedDialog.getByRole("button", { name: "Delete comments" }).click();
+  await expect(filter.locator(".comment-filter-count")).toHaveText("1");
+
+  await removeOptions.click();
+  await expect(
+    menu.getByRole("menuitem", { name: "Resolved 0" }),
+  ).toHaveAttribute("data-disabled", "");
+  await expect(menu.getByRole("menuitem", { name: "Stale 0" })).toHaveAttribute(
+    "data-disabled",
+    "",
+  );
+  await page.keyboard.press("Escape");
+
+  await remove.click();
+  const allDialog = page.getByRole("dialog", {
+    name: "Delete all comments?",
+  });
+  await expect(allDialog).toContainText("This permanently removes 1 comment.");
+  await allDialog.getByRole("button", { name: "Delete comments" }).click();
+  await expect(page.locator("#comment-count")).toHaveText("0");
+  await expect(panel.locator(".comment-panel-header")).toBeEmpty();
 });
 
 test("light and dark themes retain readable text and visible control boundaries", async ({

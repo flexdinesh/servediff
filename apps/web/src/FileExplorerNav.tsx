@@ -82,7 +82,7 @@ export function FileExplorerNav() {
               </span>
             </TabsTrigger>
             <TabsTrigger id="comments-tab" value="comments">
-              <span className="sidebar-tab-label">Comments</span>
+              <span className="sidebar-tab-label">Review</span>
               <span id="comment-count" className="count">
                 {review.comments.length}
               </span>

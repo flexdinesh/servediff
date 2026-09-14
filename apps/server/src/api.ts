@@ -4,6 +4,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
 import { parseDiffFromFile, parsePatchFiles } from "@pierre/diffs";
 import {
+  commentApplicability,
   commentContext,
   formatComments,
   isDiffMode,
@@ -26,6 +27,35 @@ interface ApiContext {
   token: string;
   store: ReviewStore;
   snapshot(mode: DiffMode, fresh?: boolean): Promise<RepositoryDiff>;
+}
+
+type CommentSelection = "all" | "open" | "resolved" | "stale";
+
+async function commentRepositories(
+  context: ApiContext,
+  comments: readonly ReviewComment[],
+) {
+  const scopes = new Set(
+    comments
+      .map((comment) => comment.scope)
+      .filter((commentScope) => context.source.scopes.includes(commentScope)),
+  );
+  return Promise.all(
+    [...scopes].map((commentScope) => context.snapshot(commentScope)),
+  );
+}
+
+function selectedComment(
+  comment: ReviewComment,
+  selection: CommentSelection,
+  repositories: readonly RepositoryDiff[],
+) {
+  if (selection === "all") return true;
+  const repository = repositories.find(
+    (candidate) => candidate.mode === comment.scope,
+  );
+  const stale = commentApplicability(comment, repository ?? null) === "stale";
+  return selection === "stale" ? stale : !stale && comment.status === selection;
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -291,6 +321,29 @@ export async function handleApi(
     });
     return true;
   }
+  if (url.pathname === "/api/v1/comments" && request.method === "DELETE") {
+    const status = url.searchParams.get("status");
+    if (
+      status !== "all" &&
+      status !== "open" &&
+      status !== "resolved" &&
+      status !== "stale"
+    )
+      throw new RequestError(400, "Invalid comment status");
+    const comments = await context.store.comments(context.sessionId);
+    const repositories = await commentRepositories(context, comments);
+    const ids = new Set(
+      comments
+        .filter((comment) => selectedComment(comment, status, repositories))
+        .map((comment) => comment.id),
+    );
+    const deleted = await context.store.deleteComments(context.sessionId, ids);
+    json(response, 200, {
+      comments: await context.store.comments(context.sessionId),
+      deleted,
+    });
+    return true;
+  }
   if (url.pathname === "/api/v1/comments" && request.method === "POST") {
     const body = await requestBody(request);
     if (!createCommentBody(body) || !body.body.trim())
@@ -361,6 +414,7 @@ export async function handleApi(
     )
       throw new RequestError(400, "Invalid includeResolved value");
     const includeResolved = resolvedParameter === "true";
+    const requestedCommentId = url.searchParams.get("commentId");
     const revision = url.searchParams.get("revision");
     const requestedScope = url.searchParams.get("scope");
     if (requestedScope !== null && !isDiffMode(requestedScope))
@@ -375,8 +429,11 @@ export async function handleApi(
       revision && requestedScope
         ? await context.snapshot(requestedScope)
         : null;
+    const requestedComments = requestedCommentId
+      ? comments.filter((comment) => comment.id === requestedCommentId)
+      : comments;
     const selected = revision
-      ? comments.filter(
+      ? requestedComments.filter(
           (comment) =>
             comment.scope === requestedScope &&
             (comment.origin?.revision === revision ||
@@ -388,9 +445,10 @@ export async function handleApi(
                     file.fingerprint === comment.fingerprint,
                 ))),
         )
-      : comments;
+      : requestedComments;
+    const repositories = await commentRepositories(context, selected);
     response.setHeader("Content-Type", "application/xml; charset=utf-8");
-    response.end(formatComments(selected, includeResolved));
+    response.end(formatComments(selected, includeResolved, repositories));
     return true;
   }
   const commentId = commentRoute(url.pathname);

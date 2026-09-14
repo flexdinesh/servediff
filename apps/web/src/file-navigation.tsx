@@ -137,7 +137,7 @@ export function FileNavigation({
       <ul className="tree-list">
         {nodes.map((node) => {
           const style = {
-            paddingLeft: `calc(var(--space-2) + ${depth} * var(--space-4))`,
+            paddingLeft: `calc(var(--space-1) + ${depth} * var(--space-3))`,
           };
           if (node.kind === "folder") {
             const open = !closed.has(node.path);
@@ -147,6 +147,7 @@ export function FileNavigation({
                   type="button"
                   className="tree-folder"
                   variant="ghost"
+                  size="sm"
                   style={style}
                   data-tree-path={node.path}
                   tabIndex={-1}
@@ -156,7 +157,11 @@ export function FileNavigation({
                   onClick={() => onToggle(node.path)}
                   onKeyDown={onKeyDown}
                 >
-                  <span className="tree-chevron">{open ? "⌄" : "›"}</span>
+                  <span className="tree-chevron" aria-hidden="true">
+                    <svg viewBox="0 0 16 16">
+                      <path d={open ? "m4 6 4 4 4-4" : "m6 4 4 4-4 4"} />
+                    </svg>
+                  </span>
                   <FolderIcon open={open} />
                   <span className="file-name">{node.name}</span>
                 </Button>
@@ -174,6 +179,7 @@ export function FileNavigation({
                 type="button"
                 className={`file-row${viewed ? " reviewed" : ""}`}
                 variant="ghost"
+                size="sm"
                 style={style}
                 data-path={file.path}
                 data-tree-path={file.path}

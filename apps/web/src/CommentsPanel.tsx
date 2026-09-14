@@ -1,41 +1,91 @@
 import { useState } from "react";
+import { ChevronDownIcon, Trash2Icon } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { TabsContent } from "@/components/ui/tabs";
 import { useAppState } from "./app-state.tsx";
 import { DraftComment, ReviewCommentCard } from "./review.tsx";
-import { anchored } from "./review-model.ts";
+import {
+  anchored,
+  commentApplicability,
+  type ReviewComment,
+} from "./review-model.ts";
 
-type CommentFilter = "open" | "resolved" | "all";
+type CommentState = "open" | "resolved" | "stale";
+type CommentFilter = CommentState | "all";
 
-const COMMENT_FILTERS: readonly CommentFilter[] = ["open", "resolved", "all"];
+const COMMENT_FILTERS: readonly CommentFilter[] = [
+  "open",
+  "resolved",
+  "stale",
+  "all",
+];
+const DELETE_FILTERS: readonly CommentFilter[] = [
+  "all",
+  "open",
+  "resolved",
+  "stale",
+];
 
 function filterLabel(filter: CommentFilter) {
   if (filter === "open") return "Open";
   if (filter === "resolved") return "Resolved";
+  if (filter === "stale") return "Stale";
   return "All";
 }
 
 export function CommentsPanel() {
   const [filter, setFilter] = useState<CommentFilter>("open");
+  const [deleteSelection, setDeleteSelection] = useState<CommentFilter | null>(
+    null,
+  );
   const {
     source: { repository },
     draft,
     review,
     navigateComment,
   } = useAppState();
-  const openComments = review.comments.filter(
-    (comment) => comment.status === "open",
-  ).length;
+  const state = (comment: ReviewComment): CommentState =>
+    commentApplicability(comment, repository) === "stale"
+      ? "stale"
+      : comment.status;
+  const counts = {
+    open: review.comments.filter((comment) => state(comment) === "open").length,
+    resolved: review.comments.filter((comment) => state(comment) === "resolved")
+      .length,
+    stale: review.comments.filter((comment) => state(comment) === "stale")
+      .length,
+  };
+  const activeCount =
+    filter === "all" ? review.comments.length : counts[filter];
+  const deleteCount =
+    deleteSelection === null
+      ? 0
+      : deleteSelection === "all"
+        ? review.comments.length
+        : counts[deleteSelection];
   const currentRound = review.rounds.find((round) => round.current);
   const earlierRounds = review.rounds.filter((round) => !round.current);
-  const visible = (status: "open" | "resolved") =>
-    filter === "all" || filter === status;
-  const currentComments =
-    currentRound?.comments.filter((comment) => visible(comment.status)) ?? [];
+  const visible = (comment: ReviewComment) =>
+    filter === "all" || filter === state(comment);
+  const currentComments = currentRound?.comments.filter(visible) ?? [];
   const visibleEarlierComments = earlierRounds.reduce(
-    (count, round) =>
-      count +
-      round.comments.filter((comment) => visible(comment.status)).length,
+    (count, round) => count + round.comments.filter(visible).length,
     0,
   );
   return (
@@ -45,28 +95,116 @@ export function CommentsPanel() {
       aria-label="Review comments"
     >
       <div className="comment-panel-header">
-        <p className="comment-summary">
-          {openComments} open · {review.comments.length - openComments} resolved
-        </p>
         {!!review.comments.length && (
-          <div
-            className="comment-filters"
-            role="group"
-            aria-label="Filter comments"
-          >
-            {COMMENT_FILTERS.map((value) => (
-              <Button
-                key={value}
-                type="button"
-                variant={filter === value ? "secondary" : "ghost"}
-                size="xs"
-                aria-pressed={filter === value}
-                onClick={() => setFilter(value)}
+          <>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    type="button"
+                    className="comment-filter-trigger"
+                    variant="outline"
+                    size="xs"
+                    aria-label={`Filter comments: ${filterLabel(filter)}`}
+                  />
+                }
               >
-                {filterLabel(value)}
+                {filterLabel(filter)}
+                <Badge variant="outline" className="comment-filter-count">
+                  {activeCount}
+                </Badge>
+                <ChevronDownIcon aria-hidden="true" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                className="comment-filter-menu"
+                aria-label="Filter comments"
+              >
+                <DropdownMenuRadioGroup
+                  value={filter}
+                  onValueChange={(value: unknown) => {
+                    if (
+                      value === "open" ||
+                      value === "resolved" ||
+                      value === "stale" ||
+                      value === "all"
+                    )
+                      setFilter(value);
+                  }}
+                >
+                  {COMMENT_FILTERS.map((value) => (
+                    <DropdownMenuRadioItem
+                      key={value}
+                      value={value}
+                      closeOnClick
+                      className="comment-filter-option"
+                    >
+                      <span>{filterLabel(value)}</span>
+                      <Badge variant="outline" className="comment-filter-count">
+                        {value === "all"
+                          ? review.comments.length
+                          : counts[value]}
+                      </Badge>
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <div className="bulk-delete-actions">
+              <Button
+                type="button"
+                className="bulk-delete-primary"
+                variant="destructive"
+                size="xs"
+                onClick={() => setDeleteSelection("all")}
+              >
+                <Trash2Icon aria-hidden="true" />
+                Delete
               </Button>
-            ))}
-          </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      type="button"
+                      className="bulk-delete-menu-trigger"
+                      variant="outline"
+                      size="icon-xs"
+                      aria-label="Delete options"
+                      title="Delete options"
+                    />
+                  }
+                >
+                  <ChevronDownIcon aria-hidden="true" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="start"
+                  className="bulk-delete-menu"
+                  aria-label="Delete comments"
+                >
+                  {DELETE_FILTERS.map((value) => {
+                    const count =
+                      value === "all" ? review.comments.length : counts[value];
+                    return (
+                      <DropdownMenuItem
+                        key={value}
+                        className="bulk-delete-option"
+                        disabled={count === 0}
+                        onClick={() => setDeleteSelection(value)}
+                      >
+                        <span>{filterLabel(value)}</span>
+                        <Badge
+                          variant="outline"
+                          className="comment-filter-count"
+                        >
+                          {count}
+                        </Badge>
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </>
         )}
       </div>
       {draft &&
@@ -91,17 +229,20 @@ export function CommentsPanel() {
       )}
       {earlierRounds.map((round, index) => {
         const open = round.comments.filter(
-          (comment) => comment.status === "open",
+          (comment) => state(comment) === "open",
         ).length;
-        const comments = round.comments.filter((comment) =>
-          visible(comment.status),
-        );
+        const resolved = round.comments.filter(
+          (comment) => state(comment) === "resolved",
+        ).length;
+        const stale = round.comments.length - open - resolved;
+        const comments = round.comments.filter(visible);
         if (!comments.length) return null;
         return (
           <details className="review-round earlier-review" key={round.key}>
             <summary>
               Earlier review {earlierRounds.length - index} · {open} open ·{" "}
-              {round.comments.length - open} resolved
+              {resolved} resolved
+              {!!stale && ` · ${stale} stale`}
             </summary>
             {comments.map((comment) => (
               <ReviewCommentCard key={comment.id} comment={comment} sidebar />
@@ -129,6 +270,50 @@ export function CommentsPanel() {
         !visibleEarlierComments && (
           <p className="comment-empty">No {filter} comments.</p>
         )}
+      <Dialog
+        open={deleteSelection !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteSelection(null);
+        }}
+      >
+        <DialogContent
+          className="delete-comment-dialog"
+          showCloseButton={false}
+        >
+          <DialogTitle>
+            Delete{" "}
+            {deleteSelection ? filterLabel(deleteSelection).toLowerCase() : ""}{" "}
+            comments?
+          </DialogTitle>
+          <DialogDescription>
+            This permanently removes {deleteCount}{" "}
+            {deleteSelection === "all" ? "" : `${deleteSelection} `}
+            {deleteCount === 1 ? "comment" : "comments"}. This cannot be undone.
+          </DialogDescription>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDeleteSelection(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="delete-comment-confirm"
+              variant="destructive"
+              onClick={() => {
+                if (deleteSelection)
+                  void review.removeComments(deleteSelection);
+                setDeleteSelection(null);
+              }}
+            >
+              <Trash2Icon aria-hidden="true" />
+              Delete comments
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </TabsContent>
   );
 }

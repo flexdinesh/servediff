@@ -224,15 +224,37 @@ export function useReview(
     }
   }
 
-  async function copy(includeResolved: boolean, currentOnly = false) {
+  async function removeComments(status: "all" | "open" | "resolved" | "stale") {
+    try {
+      const { data, error } = await api.DELETE("/api/v1/comments", {
+        params: { query: { status } },
+      });
+      if (!data) {
+        setFeedback(errorDetail(error, "Unable to delete comments"));
+        return;
+      }
+      if (
+        draft &&
+        comments.some((comment) => comment.id === draft.id) &&
+        !data.comments.some((comment) => comment.id === draft.id)
+      )
+        setDraft(null);
+      setStored({ key, comments: data.comments });
+      setFeedback(
+        `Deleted ${data.deleted} ${data.deleted === 1 ? "comment" : "comments"}.`,
+      );
+    } catch (error) {
+      setFeedback(errorDetail(error, "Unable to delete comments"));
+    }
+  }
+
+  async function copy(includeResolved: boolean, commentId?: string) {
     try {
       const { data, error } = await api.GET("/api/v1/comments/export", {
         params: {
           query: {
             includeResolved,
-            ...(currentOnly && repository
-              ? { revision: repository.revision, scope: repository.mode }
-              : {}),
+            ...(commentId ? { commentId } : {}),
           },
         },
         parseAs: "text",
@@ -242,17 +264,12 @@ export function useReview(
         return;
       }
       if (!data) return;
-      const copiedCount = currentOnly
-        ? currentComments.filter(
-            (comment) => includeResolved || comment.status === "open",
-          ).length
-        : comments.filter(
-            (comment) => includeResolved || comment.status === "open",
-          ).length;
       try {
         await navigator.clipboard.writeText(data);
         setFeedback(
-          `Copied ${copiedCount} ${copiedCount === 1 ? "comment" : "comments"} as XML.`,
+          commentId
+            ? "Copied comment as XML."
+            : `Copied ${includeResolved ? "all" : "unresolved"} comments as XML.`,
         );
       } catch {
         setCopyText(data);
@@ -274,8 +291,9 @@ export function useReview(
     edit,
     toggle,
     remove,
+    removeComments,
     copy: (includeResolved: boolean) => copy(includeResolved),
-    copyCurrent: (includeResolved: boolean) => copy(includeResolved, true),
+    copyComment: (comment: ReviewComment) => copy(true, comment.id),
     copyText,
     closeCopy: () => setCopyText(null),
   };

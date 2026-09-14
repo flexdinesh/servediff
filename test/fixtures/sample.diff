@@ -27,3 +27,116 @@ index 4444444..0000000
 -# Legacy notes
 -
 -This documentation is no longer current.
+diff --git a/README.md b/README.md
+index 5555555..6666666 100644
+--- a/README.md
++++ b/README.md
+@@ -3 +3 @@
+-A local diff viewer.
++A local diff viewer for focused code review.
+@@ -5 +5,3 @@
+ Run `pnpm dev:web`.
++
++Reviews are stored alongside each diff session.
+diff --git a/package.json b/package.json
+index 7777777..8888888 100644
+--- a/package.json
++++ b/package.json
+@@ -1,5 +1,6 @@
+ {
+   "name": "example-project",
+   "private": true,
++  "type": "module",
+   "scripts": {}
+ }
+diff --git a/config/servediff.json b/config/servediff.json
+new file mode 100644
+index 0000000..9999999
+--- /dev/null
++++ b/config/servediff.json
+@@ -0,0 +1,6 @@
++{
++  "theme": "system",
++  "layout": "split",
++  "wrapLines": false,
++  "showWhitespace": true
++}
+diff --git a/scripts/release.sh b/scripts/release.sh
+deleted file mode 100755
+index aaaaaaa..0000000
+--- a/scripts/release.sh
++++ /dev/null
+@@ -1,4 +0,0 @@
+-#!/usr/bin/env bash
+-set -euo pipefail
+-
+-pnpm build
+diff --git a/src/components/Button.tsx b/src/components/Button.tsx
+index bbbbbbb..ccccccc 100644
+--- a/src/components/Button.tsx
++++ b/src/components/Button.tsx
+@@ -1 +1 @@
+-type ButtonProps = { children: string };
++type ButtonProps = { children: string; disabled?: boolean };
+@@ -3,2 +3,2 @@
+-export function Button({ children }: ButtonProps) {
+-  return <button type="button">{children}</button>;
++export function Button({ children, disabled = false }: ButtonProps) {
++  return <button type="button" disabled={disabled}>{children}</button>;
+diff --git a/src/hooks/useClipboard.ts b/src/hooks/useClipboard.ts
+new file mode 100644
+index 0000000..ddddddd
+--- /dev/null
++++ b/src/hooks/useClipboard.ts
+@@ -0,0 +1,10 @@
++import { useState } from "react";
++
++export function useClipboard() {
++  const [copied, setCopied] = useState(false);
++  const copy = async (value: string) => {
++    await navigator.clipboard.writeText(value);
++    setCopied(true);
++  };
++  return { copied, copy };
++}
+diff --git a/src/styles/theme.css b/src/styles/theme.css
+index eeeeeee..fffffff 100644
+--- a/src/styles/theme.css
++++ b/src/styles/theme.css
+@@ -1,5 +1,6 @@
+ :root {
+   color-scheme: light dark;
+-  --panel: #ffffff;
+-  --text: #202124;
++  --panel: light-dark(#ffffff, #16181d);
++  --text: light-dark(#202124, #e8eaed);
++  --accent: #6d5dfc;
+ }
+diff --git a/src/utils/formatting.ts b/src/utils/format.ts
+similarity index 58%
+rename from src/utils/formatting.ts
+rename to src/utils/format.ts
+index 1212121..1313131 100644
+--- a/src/utils/formatting.ts
++++ b/src/utils/format.ts
+@@ -1,3 +1,5 @@
+-export function format(value: number) {
+-  return `${value}`;
++export function formatValue(value: number, suffix = "") {
++  const formatted = new Intl.NumberFormat("en").format(value);
++
++  return `${formatted}${suffix}`;
+ }
+diff --git a/test/value.test.ts b/test/value.test.ts
+new file mode 100644
+index 0000000..1414141
+--- /dev/null
++++ b/test/value.test.ts
+@@ -0,0 +1,7 @@
++import assert from "node:assert/strict";
++import { test } from "node:test";
++import { value } from "../src/value.ts";
++
++test("exports the current value", () => {
++  assert.equal(value, 2);
++});

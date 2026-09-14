@@ -148,6 +148,17 @@ export class ReviewStore {
     return deleted;
   }
 
+  async deleteComments(sessionId: string, ids: ReadonlySet<string>) {
+    let deleted = 0;
+    await this.mutate(async () => {
+      const session = await this.session(sessionId);
+      const next = session.comments.filter((comment) => !ids.has(comment.id));
+      deleted = session.comments.length - next.length;
+      session.comments = next;
+    });
+    return deleted;
+  }
+
   async marks(sessionId: string, scope: DiffMode) {
     await this.pending;
     return (await this.session(sessionId)).marks.filter(

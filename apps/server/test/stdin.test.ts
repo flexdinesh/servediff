@@ -27,7 +27,7 @@ test("serves parsed patch contents without consulting a Git repository", async (
   const repository = openPatch(patch);
   const data = await repository.snapshot("all");
   assert.equal(data.source, "stdin");
-  assert.equal(data.files.length, 3);
+  assert.equal(data.files.length, 12);
   const file = data.files.find((entry) => entry.path === "src/value.ts");
   assert.ok(file);
   assert.equal(file.status, "M");

@@ -98,6 +98,34 @@ paths:
                       $ref: "#/components/schemas/ReviewComment"
         default:
           $ref: "#/components/responses/Problem"
+    delete:
+      operationId: deleteComments
+      parameters:
+        - name: status
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [all, open, resolved, stale]
+      responses:
+        "200":
+          description: Remaining comments after bulk deletion.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [comments, deleted]
+                properties:
+                  comments:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ReviewComment"
+                  deleted:
+                    type: integer
+                    minimum: 0
+        default:
+          $ref: "#/components/responses/Problem"
     post:
       operationId: createComment
       requestBody:
@@ -155,6 +183,11 @@ paths:
           schema:
             type: boolean
             default: false
+        - name: commentId
+          in: query
+          required: false
+          schema:
+            type: string
         - name: revision
           in: query
           required: false

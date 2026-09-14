@@ -94,7 +94,7 @@ export interface paths {
     get: operations["listComments"];
     put?: never;
     post: operations["createComment"];
-    delete?: never;
+    delete: operations["deleteComments"];
     options?: never;
     head?: never;
     patch?: never;
@@ -482,6 +482,32 @@ export interface operations {
       default: components["responses"]["Problem"];
     };
   };
+  deleteComments: {
+    parameters: {
+      query: {
+        status: "all" | "open" | "resolved" | "stale";
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Remaining comments after bulk deletion. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            comments: components["schemas"]["ReviewComment"][];
+            deleted: number;
+          };
+        };
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
   importComments: {
     parameters: {
       query?: never;
@@ -515,6 +541,7 @@ export interface operations {
     parameters: {
       query?: {
         includeResolved?: boolean;
+        commentId?: string;
         revision?: string;
         scope?: components["schemas"]["DiffMode"];
       };

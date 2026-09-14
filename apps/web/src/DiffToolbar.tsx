@@ -91,6 +91,7 @@ export function DiffToolbar() {
               type="button"
               id="view-options"
               variant="outline"
+              size="sm"
               aria-label="View options"
             />
           }

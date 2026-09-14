@@ -10,6 +10,7 @@ import {
 } from "../src/file-tree.ts";
 import {
   commentContext,
+  commentApplicability,
   createCommentId,
   formatComments,
   lineContext,
@@ -228,7 +229,63 @@ test("copies unresolved comments by default and all comments when requested", ()
   assert.ok(allOutput.includes('id="C1" selection="range"'));
   assert.ok(allOutput.includes('id="C2" selection="single-line"'));
   assert.ok(allOutput.includes('status="resolved"'));
-  assert.ok(allOutput.includes("Resolved comments are context only"));
+  assert.ok(
+    allOutput.includes(
+      "Resolved and stale comments are context only; do not act on them.",
+    ),
+  );
+});
+
+test("treats changed file references as stale export-only context", () => {
+  const repository: RepositoryDiff = {
+    source: "local",
+    root: "/repo",
+    name: "repo",
+    branch: "main",
+    head: "abc",
+    mode: "staged",
+    revision: "current",
+    files: [file("src/file.ts")],
+  };
+  const anchoredComment: ReviewComment = {
+    ...comment,
+    id: "anchored",
+    fingerprint: "src/file.ts",
+    body: "Act on this current comment.",
+  };
+  const resolvedStale: ReviewComment = {
+    ...comment,
+    id: "resolved-stale",
+    status: "resolved",
+  };
+
+  assert.equal(commentApplicability(anchoredComment, repository), "anchored");
+  assert.equal(commentApplicability(comment, repository), "stale");
+  assert.equal(commentApplicability(resolvedStale, repository), "stale");
+
+  const unresolvedOutput = formatComments(
+    [comment, anchoredComment, resolvedStale],
+    false,
+    [repository],
+  );
+  assert.ok(unresolvedOutput.includes('id="C1"'));
+  assert.ok(unresolvedOutput.includes('applicability="anchored"'));
+  assert.ok(unresolvedOutput.includes("Act on this current comment."));
+  assert.ok(!unresolvedOutput.includes("Keep this behavior."));
+
+  const allOutput = formatComments(
+    [comment, anchoredComment, resolvedStale],
+    true,
+    [repository],
+  );
+  assert.equal(allOutput.match(/applicability="stale"/g)?.length, 2);
+  assert.ok(allOutput.includes('status="open" applicability="stale"'));
+  assert.ok(allOutput.includes('status="resolved" applicability="stale"'));
+  assert.ok(
+    allOutput.includes(
+      "Resolved and stale comments are context only; do not act on them.",
+    ),
+  );
 });
 
 test("groups comments by snapshot then file while preserving export order", () => {

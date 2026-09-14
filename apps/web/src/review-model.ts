@@ -2,6 +2,7 @@ import type { ReviewComment } from "@servediff/shared";
 
 export {
   anchored,
+  commentApplicability,
   commentContext,
   formatComments,
   lineContext,
@@ -9,6 +10,7 @@ export {
   reviewRounds,
 } from "@servediff/shared";
 export type {
+  CommentApplicability,
   ReviewComment,
   ReviewOrigin,
   ReviewRound,

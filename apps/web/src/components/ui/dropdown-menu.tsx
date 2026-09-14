@@ -78,7 +78,10 @@ function DropdownMenuRadioItem({
       {...props}
     >
       {children}
-      <MenuPrimitive.RadioItemIndicator className="pointer-events-none absolute right-[var(--space-2)] flex size-(--icon-base) items-center justify-center">
+      <MenuPrimitive.RadioItemIndicator
+        data-slot="dropdown-menu-radio-item-indicator"
+        className="pointer-events-none absolute right-[var(--space-2)] flex size-(--icon-base) items-center justify-center"
+      >
         <CheckIcon />
       </MenuPrimitive.RadioItemIndicator>
     </MenuPrimitive.RadioItem>
