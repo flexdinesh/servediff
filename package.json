@@ -10,16 +10,20 @@
     "build": "pnpm generate:api && pnpm --filter @servediff/web build && pnpm --filter @servediff/server build",
     "dev:web": "pnpm --filter @servediff/web dev",
     "dev:server": "pnpm --filter @servediff/server dev",
+    "dev:go": "go run ./cmd/servediff --fixture test/fixtures/sample.diff --state memory --web-dir apps/web/dist",
     "generate:api": "pnpm --filter @servediff/api generate",
-    "typecheck": "pnpm --recursive --if-present typecheck",
+    "typecheck": "pnpm --recursive --if-present typecheck && tsc --noEmit -p test/conformance/tsconfig.json",
     "test": "pnpm --recursive --if-present test",
     "test:server": "pnpm --filter @servediff/server test",
     "test:web": "pnpm --filter @servediff/web test",
+    "test:go": "go test ./...",
+    "test:conformance": "node --test test/conformance/*.test.ts",
     "test:browser:install": "pnpm --filter @servediff/web test:browser:install",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
     "lint": "oxlint .",
-    "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm build && pnpm test"
+    "check:js": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm build && pnpm test",
+    "check": "pnpm check:js && pnpm test:go"
   },
   "devDependencies": {
     "@types/node": "catalog:",

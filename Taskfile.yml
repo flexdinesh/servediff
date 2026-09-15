@@ -1,0 +1,84 @@
+version: "3"
+
+tasks:
+  generate:
+    cmds:
+      - pnpm generate:api
+
+  web:build:
+    cmds:
+      - pnpm --filter @servediff/web build
+
+  web:stage:
+    deps: [web:build]
+    cmds:
+      - go run ./tools/stage-web apps/web/dist internal/webui/assets
+
+  build:node:
+    cmds:
+      - pnpm build
+
+  build:go:
+    cmds:
+      - task: generate
+      - task: web:stage
+      - mkdir -p dist
+      - go build -trimpath -o dist/servediff-go ./cmd/servediff
+
+  build:
+    cmds:
+      - task: build:node
+      - go run ./tools/stage-web apps/web/dist internal/webui/assets
+      - mkdir -p dist
+      - go build -trimpath -o dist/servediff-go ./cmd/servediff
+
+  dev:web:
+    cmds:
+      - pnpm dev:web
+
+  dev:node:
+    cmds:
+      - pnpm dev:server
+
+  dev:go:
+    deps: [web:build]
+    cmds:
+      - go run ./cmd/servediff --fixture test/fixtures/sample.diff --state memory --web-dir apps/web/dist
+
+  dev:go-api:
+    cmds:
+      - go run ./cmd/servediff --fixture test/fixtures/sample.diff --state memory --no-auth --no-browser --port 3333
+
+  dev:web-go:
+    env:
+      SERVEDIFF_API_URL: http://127.0.0.1:3333
+    cmds:
+      - pnpm dev:web
+
+  dev:
+    deps: [dev:go-api, dev:web-go]
+
+  test:go:
+    cmds:
+      - go test ./...
+
+  test:conformance:
+    cmds:
+      - task: build:go
+      - pnpm test:conformance
+
+  check:go:
+    cmds:
+      - test -z "$(gofmt -l cmd internal packages/api tools)"
+      - go vet ./...
+      - go test ./...
+
+  check:js:
+    cmds:
+      - pnpm check:js
+
+  check:
+    cmds:
+      - task: check:js
+      - task: check:go
+      - task: test:conformance

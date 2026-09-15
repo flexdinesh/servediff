@@ -1,0 +1,1 @@
+Run `task web:stage` before building a release binary.
