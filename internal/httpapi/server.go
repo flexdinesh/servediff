@@ -9,7 +9,6 @@ import (
 	"io"
 	"io/fs"
 	"mime"
-	"net"
 	"net/http"
 	"path"
 	"strings"
@@ -32,30 +31,19 @@ type cachedSnapshot struct {
 type Handler struct {
 	source    diffsource.Source
 	store     *reviewstore.Store
-	token     string
 	sessionID string
 	assets    fs.FS
 	metrics   *processmetrics.Collector
 	mu        sync.Mutex
 	snapshots map[review.DiffMode]cachedSnapshot
-	hosts     map[string]bool
 }
 
-func New(source diffsource.Source, store *reviewstore.Store, token string, assets fs.FS) *Handler {
+func New(source diffsource.Source, store *reviewstore.Store, assets fs.FS) *Handler {
 	sessionID := SessionID(source)
-	hosts := map[string]bool{"127.0.0.1": true, "localhost": true, "0.0.0.0": true, "::1": true}
-	interfaces, _ := net.InterfaceAddrs()
-	for _, address := range interfaces {
-		value := address.String()
-		if index := strings.LastIndex(value, "/"); index >= 0 {
-			value = value[:index]
-		}
-		hosts[value] = true
-	}
 	return &Handler{
-		source: source, store: store, token: token, assets: assets,
+		source: source, store: store, assets: assets,
 		sessionID: sessionID, metrics: processmetrics.New(),
-		snapshots: make(map[review.DiffMode]cachedSnapshot), hosts: hosts,
+		snapshots: make(map[review.DiffMode]cachedSnapshot),
 	}
 }
 
@@ -64,8 +52,8 @@ func SessionID(source diffsource.Source) string {
 	return hex.EncodeToString(hash[:])
 }
 
-func RandomToken() (string, error) {
-	value := make([]byte, 24)
+func randomID() (string, error) {
+	value := make([]byte, 16)
 	if _, err := rand.Read(value); err != nil {
 		return "", err
 	}
@@ -114,14 +102,6 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 }
 
 func (handler *Handler) checkRequest(request *http.Request) error {
-	host := request.Host
-	if parsed, _, err := net.SplitHostPort(request.Host); err == nil {
-		host = parsed
-	}
-	host = strings.Trim(host, "[]")
-	if !handler.hosts[host] {
-		return diffsource.Error(403, "Invalid host")
-	}
 	if origin := request.Header.Get("Origin"); origin != "" && origin != "http://"+request.Host {
 		return diffsource.Error(403, "Cross-origin access denied")
 	}
@@ -145,9 +125,6 @@ func (handler *Handler) api(response http.ResponseWriter, request *http.Request)
 	}
 	if !strings.HasPrefix(pathname, "/api/v1/") {
 		return false, nil
-	}
-	if handler.token != "" && request.Header.Get("Authorization") != "Bearer "+handler.token {
-		return true, diffsource.Error(401, "Missing or invalid API token")
 	}
 	if pathname == "/api/v1/metrics" && request.Method == http.MethodGet {
 		return true, writeJSON(response, 200, handler.metrics.Collect())
@@ -365,12 +342,12 @@ func (handler *Handler) createComment(response http.ResponseWriter, request *htt
 	if start > end {
 		start, end = end, start
 	}
-	id, err := RandomToken()
+	id, err := randomID()
 	if err != nil {
 		return err
 	}
 	comment := review.ReviewComment{
-		ID: id[:32], Path: file.Path, Scope: body.Scope, Fingerprint: file.Fingerprint,
+		ID: id, Path: file.Path, Scope: body.Scope, Fingerprint: file.Fingerprint,
 		Side: body.Side, Start: start, End: end, Code: code, Body: strings.TrimSpace(body.Body), Status: "open", CreatedAt: float64(time.Now().UnixMilli()),
 		Origin: &review.ReviewOrigin{Source: snapshot.Source, Repository: snapshot.Name, Branch: snapshot.Branch, Head: snapshot.Head, Revision: snapshot.Revision, File: review.ReviewFileOrigin{Status: file.Status, OldPath: file.OldPath}},
 	}
@@ -649,9 +626,6 @@ func (handler *Handler) problem(response http.ResponseWriter, err error) {
 	title := "Request Failed"
 	if status >= 500 {
 		title = "Internal Server Error"
-	}
-	if status == 401 {
-		response.Header().Set("WWW-Authenticate", "Bearer")
 	}
 	_ = writeJSONType(response, status, "application/problem+json; charset=utf-8", map[string]any{"type": "about:blank", "title": title, "status": status, "detail": err.Error()})
 }

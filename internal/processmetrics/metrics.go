@@ -15,37 +15,37 @@ type Metrics struct {
 	CPUUsage float64 `json:"cpuUsage"`
 }
 
+type cpuTimes struct {
+	total float64
+	idle  float64
+}
+
 type Collector struct {
 	mu          sync.Mutex
 	clock       func() time.Time
-	cpuSeconds  func() float64
+	cpuTimes    func() cpuTimes
 	rss         func() uint64
 	previousAt  time.Time
-	previousCPU float64
+	previousCPU cpuTimes
 	usage       float64
 }
 
 func New() *Collector {
-	return newCollector(time.Now, runtimeCPUSeconds, residentMemory)
+	return newCollector(time.Now, runtimeCPUTimes, residentMemory)
 }
 
-func newCollector(clock func() time.Time, cpuSeconds func() float64, rss func() uint64) *Collector {
-	return &Collector{clock: clock, cpuSeconds: cpuSeconds, rss: rss}
+func newCollector(clock func() time.Time, cpuTimes func() cpuTimes, rss func() uint64) *Collector {
+	return &Collector{clock: clock, cpuTimes: cpuTimes, rss: rss}
 }
 
 func (collector *Collector) Collect() Metrics {
 	collector.mu.Lock()
 	defer collector.mu.Unlock()
-	now, cpu := collector.clock(), collector.cpuSeconds()
+	now, cpu := collector.clock(), collector.cpuTimes()
 	if !collector.previousAt.IsZero() {
 		elapsed := now.Sub(collector.previousAt).Seconds()
 		if elapsed >= 0.2 {
-			usage := (cpu - collector.previousCPU) / elapsed * 100
-			if usage > 0 {
-				collector.usage = usage
-			} else {
-				collector.usage = 0
-			}
+			collector.usage = cpuUsage(collector.previousCPU, cpu)
 			collector.previousAt, collector.previousCPU = now, cpu
 		}
 	} else {
@@ -54,10 +54,22 @@ func (collector *Collector) Collect() Metrics {
 	return Metrics{RSSBytes: collector.rss(), CPUUsage: collector.usage}
 }
 
-func runtimeCPUSeconds() float64 {
-	samples := []runtimemetrics.Sample{{Name: "/cpu/classes/total:cpu-seconds"}}
+func cpuUsage(previous, current cpuTimes) float64 {
+	total := current.total - previous.total
+	if total <= 0 {
+		return 0
+	}
+	idle := current.idle - previous.idle
+	return min(max((total-idle)/total*100, 0), 100)
+}
+
+func runtimeCPUTimes() cpuTimes {
+	samples := []runtimemetrics.Sample{
+		{Name: "/cpu/classes/total:cpu-seconds"},
+		{Name: "/cpu/classes/idle:cpu-seconds"},
+	}
 	runtimemetrics.Read(samples)
-	return samples[0].Value.Float64()
+	return cpuTimes{total: samples[0].Value.Float64(), idle: samples[1].Value.Float64()}
 }
 
 func residentMemory() uint64 {

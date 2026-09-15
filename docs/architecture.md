@@ -1,11 +1,10 @@
 # Architecture
 
-servediff is a polyglot monorepo with two server implementations and one web
-application. Node remains the reference implementation while Go reaches parity.
+servediff is a polyglot monorepo with a Go server and a React web application.
+Node is a frontend build and test dependency only.
 
 ## Project boundaries
 
-- `apps/server`: existing Node CLI, REST server, persistence, and Git adapters.
 - `apps/web`: React/Vite UI. It consumes the REST contract, never Go packages.
 - `cmd/servediff`: Go composition root and CLI only.
 - `internal`: Go application behavior and private adapters shared by future Go commands.
@@ -19,19 +18,12 @@ services once a second transport establishes the reusable behavior. Transports
 must not call each other. Cross-language sharing happens through OpenAPI and
 serialized fixtures, not source imports.
 
-## Development modes
-
-- `task dev:web`: Vite with the in-memory fixture API.
-- `task dev:node`: existing Node server with the shared patch fixture.
-- `task dev:go`: Go server with the same fixture and a Vite production build.
-- `task dev`: Go fixture API and Vite HMR through a development proxy.
-
 ## Production builds
 
-The Node build remains supported. The Go build generates the API client, builds
-the web application, stages its output below `internal/webui`, then embeds it in
-`dist/servediff-go`. Node and pnpm are build dependencies, not Go binary runtime
-dependencies. Live repository mode still requires the Git executable.
+The build generates the API client, builds the web application, stages its
+output below `internal/webui`, then embeds it in `dist/servediff`. Node and pnpm
+are build dependencies, not binary runtime dependencies. Live repository mode
+still requires the Git executable.
 
 ## Dependency rules
 

@@ -14,49 +14,35 @@ tasks:
     cmds:
       - go run ./tools/stage-web apps/web/dist internal/webui/assets
 
-  build:node:
-    cmds:
-      - pnpm build
-
-  build:go:
+  build:
     cmds:
       - task: generate
       - task: web:stage
       - mkdir -p dist
-      - go build -trimpath -o dist/servediff-go ./cmd/servediff
+      - go build -trimpath -o dist/servediff ./cmd/servediff
 
-  build:
+  install:
     cmds:
-      - task: build:node
-      - go run ./tools/stage-web apps/web/dist internal/webui/assets
-      - mkdir -p dist
-      - go build -trimpath -o dist/servediff-go ./cmd/servediff
+      - task: build
+      - |
+        if [ "$(pnpm list --global --depth 0 --parseable servediff-workspace | wc -l)" -gt 1 ]; then
+          pnpm remove --global servediff-workspace
+        fi
+      - go run ./tools/remove-legacy-install
+      - go install -trimpath ./cmd/servediff
 
   dev:web:
     cmds:
       - pnpm dev:web
 
-  dev:node:
-    cmds:
-      - pnpm dev:server
-
-  dev:go:
+  dev:server:
     deps: [web:build]
     cmds:
       - go run ./cmd/servediff --fixture test/fixtures/sample.diff --state memory --web-dir apps/web/dist
 
-  dev:go-api:
-    cmds:
-      - go run ./cmd/servediff --fixture test/fixtures/sample.diff --state memory --no-auth --no-browser --port 3333
-
-  dev:web-go:
-    env:
-      SERVEDIFF_API_URL: http://127.0.0.1:3333
-    cmds:
-      - pnpm dev:web
-
   dev:
-    deps: [dev:go-api, dev:web-go]
+    cmds:
+      - task: dev:web
 
   test:go:
     cmds:
@@ -64,7 +50,7 @@ tasks:
 
   test:conformance:
     cmds:
-      - task: build:go
+      - task: build
       - pnpm test:conformance
 
   check:go:
