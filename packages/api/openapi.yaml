@@ -5,8 +5,6 @@ info:
   description: Local diff review API.
 servers:
   - url: /
-security:
-  - bearerAuth: []
 paths:
   /api/v1/metrics:
     get:
@@ -301,10 +299,6 @@ paths:
         default:
           $ref: "#/components/responses/Problem"
 components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
   parameters:
     Scope:
       name: scope
@@ -355,6 +349,7 @@ components:
         cpuUsage:
           type: number
           minimum: 0
+          maximum: 100
     DiffMode:
       type: string
       enum: [all, staged, unstaged]

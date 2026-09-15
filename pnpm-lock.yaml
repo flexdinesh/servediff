@@ -84,28 +84,6 @@ importers:
         specifier: 'catalog:'
         version: 7.0.2
 
-  apps/server:
-    dependencies:
-      '@pierre/diffs':
-        specifier: 'catalog:'
-        version: 1.4.1(@shikijs/themes@4.4.3)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@servediff/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
-      vite:
-        specifier: 'catalog:'
-        version: 8.2.2(@types/node@26.4.1)(jiti@2.7.0)
-    devDependencies:
-      '@servediff/api':
-        specifier: workspace:*
-        version: link:../../packages/api
-      '@types/node':
-        specifier: 'catalog:'
-        version: 26.4.1
-      typescript:
-        specifier: 'catalog:'
-        version: 7.0.2
-
   apps/web:
     dependencies:
       '@base-ui/react':

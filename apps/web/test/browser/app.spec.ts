@@ -3,7 +3,7 @@ import { resetFixtureState } from "./fixture-state.ts";
 
 test.beforeEach(async ({ request }) => resetFixtureState(request));
 
-test("shows Node server process metrics in the compact status bar", async ({
+test("shows server process metrics in the compact status bar", async ({
   page,
 }) => {
   await page.route("**/api/v1/metrics", (route) =>

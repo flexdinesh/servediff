@@ -121,7 +121,13 @@ func (store *Store) save() error {
 func (store *Store) Comments(id string) []review.ReviewComment {
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	return append([]review.ReviewComment(nil), store.session(id).Comments...)
+	return cloneComments(store.session(id).Comments)
+}
+
+func cloneComments(comments []review.ReviewComment) []review.ReviewComment {
+	result := make([]review.ReviewComment, len(comments))
+	copy(result, comments)
+	return result
 }
 
 func (store *Store) PutComment(id string, comment review.ReviewComment) error {
@@ -158,7 +164,7 @@ func (store *Store) ImportComments(id string, comments []review.ReviewComment) (
 		}
 	}
 	store.data.Sessions[id] = session
-	return append([]review.ReviewComment(nil), session.Comments...), store.save()
+	return cloneComments(session.Comments), store.save()
 }
 
 func (store *Store) DeleteComments(id string, selected map[string]bool) (int, error) {

@@ -36,3 +36,20 @@ func TestStorePersistsNodeCompatibleData(t *testing.T) {
 		t.Fatalf("state permissions: %o", stat.Mode().Perm())
 	}
 }
+
+func TestEmptyCommentsAreNonNil(t *testing.T) {
+	store, err := Open("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if comments := store.Comments("session"); comments == nil || len(comments) != 0 {
+		t.Fatalf("expected empty non-nil comments, got %#v", comments)
+	}
+	comments, err := store.ImportComments("session", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if comments == nil || len(comments) != 0 {
+		t.Fatalf("expected empty non-nil imported comments, got %#v", comments)
+	}
+}
