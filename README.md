@@ -7,7 +7,8 @@ Review local Git changes in your browser. Built with React, Vite, Tailwind CSS v
 
 ## Setup
 
-Requires **Node 26**, **pnpm 11**, and **Git**. From this checkout:
+Requires **Node 26**, **pnpm 11**, and **Git**. Developing or building the
+parallel Go implementation also requires **Go 1.25**. From this checkout:
 
 ```sh
 pnpm install
@@ -63,6 +64,21 @@ runs the production API handler with an in-memory fixture store preloaded with
 comments and reviewed-file state; the server workspace runs the Node CLI with
 the same diff piped to stdin.
 
+The repository also contains a contract-compatible Go server. It coexists with
+the Node server while parity is verified; the Node implementation remains the
+published `servediff` command.
+
+```sh
+task dev             # Go API with fixture data + Vite HMR
+task dev:go          # standalone Go server with built web UI
+task build:go        # dependency-free dist/servediff-go binary
+task check           # JavaScript, Go, and cross-server conformance
+```
+
+Without [Task](https://taskfile.dev), equivalent `pnpm` and `go` commands are
+listed in `Taskfile.yml`. The built Go binary accepts a repository path, piped
+patch, or `--fixture`; use `--state memory` for isolated development/tests.
+
 Install Chromium once, then test either workspace independently or run every
 check from the root:
 
@@ -74,6 +90,9 @@ pnpm check
 ```
 
 Run `pnpm build` after frontend changes, then restart `servediff`. No global reinstall needed.
+
+See [docs/architecture.md](docs/architecture.md) for workspace boundaries and
+[ADR 0001](docs/adr/0001-polyglot-monorepo.md) for the migration decision.
 
 UI work follows [DESIGN.md](DESIGN.md). Existing semantic tokens in
 `apps/web/src/tokens.css` remain canonical and are mapped into Tailwind/shadcn

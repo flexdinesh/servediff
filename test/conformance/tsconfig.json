@@ -1,0 +1,7 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "paths": { "@servediff/shared": ["../../packages/shared/src/index.ts"] }
+  },
+  "include": ["server.test.ts"]
+}

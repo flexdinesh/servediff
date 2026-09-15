@@ -2,3 +2,5 @@ node_modules/
 dist/
 .agents/ignore/
 test-results/
+internal/webui/assets/*
+!internal/webui/assets/placeholder.txt

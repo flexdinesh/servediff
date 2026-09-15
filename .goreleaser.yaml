@@ -1,0 +1,33 @@
+version: 2
+
+before:
+  hooks:
+    - pnpm install --frozen-lockfile
+    - pnpm generate:api
+    - pnpm --filter @servediff/web build
+    - go run ./tools/stage-web apps/web/dist internal/webui/assets
+
+builds:
+  - id: servediff
+    main: ./cmd/servediff
+    binary: servediff
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"

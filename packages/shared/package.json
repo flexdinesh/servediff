@@ -4,6 +4,9 @@
   "license": "apache-2.0",
   "type": "module",
   "exports": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "@pierre/diffs": "catalog:"
   }
