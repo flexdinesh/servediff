@@ -47,7 +47,8 @@ servediff - < saved.patch
 
 Piped input takes priority over a directory argument. Re-run the command to
 refresh a piped diff. Standard Git patches are limited to 16 MiB total and 2 MiB
-per file. For merge commits, use `git show --diff-merges=separate`.
+per file. Combined merge diffs are shown against the first parent. Use
+`git show --diff-merges=separate` to review the result against every parent.
 
 ## API and data
 

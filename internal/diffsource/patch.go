@@ -21,8 +21,9 @@ var (
 	ansiPattern    = regexp.MustCompile(`\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))`)
 	commitBoundary = regexp.MustCompile(`(?m)^(?:commit [a-f\d]{40,64}(?: .*)?|From [a-f\d]{40,64} .*)$`)
 	commitID       = regexp.MustCompile(`(?m)^(?:commit|From) ([a-f\d]{40,64})`)
-	fileBoundary   = regexp.MustCompile(`(?m)^diff --git `)
+	fileBoundary   = regexp.MustCompile(`(?m)^diff --(?:git|cc|combined) `)
 	hunkHeader     = regexp.MustCompile(`^@@ -([0-9]+)(?:,([0-9]+))? \+([0-9]+)(?:,([0-9]+))? @@`)
+	combinedRange  = regexp.MustCompile(`^[-+][0-9]+(?:,[0-9]+)?$`)
 )
 
 type patchSource struct {
@@ -36,9 +37,6 @@ func OpenPatch(input string) (Source, error) {
 		return nil, Error(400, "Piped diff exceeds the 16 MiB input limit")
 	}
 	data := ansiPattern.ReplaceAllString(input, "")
-	if strings.Contains(data, "diff --cc ") || strings.Contains(data, "diff --combined ") {
-		return nil, Error(400, "Combined merge diffs are not supported. Use git show --diff-merges=separate | servediff instead.")
-	}
 	revision := digest(data)
 	root := "stdin:" + revision
 	sections := splitAt(data, commitBoundary)
@@ -59,17 +57,26 @@ func OpenPatch(input string) (Source, error) {
 			}
 			prefix = strconv.Itoa(section+1) + " · " + name + "/"
 		}
-		for _, patch := range splitAt(commit, fileBoundary) {
-			if !strings.HasPrefix(patch, "diff --git ") {
+		for _, originalPatch := range splitAt(commit, fileBoundary) {
+			if !strings.HasPrefix(originalPatch, "diff --git ") && !isCombinedPatch(originalPatch) {
 				continue
 			}
-			if len(patch) > MaxFileBytes {
+			if len(originalPatch) > MaxFileBytes {
 				return nil, Error(400, "A file in the piped diff exceeds the 2 MiB preview limit")
+			}
+			patch := originalPatch
+			if isCombinedPatch(patch) {
+				var err error
+				patch, err = normalizeCombinedPatch(patch)
+				if err != nil {
+					return nil, err
+				}
 			}
 			file, err := parsePatchFile(patch, prefix)
 			if err != nil {
 				return nil, err
 			}
+			file.Fingerprint = digest(originalPatch)
 			if _, exists := previews[file.Path]; exists {
 				return nil, Error(400, "Repeated file in patch: %s. Pipe standard git show or git diff output.", file.Path)
 			}
@@ -94,6 +101,148 @@ func OpenPatch(input string) (Source, error) {
 		},
 		previews: previews,
 	}, nil
+}
+
+func isCombinedPatch(patch string) bool {
+	return strings.HasPrefix(patch, "diff --cc ") || strings.HasPrefix(patch, "diff --combined ")
+}
+
+// Combined diffs have one marker column per parent. The review model is
+// two-sided, so convert the patch to the merge result against its first parent.
+func normalizeCombinedPatch(patch string) (string, error) {
+	lines := strings.Split(patch, "\n")
+	if len(lines) == 0 {
+		return "", Error(400, "Could not parse a combined merge diff")
+	}
+	path := strings.TrimPrefix(lines[0], "diff --cc ")
+	if path == lines[0] {
+		path = strings.TrimPrefix(lines[0], "diff --combined ")
+	}
+	diffHeader, err := combinedDiffHeader(path)
+	if err != nil {
+		return "", err
+	}
+	result := []string{diffHeader}
+	parents := 0
+	for _, line := range lines[1:] {
+		if strings.HasPrefix(line, "@@@") {
+			header, count, headerError := normalizeCombinedHunkHeader(line)
+			if headerError != nil {
+				return "", headerError
+			}
+			parents = count
+			result = append(result, header)
+			continue
+		}
+		if parents == 0 {
+			result = append(result, normalizeCombinedMetadata(line)...)
+			continue
+		}
+		if line == "" || strings.HasPrefix(line, "\\ No newline") {
+			result = append(result, line)
+			continue
+		}
+		if len(line) < parents {
+			return "", Error(400, "Could not parse a combined merge diff")
+		}
+		markers, content := line[:parents], line[parents:]
+		hasAddition, hasDeletion := false, false
+		for _, marker := range []byte(markers) {
+			switch marker {
+			case '+':
+				hasAddition = true
+			case '-':
+				hasDeletion = true
+			case ' ':
+			default:
+				return "", Error(400, "Could not parse a combined merge diff")
+			}
+		}
+		if hasAddition && hasDeletion {
+			return "", Error(400, "Could not parse a combined merge diff")
+		}
+		switch {
+		case hasDeletion && markers[0] == '-':
+			result = append(result, "-"+content)
+		case hasDeletion:
+			// The line exists only in another parent.
+		case hasAddition && markers[0] == '+':
+			result = append(result, "+"+content)
+		default:
+			result = append(result, " "+content)
+		}
+	}
+	normalized := strings.Join(result, "\n")
+	if !validPatchHunks(normalized) {
+		return "", Error(400, "Could not parse a combined merge diff")
+	}
+	return normalized, nil
+}
+
+func combinedDiffHeader(value string) (string, error) {
+	if value == "" {
+		return "", Error(400, "Could not parse a combined merge diff")
+	}
+	if !strings.HasPrefix(value, `"`) {
+		return "diff --git a/" + value + " b/" + value, nil
+	}
+	path, err := strconv.Unquote(value)
+	if err != nil {
+		return "", Error(400, "Could not parse a combined merge diff")
+	}
+	return "diff --git " + strconv.Quote("a/"+path) + " " + strconv.Quote("b/"+path), nil
+}
+
+func normalizeCombinedHunkHeader(line string) (string, int, error) {
+	markerLength := 0
+	for markerLength < len(line) && line[markerLength] == '@' {
+		markerLength++
+	}
+	if markerLength < 3 || markerLength >= len(line) || line[markerLength] != ' ' {
+		return "", 0, Error(400, "Could not parse a combined merge diff")
+	}
+	marker := line[:markerLength]
+	end := strings.LastIndex(line, " "+marker)
+	if end <= markerLength {
+		return "", 0, Error(400, "Could not parse a combined merge diff")
+	}
+	ranges := strings.Fields(line[markerLength+1 : end])
+	if len(ranges) != markerLength || !strings.HasPrefix(ranges[len(ranges)-1], "+") {
+		return "", 0, Error(400, "Could not parse a combined merge diff")
+	}
+	for index, value := range ranges {
+		if !combinedRange.MatchString(value) || (index < len(ranges)-1 && !strings.HasPrefix(value, "-")) {
+			return "", 0, Error(400, "Could not parse a combined merge diff")
+		}
+	}
+	suffix := line[end+len(marker)+1:]
+	return "@@ " + ranges[0] + " " + ranges[len(ranges)-1] + " @@" + suffix, markerLength - 1, nil
+}
+
+func normalizeCombinedMetadata(line string) []string {
+	if strings.HasPrefix(line, "index ") {
+		value := strings.TrimPrefix(line, "index ")
+		separator := strings.Index(value, "..")
+		if separator > 0 {
+			parents, result := value[:separator], value[separator+2:]
+			if comma := strings.IndexByte(parents, ','); comma >= 0 {
+				return []string{"index " + parents[:comma] + ".." + result}
+			}
+		}
+	}
+	if strings.HasPrefix(line, "mode ") {
+		value := strings.TrimPrefix(line, "mode ")
+		separator := strings.Index(value, "..")
+		if separator > 0 {
+			parents, result := value[:separator], value[separator+2:]
+			first := strings.SplitN(parents, ",", 2)[0]
+			if first == result {
+				return nil
+			}
+			return []string{"old mode " + first, "new mode " + result}
+		}
+	}
+	return []string{line}
 }
 
 func splitAt(value string, pattern *regexp.Regexp) []string {
