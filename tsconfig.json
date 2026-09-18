@@ -20,6 +20,7 @@
     "apps/**/*.tsx",
     "packages/**/*.ts",
     "test/**/*.ts",
+    "tools/**/*.ts",
     "playwright.config.ts"
   ]
 }

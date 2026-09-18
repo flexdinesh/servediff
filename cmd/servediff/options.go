@@ -21,6 +21,7 @@ type options struct {
 	state         string
 	webDir        string
 	noBrowser     bool
+	version       bool
 }
 
 func parseOptions(arguments []string, stderr io.Writer) (options, error) {
@@ -34,6 +35,7 @@ func parseOptions(arguments []string, stderr io.Writer) (options, error) {
 	flags.StringVar(&values.state, "state", "", "review state path; memory disables persistence")
 	flags.StringVar(&values.webDir, "web-dir", "", "serve web assets from a directory")
 	flags.BoolVar(&values.noBrowser, "no-browser", false, "do not open a browser")
+	flags.BoolVar(&values.version, "version", false, "print version and exit")
 	flags.Usage = func() {
 		fmt.Fprintln(stderr, "  Usage: servediff [directory | -] [options]")
 		flags.PrintDefaults()

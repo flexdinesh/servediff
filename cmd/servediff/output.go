@@ -6,9 +6,9 @@ import (
 	"os"
 	"strings"
 	"time"
-)
 
-var version = "dev"
+	buildversion "github.com/flexdinesh/servediff/internal/version"
+)
 
 type colors struct {
 	bold    string
@@ -46,7 +46,7 @@ func (color colors) paint(style, value string) string {
 }
 
 func displayVersion() string {
-	return version
+	return buildversion.Number()
 }
 
 func writeStartup(writer io.Writer, input loadedInput, url string) {

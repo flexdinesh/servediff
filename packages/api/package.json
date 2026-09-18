@@ -1,7 +1,7 @@
 {
   "name": "@servediff/api",
   "private": true,
-  "license": "apache-2.0",
+  "license": "MIT",
   "type": "module",
   "exports": "./src/client.ts",
   "scripts": {

@@ -15,6 +15,7 @@ import (
 	"github.com/flexdinesh/servediff/internal/browser"
 	"github.com/flexdinesh/servediff/internal/httpapi"
 	"github.com/flexdinesh/servediff/internal/reviewstore"
+	buildversion "github.com/flexdinesh/servediff/internal/version"
 	"github.com/flexdinesh/servediff/internal/webui"
 )
 
@@ -25,6 +26,10 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 			return nil
 		}
 		return err
+	}
+	if values.version {
+		fmt.Fprintln(stdout, buildversion.String())
+		return nil
 	}
 	input, err := loadInput(ctx, values, stdin)
 	if err != nil {
