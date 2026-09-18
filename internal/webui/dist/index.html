@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      (() => {
+        let theme = "light";
+        try {
+          const preference = localStorage.getItem("theme-v2");
+          const systemDark = matchMedia("(prefers-color-scheme: dark)").matches;
+          theme =
+            preference === "light" || preference === "dark"
+              ? preference
+              : systemDark
+                ? "dark"
+                : "light";
+        } catch {}
+        document.documentElement.dataset.theme = theme;
+      })();
+    </script>
+    <title>servediff · Local diff</title>
+    <link rel="icon" type="image/png" href="/logo.png" />
+    <script type="module" crossorigin src="/assets/index-DQFj0Dro.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-BaXGmH57.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

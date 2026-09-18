@@ -46,6 +46,16 @@ func TestOptionsDefaultToLocalhostAndAutomaticPort(t *testing.T) {
 	}
 }
 
+func TestVersionExitsWithoutLoadingInput(t *testing.T) {
+	var stdout bytes.Buffer
+	if err := run(t.Context(), []string{"--version"}, nil, &stdout, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := stdout.String(), "servediff dev\n"; got != want {
+		t.Fatalf("version output = %q, want %q", got, want)
+	}
+}
+
 func TestListenRangeAdvancesPastBusyPort(t *testing.T) {
 	var output bytes.Buffer
 	listener, err := listenRangeWith("127.0.0.1", 7981, 7982, &output, func(_ string, address string) (net.Listener, error) {

@@ -5,11 +5,11 @@ import (
 	"io/fs"
 )
 
-//go:embed all:assets
+//go:embed all:dist
 var embedded embed.FS
 
 func Assets() fs.FS {
-	assets, err := fs.Sub(embedded, "assets")
+	assets, err := fs.Sub(embedded, "dist")
 	if err != nil {
 		panic(err)
 	}

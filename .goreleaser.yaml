@@ -5,7 +5,7 @@ before:
     - pnpm install --frozen-lockfile
     - pnpm generate:api
     - pnpm --filter @servediff/web build
-    - go run ./tools/stage-web apps/web/dist internal/webui/assets
+    - go run ./tools/stage-web apps/web/dist internal/webui/dist
 
 builds:
   - id: servediff
@@ -14,15 +14,24 @@ builds:
     env:
       - CGO_ENABLED=0
     ldflags:
-      - -s -w -X main.version={{.Version}}
+      - >-
+        -s -w
+        -X github.com/flexdinesh/servediff/internal/version.Version={{.Version}}
+        -X github.com/flexdinesh/servediff/internal/version.Commit={{.Commit}}
+        -X github.com/flexdinesh/servediff/internal/version.Date={{.Date}}
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
 
 archives:
-  - formats: [tar.gz]
+  - name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    formats: [tar.gz]
     format_overrides:
       - goos: windows
         formats: [zip]
+    files:
+      - README.md
+      - LICENSE
 
 checksum:
   name_template: checksums.txt

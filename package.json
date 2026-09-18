@@ -1,7 +1,7 @@
 {
   "name": "servediff-workspace",
   "private": true,
-  "license": "apache-2.0",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "build": "pnpm generate:api && pnpm --filter @servediff/web build",
@@ -11,12 +11,14 @@
     "test": "pnpm --recursive --if-present test",
     "test:web": "pnpm --filter @servediff/web test",
     "test:go": "go test ./...",
+    "test:release": "node --test test/release/*.test.ts",
     "test:conformance": "node --test test/conformance/*.test.ts",
     "test:browser:install": "pnpm --filter @servediff/web test:browser:install",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
     "lint": "oxlint .",
-    "check:js": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm build && pnpm test",
+    "generate:homebrew": "node tools/generate-homebrew-formula.ts",
+    "check:js": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm build && pnpm test && pnpm test:release",
     "check": "pnpm check:js && pnpm test:go"
   },
   "devDependencies": {

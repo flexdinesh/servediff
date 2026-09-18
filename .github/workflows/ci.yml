@@ -58,6 +58,7 @@ jobs:
           cache: true
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: go run ./tools/stage-web apps/web/dist internal/webui/assets
+      - run: go run ./tools/stage-web apps/web/dist internal/webui/dist
+      - run: test -z "$(git status --porcelain --untracked-files=all -- internal/webui/dist)"
       - run: mkdir -p dist && go build -trimpath -o dist/servediff ./cmd/servediff
       - run: pnpm test:conformance

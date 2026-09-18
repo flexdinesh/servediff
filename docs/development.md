@@ -41,6 +41,10 @@ pnpm install
 `PATH`. The task also removes obsolete pnpm-global Node shims created by older
 versions of the repository.
 
+The production web build is committed under `internal/webui/dist` so tagged
+Go installs contain the complete application. Run `task web:stage` and commit
+asset changes after modifying the frontend.
+
 ## Development data
 
 Development uses `test/fixtures/sample.diff` with in-memory review state. The

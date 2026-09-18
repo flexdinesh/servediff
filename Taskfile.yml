@@ -12,7 +12,7 @@ tasks:
   web:stage:
     deps: [web:build]
     cmds:
-      - go run ./tools/stage-web apps/web/dist internal/webui/assets
+      - go run ./tools/stage-web apps/web/dist internal/webui/dist
 
   build:
     cmds:

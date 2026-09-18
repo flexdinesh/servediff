@@ -3,6 +3,20 @@
 Review local Git changes in your browser without modifying your working tree or
 index.
 
+## Install
+
+With Homebrew:
+
+```sh
+brew install flexdinesh/tap/servediff
+```
+
+With Go 1.25 or later:
+
+```sh
+go install github.com/flexdinesh/servediff/cmd/servediff@latest
+```
+
 ## Usage
 
 Run from a Git repository:
@@ -17,6 +31,7 @@ You can also serve another repository or choose the address:
 servediff /path/to/repo
 servediff . --port 4000
 servediff . --host 0.0.0.0
+servediff --version
 ```
 
 By default, servediff binds to `127.0.0.1`, opens a browser, and uses the first
@@ -62,4 +77,5 @@ Review data is stored under `$XDG_STATE_HOME/servediff/reviews`, or
 `~/.local/state/servediff/reviews` when `XDG_STATE_HOME` is unset.
 
 For source setup, development commands, and architecture, see
-[docs/development.md](docs/development.md).
+[docs/development.md](docs/development.md). Maintainers can find publishing
+instructions in [docs/release.md](docs/release.md).

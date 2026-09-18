@@ -1,6 +1,6 @@
 node_modules/
 dist/
+!internal/webui/dist/
+!internal/webui/dist/**
 .agents/ignore/
 test-results/
-internal/webui/assets/*
-!internal/webui/assets/placeholder.txt

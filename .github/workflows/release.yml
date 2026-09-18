@@ -1,0 +1,194 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm --filter @servediff/web exec playwright install --with-deps chromium
+
+      - name: Select release version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git fetch --tags --force
+          release_version="$(go run ./tools/release-version)"
+          tag_exists=false
+          if tag_commit="$(git rev-list -n 1 "$release_version" 2>/dev/null)"; then
+            head_commit="$(git rev-parse HEAD)"
+            if [[ "$tag_commit" != "$head_commit" ]]; then
+              echo "$release_version points to $tag_commit, not current main $head_commit" >&2
+              exit 1
+            fi
+            tag_exists=true
+          fi
+
+          release_exists=false
+          if gh release view "$release_version" >/dev/null 2>&1; then
+            release_exists=true
+          fi
+
+          echo "tag=$release_version" >> "$GITHUB_OUTPUT"
+          echo "number=${release_version#v}" >> "$GITHUB_OUTPUT"
+          echo "tag_exists=$tag_exists" >> "$GITHUB_OUTPUT"
+          echo "release_exists=$release_exists" >> "$GITHUB_OUTPUT"
+
+      - name: Check JavaScript
+        run: pnpm check:js
+
+      - name: Check Go
+        run: |
+          test -z "$(gofmt -l cmd internal packages/api tools)"
+          go vet ./...
+          go test ./...
+
+      - name: Verify embedded web assets
+        run: |
+          go run ./tools/stage-web apps/web/dist internal/webui/dist
+          test -z "$(git status --porcelain --untracked-files=all -- internal/webui/dist)"
+
+      - name: Test distribution
+        run: |
+          mkdir -p dist
+          go build -trimpath -o dist/servediff ./cmd/servediff
+          pnpm test:conformance
+
+      - name: Create release tag
+        if: steps.version.outputs.tag_exists != 'true'
+        run: |
+          git tag "${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
+
+      - name: Publish GitHub release
+        if: steps.version.outputs.release_exists != 'true'
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Download existing release
+        if: steps.version.outputs.release_exists == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          rm -rf dist
+          mkdir -p dist
+          gh release download "${{ steps.version.outputs.tag }}" --dir dist
+
+      - name: Check out Homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: flexdinesh/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+          fetch-depth: 0
+
+      - name: Generate Homebrew formula
+        run: |
+          pnpm generate:homebrew -- \
+            --version "${{ steps.version.outputs.number }}" \
+            --tag "${{ steps.version.outputs.tag }}" \
+            --checksums dist/checksums.txt \
+            --output homebrew-tap/Formula/servediff.rb
+
+      - name: Validate Homebrew formula syntax
+        run: ruby -c homebrew-tap/Formula/servediff.rb
+
+      - name: Open Homebrew tap pull request
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="${{ steps.version.outputs.number }}"
+          tag="${{ steps.version.outputs.tag }}"
+          branch="servediff-v${version}"
+          tap_repo="flexdinesh/homebrew-tap"
+
+          cd homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch"
+
+          if [[ -z "$(git status --porcelain -- Formula/servediff.rb)" ]]; then
+            echo "Homebrew formula is already current for servediff v${version}."
+            exit 0
+          fi
+
+          git add Formula/servediff.rb
+          git commit -m "Update servediff to v${version}"
+          git push --force-with-lease origin "HEAD:${branch}"
+
+          pr_number="$(gh pr list \
+            --repo "$tap_repo" \
+            --head "$branch" \
+            --state open \
+            --json number \
+            --jq '.[0].number // ""')"
+
+          pr_body="$(mktemp)"
+          cat > "$pr_body" <<EOF
+          Updates the servediff formula to v${version}.
+
+          Source release: https://github.com/flexdinesh/servediff/releases/tag/${tag}
+
+          Generated by the servediff release workflow.
+          EOF
+
+          if [[ -n "$pr_number" ]]; then
+            gh pr edit "$pr_number" \
+              --repo "$tap_repo" \
+              --title "Update servediff to v${version}" \
+              --body-file "$pr_body"
+          else
+            gh pr create \
+              --repo "$tap_repo" \
+              --head "$branch" \
+              --base main \
+              --title "Update servediff to v${version}" \
+              --body-file "$pr_body"
+          fi
