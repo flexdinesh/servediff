@@ -24,6 +24,7 @@ export function useReview(
   repository: RepositoryDiff | null,
   draft: ReviewComment | null,
   setDraft: Dispatch<SetStateAction<ReviewComment | null>>,
+  enabled: boolean,
 ) {
   const root = repository?.root ?? "";
   const [stored, setStored] = useState<{
@@ -32,14 +33,14 @@ export function useReview(
   }>({ key: "", comments: [] });
   const key = root ? `servediff:comments:${root}` : stored.key;
   const previousRoot = useRef("");
-  const comments = stored.key === key ? stored.comments : [];
+  const comments = enabled && stored.key === key ? stored.comments : [];
   const rounds = reviewRounds(comments, repository);
   const currentComments = rounds.find((round) => round.current)?.comments ?? [];
   const [feedback, setFeedback] = useState("");
   const [copyText, setCopyText] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!root) return;
+    if (!enabled || !root) return;
     if (previousRoot.current && previousRoot.current !== root) setDraft(null);
     previousRoot.current = root;
     let disposed = false;
@@ -79,7 +80,7 @@ export function useReview(
       controller.abort();
       clearInterval(timer);
     };
-  }, [key, root, setDraft]);
+  }, [enabled, key, root, setDraft]);
 
   function replace(comment: ReviewComment) {
     setStored((current) => ({
@@ -97,6 +98,7 @@ export function useReview(
     diff: FileDiffMetadata,
     range: SelectedLineRange,
   ) {
+    if (!enabled) return;
     if (draft) {
       setFeedback("Finish or cancel your current draft first.");
       return;

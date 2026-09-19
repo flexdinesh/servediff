@@ -18,10 +18,12 @@ import {
   readDiffTheme,
   readLineDiffType,
 } from "./display-options.ts";
+import { capabilityEnabled } from "./session-context.tsx";
 
 export function DiffToolbar() {
   const {
-    source: { mode, piped, changeMode },
+    source: { mode, changeMode },
+    capabilities,
     display: {
       layout,
       setLayout,
@@ -36,6 +38,7 @@ export function DiffToolbar() {
     },
     navigation: { files },
   } = useAppState();
+  const scopes = capabilities.diff.scopes;
   const allCollapsed =
     files.length > 0 && files.every((file) => collapsed.has(file.path));
   return (
@@ -44,7 +47,7 @@ export function DiffToolbar() {
         id="diff-scope"
         className="segmented modes"
         aria-label="Diff scope"
-        hidden={piped}
+        hidden={!capabilityEnabled(scopes) || scopes.values.length < 2}
         spacing={0}
         variant="default"
         size="sm"
@@ -54,7 +57,7 @@ export function DiffToolbar() {
           if (value && isDiffMode(value)) changeMode(value);
         }}
       >
-        {["all", "staged", "unstaged"].map((value) => (
+        {scopes.values.map((value) => (
           <ToggleGroupItem key={value} value={value} data-mode={value}>
             {value === "all"
               ? "All changes"

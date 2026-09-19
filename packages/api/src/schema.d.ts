@@ -190,6 +190,15 @@ export interface components {
     };
     /** @enum {string} */
     DiffMode: "all" | "staged" | "unstaged";
+    /** @enum {string} */
+    CapabilityState: "enabled" | "disabled" | "unavailable";
+    Capability: {
+      state: components["schemas"]["CapabilityState"];
+    };
+    ScopesCapability: {
+      state: components["schemas"]["CapabilityState"];
+      values: components["schemas"]["DiffMode"][];
+    };
     Session: {
       id: string;
       /** @enum {string} */
@@ -197,9 +206,17 @@ export interface components {
       name: string;
       root: string;
       capabilities: {
-        scopes: components["schemas"]["DiffMode"][];
-        live: boolean;
-        fullFileContents: boolean;
+        diff: {
+          scopes: components["schemas"]["ScopesCapability"];
+          refresh: components["schemas"]["Capability"];
+          stagingMetadata: components["schemas"]["Capability"];
+        };
+        files: {
+          contents: components["schemas"]["Capability"];
+        };
+        review: {
+          comments: components["schemas"]["Capability"];
+        };
       };
     };
     ChangedFile: {
@@ -289,6 +306,8 @@ export interface components {
       title: string;
       status: number;
       detail: string;
+      code?: string;
+      capability?: string;
     };
   };
   responses: {

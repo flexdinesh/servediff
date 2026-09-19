@@ -15,6 +15,7 @@ import (
 	"github.com/flexdinesh/servediff/internal/browser"
 	"github.com/flexdinesh/servediff/internal/httpapi"
 	"github.com/flexdinesh/servediff/internal/reviewstore"
+	"github.com/flexdinesh/servediff/internal/session"
 	buildversion "github.com/flexdinesh/servediff/internal/version"
 	"github.com/flexdinesh/servediff/internal/webui"
 )
@@ -35,6 +36,7 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 	if err != nil {
 		return err
 	}
+	active := session.Resolve(input.source, session.Policies{})
 	if os.Getenv("SERVEDIFF_EXIT_ON_STDIN_CLOSE") == "1" {
 		childContext, cancel := context.WithCancel(ctx)
 		defer cancel()
@@ -54,7 +56,7 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 	}
 	statePath := values.state
 	if statePath == "" {
-		statePath, err = reviewstore.DefaultPath(httpapi.SessionID(input.source))
+		statePath, err = reviewstore.DefaultPath(active.ID)
 		if err != nil {
 			return err
 		}
@@ -63,7 +65,7 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 	if err != nil {
 		return err
 	}
-	handler := identifyProcess(httpapi.New(input.source, store, assets))
+	handler := identifyProcess(httpapi.New(active, store, assets))
 	bound, err := bind(values, stdin, stdout)
 	if err != nil {
 		if errors.Is(err, errStartupCancelled) {

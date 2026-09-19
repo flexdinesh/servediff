@@ -10,11 +10,17 @@ import (
 type Source interface {
 	Root() string
 	Kind() string
-	Scopes() []review.DiffMode
-	Live() bool
+	Support() Support
 	Snapshot(context.Context, review.DiffMode) (review.RepositoryDiff, error)
 	Patch(context.Context, review.DiffMode, review.ChangedFile, *string) (review.FilePatch, error)
 	Contents(context.Context, review.DiffMode, review.ChangedFile, *string) (review.FileContents, error)
+}
+
+type Support struct {
+	Scopes          []review.DiffMode
+	Refresh         bool
+	StagingMetadata bool
+	FileContents    bool
 }
 
 type RequestError struct {

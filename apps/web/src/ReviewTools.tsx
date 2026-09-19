@@ -10,13 +10,16 @@ import {
 import { useAppState } from "./app-state.tsx";
 import { save, saved } from "./preferences.ts";
 import { commentApplicability } from "./review-model.ts";
+import { capabilityEnabled } from "./session-context.tsx";
 
 export function ReviewTools() {
   const {
     source: { repository },
+    capabilities,
     review,
     reviewed: { isReviewed, resetReviewed },
   } = useAppState();
+  const commentsEnabled = capabilityEnabled(capabilities.review.comments);
   const [toolsCollapsed, setToolsCollapsed] = useState(
     () => saved("review-tools-collapsed") === "true",
   );
@@ -49,9 +52,10 @@ export function ReviewTools() {
         </svg>
       </Button>
       <div id="review-tools-content" hidden={toolsCollapsed}>
-        {(!!review.comments.length || !!review.feedback) && (
+        {((commentsEnabled && !!review.comments.length) ||
+          !!review.feedback) && (
           <div className="copy-comments-bar">
-            {!!review.comments.length && (
+            {commentsEnabled && !!review.comments.length && (
               <div className="copy-comments-actions">
                 <Button
                   type="button"

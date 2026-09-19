@@ -8,10 +8,12 @@ import { CommentsPanel } from "./CommentsPanel.tsx";
 import { FileNavigation } from "./file-navigation.tsx";
 import { ancestorPaths } from "./file-tree.ts";
 import { ReviewTools } from "./ReviewTools.tsx";
+import { capabilityEnabled } from "./session-context.tsx";
 
 export function FileExplorerNav() {
   const {
-    source: { repository, piped, diff },
+    source: { repository, diff },
+    capabilities,
     navigation: {
       tab,
       setTab,
@@ -30,6 +32,11 @@ export function FileExplorerNav() {
     review,
     reviewed: { isReviewed },
   } = useAppState();
+  const commentsEnabled = capabilityEnabled(capabilities.review.comments);
+  const refreshEnabled = capabilityEnabled(capabilities.diff.refresh);
+  const stagingMetadataEnabled = capabilityEnabled(
+    capabilities.diff.stagingMetadata,
+  );
   const allFiles = repository?.files ?? [];
   const folderPaths = useMemo(
     () => [...new Set(files.flatMap((file) => ancestorPaths(file.path)))],
@@ -51,9 +58,9 @@ export function FileExplorerNav() {
     ? diff.busy && !repository
       ? "Connecting…"
       : "Disconnected"
-    : piped
-      ? "Fixed snapshot"
-      : "Watching changes";
+    : refreshEnabled
+      ? "Watching changes"
+      : "Fixed snapshot";
   return (
     <aside
       id="sidebar"
@@ -65,7 +72,8 @@ export function FileExplorerNav() {
       <Tabs
         value={tab}
         onValueChange={(value) => {
-          if (value === "files" || value === "comments") setTab(value);
+          if (value === "files" || (value === "comments" && commentsEnabled))
+            setTab(value);
         }}
         className="contents"
       >
@@ -81,12 +89,14 @@ export function FileExplorerNav() {
                 {allFiles.length}
               </span>
             </TabsTrigger>
-            <TabsTrigger id="comments-tab" value="comments">
-              <span className="sidebar-tab-label">Review</span>
-              <span id="comment-count" className="count">
-                {review.comments.length}
-              </span>
-            </TabsTrigger>
+            {commentsEnabled && (
+              <TabsTrigger id="comments-tab" value="comments">
+                <span className="sidebar-tab-label">Review</span>
+                <span id="comment-count" className="count">
+                  {review.comments.length}
+                </span>
+              </TabsTrigger>
+            )}
           </TabsList>
           <Button
             type="button"
@@ -152,6 +162,7 @@ export function FileExplorerNav() {
             filtering={!!filter}
             isReviewed={isReviewed}
             commentCounts={commentCounts}
+            stagingMetadata={stagingMetadataEnabled}
             onToggle={(path) =>
               (filter ? setFilteredClosed : setClosed)((previous) =>
                 togglePath(previous, path),
@@ -163,7 +174,7 @@ export function FileExplorerNav() {
             id="git-legend"
             className="git-legend"
             title="Git staging indicators"
-            hidden={piped}
+            hidden={!stagingMetadataEnabled}
           >
             <span>
               <i className="staging-dot staged" aria-hidden="true" />
@@ -180,7 +191,7 @@ export function FileExplorerNav() {
             <span title="Untracked file">U Untracked</span>
           </div>
         </TabsContent>
-        <CommentsPanel />
+        {commentsEnabled && <CommentsPanel />}
       </Tabs>
       <ReviewTools />
       <div className="sidebar-footer">
