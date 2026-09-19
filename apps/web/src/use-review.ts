@@ -8,6 +8,7 @@ import type {
 import {
   type Dispatch,
   type SetStateAction,
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -19,6 +20,31 @@ import {
   parseComments,
   reviewRounds,
 } from "./review-model.ts";
+
+interface CopyPayload {
+  label: string;
+  text: string;
+  title: string;
+}
+
+interface CopyContent extends CopyPayload {
+  clipboard: "copied" | "manual";
+}
+
+interface CopyOptions {
+  fileOnly?: boolean;
+  showDialogOnSuccess?: boolean;
+  label?: string;
+  title?: string;
+}
+
+function fileBlock(content: string) {
+  const start = content.indexOf("<file ");
+  const close = "</file>";
+  const end = content.indexOf(close, start);
+  if (start < 0 || end < 0) return "";
+  return content.slice(start, end + close.length).replace(/^ {4}/gm, "");
+}
 
 export function useReview(
   repository: RepositoryDiff | null,
@@ -37,7 +63,7 @@ export function useReview(
   const rounds = reviewRounds(comments, repository);
   const currentComments = rounds.find((round) => round.current)?.comments ?? [];
   const [feedback, setFeedback] = useState("");
-  const [copyText, setCopyText] = useState<string | null>(null);
+  const [copyContent, setCopyContent] = useState<CopyContent | null>(null);
 
   useEffect(() => {
     if (!enabled || !root) return;
@@ -92,6 +118,20 @@ export function useReview(
         : [...current.comments, comment],
     }));
   }
+
+  const markResolved = useCallback(
+    (commentId: string) => {
+      setStored((current) => ({
+        key,
+        comments: current.comments.map((comment) =>
+          comment.id === commentId
+            ? { ...comment, status: "resolved" }
+            : comment,
+        ),
+      }));
+    },
+    [key],
+  );
 
   function begin(
     file: ChangedFile,
@@ -250,7 +290,26 @@ export function useReview(
     }
   }
 
-  async function copy(includeResolved: boolean, commentId?: string) {
+  async function writeClipboard(
+    content: CopyPayload,
+    successMessage: string,
+    showDialogOnSuccess = false,
+  ) {
+    try {
+      await navigator.clipboard.writeText(content.text);
+      setFeedback(successMessage);
+      if (showDialogOnSuccess)
+        setCopyContent({ ...content, clipboard: "copied" });
+    } catch {
+      setCopyContent({ ...content, clipboard: "manual" });
+    }
+  }
+
+  async function copy(
+    includeResolved: boolean,
+    commentId?: string,
+    options: CopyOptions = {},
+  ) {
     try {
       const { data, error } = await api.GET("/api/v1/comments/export", {
         params: {
@@ -266,16 +325,22 @@ export function useReview(
         return;
       }
       if (!data) return;
-      try {
-        await navigator.clipboard.writeText(data);
-        setFeedback(
-          commentId
-            ? "Copied comment as XML."
-            : `Copied ${includeResolved ? "all" : "unresolved"} comments as XML.`,
-        );
-      } catch {
-        setCopyText(data);
+      const text = options.fileOnly ? fileBlock(data) : data;
+      if (!text) {
+        setFeedback("Unable to export comment");
+        return;
       }
+      await writeClipboard(
+        {
+          label: options.label ?? "Comments XML",
+          text,
+          title: options.title ?? "Copy review comments",
+        },
+        commentId
+          ? "Copied comment as XML."
+          : `Copied ${includeResolved ? "all" : "unresolved"} comments as XML.`,
+        options.showDialogOnSuccess,
+      );
     } catch (error) {
       setFeedback(errorDetail(error, "Unable to export comments"));
     }
@@ -292,11 +357,28 @@ export function useReview(
     cancel,
     edit,
     toggle,
+    markResolved,
     remove,
     removeComments,
     copy: (includeResolved: boolean) => copy(includeResolved),
     copyComment: (comment: ReviewComment) => copy(true, comment.id),
-    copyText,
-    closeCopy: () => setCopyText(null),
+    copySidebarComment: (comment: ReviewComment) =>
+      copy(true, comment.id, {
+        fileOnly: true,
+        showDialogOnSuccess: true,
+        label: "Comment XML",
+        title: "Copy review comment",
+      }),
+    copyWebMCPInstruction: (instruction: string) =>
+      writeClipboard(
+        {
+          label: "WebMCP instruction",
+          text: instruction,
+          title: "Copy WebMCP instruction",
+        },
+        "Copied WebMCP instruction.",
+      ),
+    copyContent,
+    closeCopy: () => setCopyContent(null),
   };
 }

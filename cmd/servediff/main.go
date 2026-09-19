@@ -14,6 +14,8 @@ import (
 
 	"github.com/flexdinesh/servediff/internal/browser"
 	"github.com/flexdinesh/servediff/internal/httpapi"
+	"github.com/flexdinesh/servediff/internal/mcpapi"
+	"github.com/flexdinesh/servediff/internal/reviewservice"
 	"github.com/flexdinesh/servediff/internal/reviewstore"
 	"github.com/flexdinesh/servediff/internal/session"
 	buildversion "github.com/flexdinesh/servediff/internal/version"
@@ -65,7 +67,13 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 	if err != nil {
 		return err
 	}
-	handler := identifyProcess(httpapi.New(active, store, assets))
+	reviews := reviewservice.New(active, store)
+	rest := httpapi.New(active, store, reviews, assets)
+	mcpHandler := mcpapi.New(reviews, active.Capabilities.Review.Comments.Enabled(), buildversion.String())
+	mux := http.NewServeMux()
+	mux.Handle("/mcp", mcpHandler)
+	mux.Handle("/", rest)
+	handler := identifyProcess(mux)
 	bound, err := bind(values, stdin, stdout)
 	if err != nil {
 		if errors.Is(err, errStartupCancelled) {

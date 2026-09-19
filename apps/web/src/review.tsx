@@ -81,7 +81,7 @@ export function ReviewCommentCard({
       }}
       onToggle={review.toggle}
       onDelete={review.remove}
-      onCopy={review.copyComment}
+      onCopy={sidebar ? review.copySidebarComment : review.copyComment}
     />
   );
 }
@@ -315,12 +315,15 @@ export function CommentCard({
             </Button>
             <Button
               type="button"
+              className={sidebar ? "edit-comment" : undefined}
               variant="ghost"
-              size={sidebar ? "xs" : "sm"}
+              size={sidebar ? "icon-xs" : "sm"}
+              aria-label={sidebar ? "Edit" : undefined}
+              title={sidebar ? "Edit comment" : undefined}
               onClick={() => onEdit(comment)}
             >
               <PencilIcon aria-hidden="true" />
-              Edit
+              {!sidebar && "Edit"}
             </Button>
             <Button
               type="button"
@@ -384,10 +387,15 @@ export function CommentCard({
 }
 
 export function CopyDialog({
-  text,
+  content,
   onClose,
 }: {
-  text: string;
+  content: {
+    clipboard: "copied" | "manual";
+    label: string;
+    text: string;
+    title: string;
+  };
   onClose: () => void;
 }) {
   const input = useRef<HTMLTextAreaElement>(null);
@@ -396,20 +404,28 @@ export function CopyDialog({
       open
       onOpenChange={(open) => !open && onClose()}
       onOpenChangeComplete={(open) => {
-        if (open) input.current?.select();
+        if (open && content.clipboard === "manual") input.current?.select();
       }}
     >
       <DialogContent
         className="copy-dialog"
         showCloseButton={false}
-        initialFocus={input}
+        initialFocus={content.clipboard === "manual" ? input : undefined}
       >
-        <DialogTitle id="copy-dialog-title">Copy review comments</DialogTitle>
+        <DialogTitle id="copy-dialog-title">{content.title}</DialogTitle>
         <DialogDescription>
-          Clipboard access is unavailable. Copy the selected text with ⌘C /
-          Ctrl+C.
+          {content.clipboard === "copied"
+            ? "Content copied to clipboard."
+            : "Copy the selected text with ⌘C / Ctrl+C."}
         </DialogDescription>
-        <Textarea ref={input} value={text} readOnly aria-label="Comments XML" />
+        {content.clipboard === "manual" && (
+          <Textarea
+            ref={input}
+            value={content.text}
+            readOnly
+            aria-label={content.label}
+          />
+        )}
         <Button type="button" variant="outline" onClick={onClose}>
           Close
         </Button>

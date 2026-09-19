@@ -104,6 +104,43 @@ test("view options expose secondary display settings and persist them", async ({
     .toBe("true");
 });
 
+test("interactive controls share the semantic control radius", async ({
+  page,
+}) => {
+  await page.goto("/");
+
+  const viewOptions = page.getByRole("button", { name: "View options" });
+  const controlRadius = await viewOptions.evaluate(
+    (control) => getComputedStyle(control).borderTopLeftRadius,
+  );
+  const controls = [
+    page.locator(".search-box"),
+    page.locator(".tree-folder").first(),
+    page.locator(".file-row").first(),
+    page.locator(".layout-control"),
+    page.getByRole("button", { name: "Split", exact: true }),
+    viewOptions,
+    page.locator(".review-button").first(),
+    page.getByRole("tab", { name: /Changes/ }),
+  ];
+  for (const control of controls)
+    await expect(control).toHaveCSS("border-radius", controlRadius);
+
+  await expect(page.locator(".review-checkbox rect").first()).toHaveCSS(
+    "rx",
+    controlRadius,
+  );
+  await viewOptions.click();
+  const menu = page.getByRole("menu", { name: "View options" });
+  await expect(menu).toHaveCSS("border-radius", controlRadius);
+  await expect(
+    menu.getByRole("menuitemcheckbox", { name: "Wrap lines" }),
+  ).toHaveCSS("border-radius", controlRadius);
+  await expect(
+    menu.getByRole("menuitemradio", { name: "Split", exact: true }),
+  ).toHaveCSS("border-radius", controlRadius);
+});
+
 test("mobile sidebar behaves as a modal drawer and restores focus", async ({
   page,
 }) => {
@@ -136,15 +173,38 @@ test("review actions use progressive disclosure, status filters, and confirmed d
   await page.goto("/");
   await seedReviewComments(page);
 
-  await expect(page.getByRole("button", { name: "Copy review" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Hide summary" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Hide review tools" }),
+  ).toHaveCount(0);
+  await page.getByRole("tab", { name: /Review/ }).click();
+  await expect(page.getByRole("button", { name: "Hide summary" })).toHaveCount(
+    0,
+  );
+  await expect(
+    page.getByRole("button", { name: "Hide review tools" }),
+  ).toBeVisible();
+  const copyReview = page.getByRole("button", { name: "Copy Review" });
+  await expect(copyReview).toBeVisible();
+  const controlRadius = await copyReview.evaluate(
+    (button) => getComputedStyle(button).borderTopLeftRadius,
+  );
+  await expect(
+    page.getByRole("button", { name: "WebMCP Instruction" }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Copy options" }).click();
   const options = page.getByRole("menu", { name: "Copy options" });
-  await expect(options.getByRole("menuitem", { name: "Open" })).toBeVisible();
-  await expect(options.getByRole("menuitem", { name: "All" })).toBeVisible();
+  await expect(
+    options.getByRole("menuitem", { name: "Open Comments" }),
+  ).toBeVisible();
+  await expect(
+    options.getByRole("menuitem", { name: "All Comments" }),
+  ).toBeVisible();
   await expect(options.getByRole("menuitem")).toHaveCount(2);
   await page.keyboard.press("Escape");
 
-  await page.getByRole("tab", { name: /Review/ }).click();
   const panel = page.locator("#comments-panel");
   await expect(panel.locator(".comment-summary")).toHaveCount(0);
   const filterTrigger = panel.locator(".comment-filter-trigger");
@@ -160,6 +220,8 @@ test("review actions use progressive disclosure, status filters, and confirmed d
   );
   await filterTrigger.click();
   const filters = page.getByRole("menu", { name: "Filter comments" });
+  await expect(filterTrigger).toHaveCSS("border-radius", controlRadius);
+  await expect(filters).toHaveCSS("border-radius", controlRadius);
   const openFilter = filters.getByRole("menuitemradio", { name: "Open 1" });
   const resolvedFilter = filters.getByRole("menuitemradio", {
     name: "Resolved 1",
@@ -253,8 +315,18 @@ test("bulk comment deletion selects a status and defaults to all", async ({
   const filter = panel.locator(".comment-filter-trigger");
   const remove = panel.locator(".bulk-delete-primary");
   const removeOptions = panel.getByRole("button", { name: "Delete options" });
+  const controlRadius = await page
+    .locator("#copy-review")
+    .evaluate((button) => getComputedStyle(button).borderTopLeftRadius);
   await expect(remove).toHaveAttribute("data-variant", "destructive");
   await expect(remove).toHaveCSS("height", "24px");
+  await expect(remove).toHaveCSS("border-top-left-radius", controlRadius);
+  await expect(remove).toHaveCSS("border-top-right-radius", "0px");
+  await expect(removeOptions).toHaveCSS("border-top-left-radius", "0px");
+  await expect(removeOptions).toHaveCSS(
+    "border-top-right-radius",
+    controlRadius,
+  );
   const controls = await panel.locator(".comment-panel-header").evaluate(() => {
     const filter = document.querySelector<HTMLElement>(
       "#comments-panel .comment-filter-trigger",
@@ -277,6 +349,7 @@ test("bulk comment deletion selects a status and defaults to all", async ({
 
   await removeOptions.click();
   const menu = page.getByRole("menu", { name: "Delete options" });
+  await expect(menu).toHaveCSS("border-radius", controlRadius);
   await expect(menu.getByRole("menuitem", { name: "All 2" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Open 1" })).toBeVisible();
   await menu.getByRole("menuitem", { name: "Resolved 1" }).click();

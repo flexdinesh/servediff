@@ -9,7 +9,7 @@
   flex-shrink: 0;
   width: var(--control-small);
   height: var(--control-small);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   color: var(--muted);
   padding: 0;
 }
@@ -273,18 +273,36 @@
 #review-tools-content[hidden] {
   display: none;
 }
+#summary-content[hidden] {
+  display: none;
+}
+.summary-section .sidebar-bottom {
+  border-top: 0;
+  padding-top: var(--space-1);
+}
+.review-tools-placeholder {
+  margin: 0;
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-copy);
+}
 .copy-comments-actions {
   display: flex;
   gap: 0;
 }
+.webmcp-instruction-button {
+  width: 100%;
+  margin-top: var(--space-2);
+}
 .copy-comments-actions > [data-slot="button"]:first-child {
   flex: 1 1 auto;
   justify-content: center;
-  border-radius: var(--radius-md) 0 0 var(--radius-md);
+  border-radius: var(--radius-control) 0 0 var(--radius-control);
 }
 .copy-comments-menu-trigger {
   border-left: 0;
-  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
 }
 .copy-comments-menu-item {
   min-height: var(--control-height);
@@ -332,6 +350,7 @@
 .comment-filter-menu {
   min-width: 7.5rem;
   width: max-content;
+  border-radius: var(--radius-control);
 }
 .comment-filter-option[data-slot="dropdown-menu-radio-item"] {
   gap: var(--space-1);
@@ -350,7 +369,7 @@
 .bulk-delete-primary {
   color: var(--on-accent);
   background: var(--error);
-  border-radius: var(--radius-md) 0 0 var(--radius-md);
+  border-radius: var(--radius-control) 0 0 var(--radius-control);
 }
 .bulk-delete-primary:hover {
   color: var(--on-accent);
@@ -360,10 +379,11 @@
   color: var(--error);
   border-color: var(--error);
   border-left: 0;
-  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
 }
 .bulk-delete-menu {
   min-width: 7.5rem;
+  border-radius: var(--radius-control);
 }
 .bulk-delete-option[data-slot="dropdown-menu-item"] {
   gap: var(--space-1);
@@ -374,7 +394,7 @@
 }
 .comment-empty {
   color: var(--muted);
-  font-size: var(--text-md);
+  font-size: var(--text-sm);
   padding: 0;
   line-height: var(--leading-copy);
 }
@@ -587,7 +607,7 @@
   width: 100%;
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border-control);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   font: var(--text-md) / var(--leading-copy) var(--font-sans);
   background: var(--bg);
   color: var(--fg);
@@ -623,6 +643,12 @@
 }
 #comments-panel .comment-actions > span {
   display: none;
+}
+#comments-panel .comment-actions .copy-comment {
+  margin-right: 0;
+}
+#comments-panel .comment-actions .edit-comment {
+  margin-right: auto;
 }
 .copy-dialog {
   border: 1px solid var(--border-control);
@@ -662,7 +688,7 @@
   color: var(--fg);
   background: var(--panel);
   border: 1px solid var(--border-control);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   padding: var(--space-3);
   margin-bottom: var(--space-3);
   resize: vertical;
@@ -717,6 +743,7 @@
   .review-tools-toggle,
   .review-progress button,
   .copy-comments-actions [data-slot="button"],
+  .webmcp-instruction-button,
   .comment-filter-trigger,
   .bulk-delete-actions [data-slot="button"],
   .comment-actions button,

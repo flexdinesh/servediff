@@ -13,6 +13,7 @@ import (
 
 	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/review"
+	"github.com/flexdinesh/servediff/internal/reviewservice"
 	"github.com/flexdinesh/servediff/internal/reviewstore"
 	"github.com/flexdinesh/servediff/internal/session"
 )
@@ -64,7 +65,8 @@ func TestAPIReviewWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := New(session.Resolve(source, session.Policies{}), store, fstest.MapFS{"index.html": {Data: []byte("web")}})
+	active := session.Resolve(source, session.Policies{})
+	handler := New(active, store, reviewservice.New(active, store), fstest.MapFS{"index.html": {Data: []byte("web")}})
 	server := httptest.NewServer(handler)
 	defer server.Close()
 	emptyCommentsResponse := request(t, server.Client(), http.MethodGet, server.URL+"/api/v1/comments", nil)
@@ -121,6 +123,38 @@ func TestAPIReviewWorkflow(t *testing.T) {
 	if !strings.Contains(string(exported), "Keep the new value.") || !strings.Contains(string(exported), `applicability="anchored"`) {
 		t.Fatalf("unexpected export: %s", exported)
 	}
+	agentCommentsResponse := request(t, server.Client(), http.MethodGet, server.URL+"/api/v1/review/comments", nil)
+	if agentCommentsResponse.StatusCode != http.StatusOK {
+		t.Fatalf("agent comments status: %d", agentCommentsResponse.StatusCode)
+	}
+	agentComments := decode[struct {
+		Comments []reviewservice.Comment `json:"comments"`
+	}](t, agentCommentsResponse)
+	if len(agentComments.Comments) != 1 || agentComments.Comments[0].ID != created.ID || !agentComments.Comments[0].Actionable || agentComments.Comments[0].Applicability != "anchored" {
+		t.Fatalf("agent comments: %#v", agentComments.Comments)
+	}
+	for range 2 {
+		resolveResponse := request(t, server.Client(), http.MethodPost, server.URL+"/api/v1/review/comments/"+created.ID+"/resolve", nil)
+		if resolveResponse.StatusCode != http.StatusOK {
+			t.Fatalf("resolve status: %d", resolveResponse.StatusCode)
+		}
+		resolution := decode[reviewservice.Resolution](t, resolveResponse)
+		if resolution.CommentID != created.ID || resolution.Status != "resolved" {
+			t.Fatalf("resolution: %#v", resolution)
+		}
+	}
+	resolvedCommentsResponse := request(t, server.Client(), http.MethodGet, server.URL+"/api/v1/review/comments?includeResolved=true", nil)
+	resolvedComments := decode[struct {
+		Comments []reviewservice.Comment `json:"comments"`
+	}](t, resolvedCommentsResponse)
+	if len(resolvedComments.Comments) != 1 || resolvedComments.Comments[0].Status != "resolved" || resolvedComments.Comments[0].Actionable {
+		t.Fatalf("resolved comments: %#v", resolvedComments.Comments)
+	}
+	missingResponse := request(t, server.Client(), http.MethodPost, server.URL+"/api/v1/review/comments/missing/resolve", nil)
+	if missingResponse.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing resolve status: %d", missingResponse.StatusCode)
+	}
+	missingResponse.Body.Close()
 	asset := request(t, server.Client(), http.MethodGet, server.URL+"/", nil)
 	content, _ := io.ReadAll(asset.Body)
 	asset.Body.Close()
@@ -158,7 +192,7 @@ func TestSessionCapabilitiesAndEnforcement(t *testing.T) {
 		t.Fatal(err)
 	}
 	active := session.Resolve(source, session.Policies{})
-	server := httptest.NewServer(New(active, store, fstest.MapFS{"index.html": {Data: []byte("web")}}))
+	server := httptest.NewServer(New(active, store, reviewservice.New(active, store), fstest.MapFS{"index.html": {Data: []byte("web")}}))
 	defer server.Close()
 
 	sessionResponse := request(t, server.Client(), http.MethodGet, server.URL+"/api/v1/session", nil)
@@ -201,7 +235,7 @@ func TestDisabledCommentsRejectEveryRoute(t *testing.T) {
 		t.Fatal(err)
 	}
 	active := session.Resolve(source, session.Policies{Comments: session.DisablePolicy})
-	server := httptest.NewServer(New(active, store, fstest.MapFS{"index.html": {Data: []byte("web")}}))
+	server := httptest.NewServer(New(active, store, reviewservice.New(active, store), fstest.MapFS{"index.html": {Data: []byte("web")}}))
 	defer server.Close()
 
 	for _, test := range []struct {
@@ -216,6 +250,8 @@ func TestDisabledCommentsRejectEveryRoute(t *testing.T) {
 		{method: http.MethodGet, path: "/api/v1/comments/export"},
 		{method: http.MethodPatch, path: "/api/v1/comments/id", body: map[string]string{}},
 		{method: http.MethodDelete, path: "/api/v1/comments/id"},
+		{method: http.MethodGet, path: "/api/v1/review/comments"},
+		{method: http.MethodPost, path: "/api/v1/review/comments/id/resolve"},
 	} {
 		response := request(t, server.Client(), test.method, server.URL+test.path, test.body)
 		assertCapabilityProblem(t, response, session.ReviewComments)
