@@ -27,6 +27,7 @@ import {
 import { useDiff } from "./use-diff.ts";
 import { useReview } from "./use-review.ts";
 import { useSidebar } from "./use-sidebar.ts";
+import { capabilityEnabled, useSession } from "./session-context.tsx";
 
 export function togglePath(paths: Set<string>, path: string) {
   const next = new Set(paths);
@@ -38,6 +39,11 @@ export function togglePath(paths: Set<string>, path: string) {
 // Shared source, navigation, appearance, and review state live above all page sections.
 // Keeping one draft here also lets the server polling pause while either editor is open.
 function usePageState() {
+  const session = useSession();
+  const capabilities = session.capabilities;
+  const refreshEnabled = capabilityEnabled(capabilities.diff.refresh);
+  const commentsEnabled = capabilityEnabled(capabilities.review.comments);
+  const scopes = capabilities.diff.scopes.values;
   const [mode, setMode] = useState<DiffMode>("all");
   const [layout, setLayout] = useState<"split" | "unified">(() =>
     saved("layout") === "unified" ? "unified" : "split",
@@ -80,9 +86,9 @@ function usePageState() {
   const [pendingComment, setPendingComment] = useState<ReviewComment | null>(
     null,
   );
-  const diff = useDiff(mode, draft !== null);
+  const diff = useDiff(mode, draft !== null, refreshEnabled);
   const repository = diff.repository;
-  const review = useReview(repository, draft, setDraft);
+  const review = useReview(repository, draft, setDraft, commentsEnabled);
   const sidebar = useSidebar();
   const effectiveLayout = sidebar.mobile ? (narrowLayout ?? "unified") : layout;
   const viewer = useRef<CodeViewHandle<CommentAnnotation, undefined>>(null);
@@ -284,12 +290,12 @@ function usePageState() {
     [revealFile],
   );
   function changeMode(value: DiffMode) {
-    if (value === mode || piped) return;
+    if (value === mode || !scopes.includes(value)) return;
     setMode(value);
     setCollapsed(new Set());
   }
   function navigateComment(comment: ReviewComment) {
-    if (comment.scope !== mode && !piped) {
+    if (comment.scope !== mode && scopes.includes(comment.scope)) {
       setPendingComment(comment);
       changeMode(comment.scope);
       return;
@@ -367,7 +373,7 @@ function usePageState() {
       }
       if (event.code === "KeyR") {
         event.preventDefault();
-        diff.refresh();
+        if (refreshEnabled) diff.refresh();
       }
       if (event.code === "KeyJ" || event.code === "KeyK") {
         event.preventDefault();
@@ -390,9 +396,18 @@ function usePageState() {
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [files, activePath, sidebar.show, diff.refresh, selectFile]);
+  }, [
+    files,
+    activePath,
+    sidebar.show,
+    diff.refresh,
+    refreshEnabled,
+    selectFile,
+  ]);
 
   return {
+    session,
+    capabilities,
     source: { diff, repository, mode, piped, changeMode },
     display: {
       theme,

@@ -61,7 +61,11 @@ const initialState: DiffState = {
 
 // Own polling and cancellation in one effect; drafts pause polling and scope changes
 // abort stale requests. Cached previews retain their identity between refreshes.
-export function useDiff(mode: DiffMode, composing: boolean) {
+export function useDiff(
+  mode: DiffMode,
+  composing: boolean,
+  refreshEnabled: boolean,
+) {
   const [state, setState] = useState<DiffState>(initialState);
   const cache = useRef(new Map<string, Preview>());
   const refreshRef = useRef<(force: boolean) => void>(() => {});
@@ -76,11 +80,7 @@ export function useDiff(mode: DiffMode, composing: boolean) {
     cache.current.clear();
     setState(initialState);
     async function load(force: boolean) {
-      if (
-        disposed ||
-        (!force && (busy || paused() || current?.source === "stdin"))
-      )
-        return;
+      if (disposed || (!force && (busy || paused() || !refreshEnabled))) return;
       controller.abort();
       controller = new AbortController();
       const signal = controller.signal;
@@ -270,20 +270,22 @@ export function useDiff(mode: DiffMode, composing: boolean) {
       }
     }
     refreshRef.current = (force) => {
+      if (!refreshEnabled) return;
       void load(force);
     };
     void load(true);
     const check = () => {
       if (!document.hidden) void load(false);
     };
-    const timer = setInterval(check, 3000);
-    document.addEventListener("visibilitychange", check);
+    const timer = refreshEnabled ? setInterval(check, 3000) : undefined;
+    if (refreshEnabled) document.addEventListener("visibilitychange", check);
     return () => {
       disposed = true;
       controller.abort();
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", check);
+      if (timer !== undefined) clearInterval(timer);
+      if (refreshEnabled)
+        document.removeEventListener("visibilitychange", check);
     };
-  }, [mode]);
+  }, [mode, refreshEnabled]);
   return { ...state, refresh };
 }

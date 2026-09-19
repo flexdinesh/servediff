@@ -32,3 +32,10 @@ still requires the Git executable.
 - API wire types originate in OpenAPI.
 - Shared packages must have a specific purpose and a real second consumer.
 - Add another Go module only for an independently versioned/released component.
+
+## Capability-driven sessions
+
+Diff sources declare technical support; session resolution combines it with
+application policy. The API advertises the resulting capabilities, and both the
+server and web UI enforce them. Source kind is provenance and presentation
+metadata, never a behavioral feature check.

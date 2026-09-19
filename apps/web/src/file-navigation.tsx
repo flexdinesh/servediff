@@ -56,7 +56,13 @@ function FileIcon({ path, reviewed }: { path: string; reviewed: boolean }) {
 function CommentIcon() {
   return <MessageSquareIcon aria-hidden="true" focusable="false" />;
 }
-function StatusBadge({ file }: { file: ChangedFile }) {
+function StatusBadge({
+  file,
+  stagingMetadata,
+}: {
+  file: ChangedFile;
+  stagingMetadata: boolean;
+}) {
   const decoration = gitDecoration(file);
   return (
     <span
@@ -67,12 +73,13 @@ function StatusBadge({ file }: { file: ChangedFile }) {
       aria-hidden="true"
     >
       <span>{decoration.code}</span>
-      {["staged", "unstaged", "both"].includes(decoration.state) && (
-        <span
-          className={`staging-dot ${decoration.state}`}
-          aria-hidden="true"
-        />
-      )}
+      {stagingMetadata &&
+        ["staged", "unstaged", "both"].includes(decoration.state) && (
+          <span
+            className={`staging-dot ${decoration.state}`}
+            aria-hidden="true"
+          />
+        )}
     </span>
   );
 }
@@ -84,6 +91,7 @@ interface Props {
   filtering: boolean;
   isReviewed: (file: ChangedFile) => boolean;
   commentCounts: Map<string, number>;
+  stagingMetadata: boolean;
   onToggle: (path: string) => void;
   onSelect: (path: string) => void;
 }
@@ -95,6 +103,7 @@ export function FileNavigation({
   filtering,
   isReviewed,
   commentCounts,
+  stagingMetadata,
   onToggle,
   onSelect,
 }: Props) {
@@ -200,7 +209,7 @@ export function FileNavigation({
                     <CommentIcon /> {count}
                   </span>
                 )}
-                <StatusBadge file={file} />
+                <StatusBadge file={file} stagingMetadata={stagingMetadata} />
               </Button>
             </li>
           );

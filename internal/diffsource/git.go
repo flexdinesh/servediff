@@ -234,10 +234,14 @@ func OpenRepository(ctx context.Context, directory string) (Source, error) {
 
 func (source *gitSource) Root() string { return source.root }
 func (source *gitSource) Kind() string { return "local" }
-func (source *gitSource) Scopes() []review.DiffMode {
-	return []review.DiffMode{review.DiffAll, review.DiffStaged, review.DiffUnstaged}
+func (source *gitSource) Support() Support {
+	return Support{
+		Scopes:          []review.DiffMode{review.DiffAll, review.DiffStaged, review.DiffUnstaged},
+		Refresh:         true,
+		StagingMetadata: true,
+		FileContents:    true,
+	}
 }
-func (source *gitSource) Live() bool { return true }
 
 func (source *gitSource) headAndBase(ctx context.Context) (*string, string, error) {
 	head, err := runGit(ctx, source.root, 16*1024*1024, "rev-parse", "--verify", "HEAD")

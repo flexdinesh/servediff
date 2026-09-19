@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import { useAppState } from "./app-state.tsx";
+import { capabilityEnabled } from "./session-context.tsx";
 import { readThemePreference, type ThemePreference } from "./theme.ts";
 
 function themeLabel(theme: ThemePreference) {
@@ -30,9 +31,11 @@ function themeLabel(theme: ThemePreference) {
 export function Header() {
   const {
     source: { repository, piped, diff },
+    capabilities,
     display: { themePreference, setThemePreference },
     sidebar,
   } = useAppState();
+  const refreshEnabled = capabilityEnabled(capabilities.diff.refresh);
   return (
     <header className="topbar">
       <Button
@@ -88,7 +91,7 @@ export function Header() {
         variant="outline"
         aria-label="Refresh changes"
         title="Refresh changes (Alt+R)"
-        hidden={piped}
+        hidden={!refreshEnabled}
         aria-busy={diff.busy}
         onClick={diff.refresh}
       >

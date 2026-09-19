@@ -3,9 +3,10 @@ import { DiffWorkspace } from "./DiffWorkspace.tsx";
 import { FileExplorerNav, SidebarResizer } from "./FileExplorerNav.tsx";
 import { Header } from "./Header.tsx";
 import { CopyDialog } from "./review.tsx";
+import { capabilityEnabled } from "./session-context.tsx";
 
 export function App() {
-  const { review, sidebar } = useAppState();
+  const { review, sidebar, capabilities } = useAppState();
   return (
     <>
       <Header />
@@ -23,9 +24,10 @@ export function App() {
         <SidebarResizer />
         <DiffWorkspace />
       </div>
-      {review.copyText !== null && (
-        <CopyDialog text={review.copyText} onClose={review.closeCopy} />
-      )}
+      {capabilityEnabled(capabilities.review.comments) &&
+        review.copyText !== null && (
+          <CopyDialog text={review.copyText} onClose={review.closeCopy} />
+        )}
     </>
   );
 }

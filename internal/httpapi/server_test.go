@@ -14,6 +14,7 @@ import (
 	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/review"
 	"github.com/flexdinesh/servediff/internal/reviewstore"
+	"github.com/flexdinesh/servediff/internal/session"
 )
 
 func request(t *testing.T, client *http.Client, method, url string, body any) *http.Response {
@@ -63,7 +64,7 @@ func TestAPIReviewWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := New(source, store, fstest.MapFS{"index.html": {Data: []byte("web")}})
+	handler := New(session.Resolve(source, session.Policies{}), store, fstest.MapFS{"index.html": {Data: []byte("web")}})
 	server := httptest.NewServer(handler)
 	defer server.Close()
 	emptyCommentsResponse := request(t, server.Client(), http.MethodGet, server.URL+"/api/v1/comments", nil)
@@ -140,5 +141,97 @@ func TestAPIReviewWorkflow(t *testing.T) {
 	handler.ServeHTTP(crossOriginRecorder, crossOriginRequest)
 	if crossOriginRecorder.Code != http.StatusForbidden {
 		t.Fatalf("cross-origin status: %d", crossOriginRecorder.Code)
+	}
+}
+
+func TestSessionCapabilitiesAndEnforcement(t *testing.T) {
+	raw, err := os.ReadFile("../../test/fixtures/sample.diff")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := diffsource.OpenPatch(string(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := reviewstore.Open("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	active := session.Resolve(source, session.Policies{})
+	server := httptest.NewServer(New(active, store, fstest.MapFS{"index.html": {Data: []byte("web")}}))
+	defer server.Close()
+
+	sessionResponse := request(t, server.Client(), http.MethodGet, server.URL+"/api/v1/session", nil)
+	if sessionResponse.StatusCode != http.StatusOK {
+		t.Fatalf("session status: %d", sessionResponse.StatusCode)
+	}
+	got := decode[struct {
+		Capabilities session.Capabilities `json:"capabilities"`
+	}](t, sessionResponse)
+	if got.Capabilities.Diff.Scopes.State != session.Enabled || len(got.Capabilities.Diff.Scopes.Values) != 1 || got.Capabilities.Diff.Scopes.Values[0] != review.DiffAll {
+		t.Fatalf("scopes: %#v", got.Capabilities.Diff.Scopes)
+	}
+	if got.Capabilities.Diff.Refresh.State != session.Unavailable || got.Capabilities.Diff.StagingMetadata.State != session.Unavailable || got.Capabilities.Files.Contents.State != session.Unavailable || got.Capabilities.Review.Comments.State != session.Enabled {
+		t.Fatalf("capabilities: %#v", got.Capabilities)
+	}
+
+	for _, endpoint := range []string{
+		"/api/v1/diffs/current?scope=staged",
+		"/api/v1/diffs/revision/files/file/contents?scope=all&fileVersion=version",
+	} {
+		response := request(t, server.Client(), http.MethodGet, server.URL+endpoint, nil)
+		assertCapabilityProblem(t, response, map[string]string{
+			"/api/v1/diffs/current?scope=staged":                                       session.DiffScopes,
+			"/api/v1/diffs/revision/files/file/contents?scope=all&fileVersion=version": session.FilesContents,
+		}[endpoint])
+	}
+}
+
+func TestDisabledCommentsRejectEveryRoute(t *testing.T) {
+	raw, err := os.ReadFile("../../test/fixtures/sample.diff")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := diffsource.OpenPatch(string(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := reviewstore.Open("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	active := session.Resolve(source, session.Policies{Comments: session.DisablePolicy})
+	server := httptest.NewServer(New(active, store, fstest.MapFS{"index.html": {Data: []byte("web")}}))
+	defer server.Close()
+
+	for _, test := range []struct {
+		method string
+		path   string
+		body   any
+	}{
+		{method: http.MethodGet, path: "/api/v1/comments"},
+		{method: http.MethodPost, path: "/api/v1/comments", body: map[string]string{}},
+		{method: http.MethodDelete, path: "/api/v1/comments"},
+		{method: http.MethodPost, path: "/api/v1/comments/import", body: map[string]string{}},
+		{method: http.MethodGet, path: "/api/v1/comments/export"},
+		{method: http.MethodPatch, path: "/api/v1/comments/id", body: map[string]string{}},
+		{method: http.MethodDelete, path: "/api/v1/comments/id"},
+	} {
+		response := request(t, server.Client(), test.method, server.URL+test.path, test.body)
+		assertCapabilityProblem(t, response, session.ReviewComments)
+	}
+}
+
+func assertCapabilityProblem(t *testing.T, response *http.Response, capability string) {
+	t.Helper()
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("capability status: %d", response.StatusCode)
+	}
+	problem := decode[struct {
+		Code       string `json:"code"`
+		Capability string `json:"capability"`
+	}](t, response)
+	if problem.Code != "capability_not_enabled" || problem.Capability != capability {
+		t.Fatalf("problem = %#v", problem)
 	}
 }

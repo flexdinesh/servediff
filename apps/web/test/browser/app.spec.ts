@@ -3,6 +3,46 @@ import { resetFixtureState } from "./fixture-state.ts";
 
 test.beforeEach(async ({ request }) => resetFixtureState(request));
 
+test("disabled comments issue no requests and expose no comment UI", async ({
+  page,
+}) => {
+  let commentRequests = 0;
+  await page.route("**/api/v1/session", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: "comments-disabled",
+        source: "stdin",
+        name: "Piped diff",
+        root: "fixture",
+        capabilities: {
+          diff: {
+            scopes: { state: "enabled", values: ["all"] },
+            refresh: { state: "unavailable" },
+            stagingMetadata: { state: "unavailable" },
+          },
+          files: { contents: { state: "unavailable" } },
+          review: { comments: { state: "disabled" } },
+        },
+      }),
+    }),
+  );
+  await page.route("**/api/v1/comments**", (route) => {
+    commentRequests++;
+    return route.abort();
+  });
+
+  await page.goto("/");
+  await expect(page.locator("#file-count")).toHaveText("12");
+  await expect(page.locator("#comments-tab")).toHaveCount(0);
+  await expect(page.locator("#comments-panel")).toHaveCount(0);
+  await expect(page.locator("#copy-review")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Add review comment" }),
+  ).toHaveCount(0);
+  expect(commentRequests).toBe(0);
+});
+
 test("shows server process metrics in the compact status bar", async ({
   page,
 }) => {
@@ -578,6 +618,24 @@ test("inline comments use a distinct structured surface while sidebar comments r
   const split = page.getByRole("button", { name: "Split", exact: true });
   await split.click();
   await expect(pairedInline).toHaveAttribute("data-diff-layout", "split");
+
+  await inline.getByRole("button", { name: "Edit", exact: true }).click();
+  const editor = page.locator("#viewer .comment-editor");
+  await expect(editor).toBeVisible();
+  const editorHeaderOffset = await editor.evaluate((element) => {
+    const header = element.querySelector<HTMLElement>(".comment-editor-header");
+    const title = element.querySelector<HTMLElement>(".comment-editor-title");
+    if (!header || !title) throw new Error("Missing comment editor header");
+    const headerBox = header.getBoundingClientRect();
+    const titleBox = title.getBoundingClientRect();
+    return (
+      titleBox.top +
+      titleBox.height / 2 -
+      (headerBox.top + headerBox.height / 2)
+    );
+  });
+  expect(Math.abs(editorHeaderOffset)).toBeLessThanOrEqual(0.5);
+  await editor.getByRole("button", { name: "Cancel", exact: true }).click();
 
   const viewed = page.locator("#viewer .review-button").first();
   await expect(viewed).toHaveCSS("height", "28px");

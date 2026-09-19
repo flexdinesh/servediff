@@ -482,10 +482,11 @@ func digest(value string) string {
 
 func validUTF8(value string) bool { return utf8.ValidString(value) && !strings.ContainsRune(value, 0) }
 
-func (source *patchSource) Root() string              { return source.root }
-func (source *patchSource) Kind() string              { return "stdin" }
-func (source *patchSource) Scopes() []review.DiffMode { return []review.DiffMode{review.DiffAll} }
-func (source *patchSource) Live() bool                { return false }
+func (source *patchSource) Root() string { return source.root }
+func (source *patchSource) Kind() string { return "stdin" }
+func (source *patchSource) Support() Support {
+	return Support{Scopes: []review.DiffMode{review.DiffAll}}
+}
 func (source *patchSource) Snapshot(_ context.Context, mode review.DiffMode) (review.RepositoryDiff, error) {
 	if mode != review.DiffAll {
 		return review.RepositoryDiff{}, Error(400, "Piped diffs have no staged or unstaged scope")

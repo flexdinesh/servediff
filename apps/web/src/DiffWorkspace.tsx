@@ -18,6 +18,7 @@ import { themesFor } from "./display-options.ts";
 import { DraftComment, ReviewCommentCard } from "./review.tsx";
 import type { CommentAnnotation } from "./review-model.ts";
 import { ServerMetrics } from "./ServerMetrics.tsx";
+import { capabilityEnabled } from "./session-context.tsx";
 
 const NAVIGATION_CUE_MS = 1_000;
 
@@ -126,6 +127,7 @@ function itemVersions() {
 export function DiffWorkspace() {
   const {
     source: { diff, repository, piped, mode },
+    capabilities,
     display: {
       theme,
       diffTheme,
@@ -148,6 +150,9 @@ export function DiffWorkspace() {
     navigateComment,
     viewer,
   } = useAppState();
+  const commentsEnabled = capabilityEnabled(capabilities.review.comments);
+  const contentsEnabled = capabilityEnabled(capabilities.files.contents);
+  const refreshEnabled = capabilityEnabled(capabilities.diff.refresh);
   const lineMetric = useRef<HTMLSpanElement>(null);
   const [lineHeight, setLineHeight] = useState<number>();
   const [selectionFeedback, setSelectionFeedback] = useState("");
@@ -176,20 +181,21 @@ export function DiffWorkspace() {
       files.flatMap((file): CodeViewItem<CommentAnnotation>[] => {
         const item = diff.items.get(file.path);
         if (!item) return [];
-        const annotations: DiffLineAnnotation<CommentAnnotation>[] =
-          review.comments
-            .filter(
-              (comment) =>
-                comment.path === file.path &&
-                comment.scope === mode &&
-                comment.fingerprint === file.fingerprint &&
-                comment.id !== draft?.id,
-            )
-            .map((comment) => ({
-              side: comment.side,
-              lineNumber: comment.end,
-              metadata: { kind: "saved", comment },
-            }));
+        const annotations: DiffLineAnnotation<CommentAnnotation>[] = (
+          commentsEnabled ? review.comments : []
+        )
+          .filter(
+            (comment) =>
+              comment.path === file.path &&
+              comment.scope === mode &&
+              comment.fingerprint === file.fingerprint &&
+              comment.id !== draft?.id,
+          )
+          .map((comment) => ({
+            side: comment.side,
+            lineNumber: comment.end,
+            metadata: { kind: "saved", comment },
+          }));
         if (
           draft &&
           draft.path === file.path &&
@@ -204,7 +210,7 @@ export function DiffWorkspace() {
         return [
           {
             ...item,
-            ...(item.type === "diff" ? { annotations } : {}),
+            ...(item.type === "diff" && commentsEnabled ? { annotations } : {}),
             collapsed: collapsed.has(file.path),
             version: versionFor(
               item,
@@ -213,7 +219,16 @@ export function DiffWorkspace() {
           },
         ];
       }),
-    [files, diff.items, review.comments, draft, mode, collapsed, versionFor],
+    [
+      files,
+      diff.items,
+      review.comments,
+      draft,
+      mode,
+      collapsed,
+      versionFor,
+      commentsEnabled,
+    ],
   );
 
   // Keep renderer options stable while event callbacks see current React state.
@@ -329,18 +344,18 @@ export function DiffWorkspace() {
       lineDiffType,
       overflow: wrap ? "wrap" : "scroll",
       diffIndicators: "bars",
-      hunkSeparators: piped ? "metadata" : "line-info-basic",
+      hunkSeparators: contentsEnabled ? "line-info-basic" : "metadata",
       expansionLineCount: 20,
       collapsedContextThreshold: 3,
-      ...(piped
-        ? {}
-        : {
+      ...(contentsEnabled
+        ? {
             loadDiffFiles(fileDiff) {
               const current = actions.current.repository;
               if (!current) throw new Error("Repository is unavailable");
               return loadDiffFiles(fileDiff, current);
             },
-          }),
+          }
+        : {}),
       unsafeCSS: `
         [data-diffs-header] {
           cursor: pointer;
@@ -428,53 +443,66 @@ export function DiffWorkspace() {
             // Keep file headers aligned with the compact navigation toolbar.
             itemMetrics: { lineHeight, diffHeaderHeight: lineHeight + 14 },
           }),
-      enableGutterUtility: true,
-      lineHoverHighlight: "both",
       layout: { paddingTop: 0, paddingBottom: 24, gap: 8 },
-      onPostRender(node, _instance, phase, context) {
-        if (phase === "unmount" || context.item.type !== "diff") return;
-        const currentDraft = actions.current.draft;
-        const ranges = (context.item.annotations ?? []).flatMap(
-          (annotation): CommentLineRange[] => {
-            if (annotation.metadata.kind === "saved")
-              return [annotation.metadata.comment];
-            return currentDraft && currentDraft.path === context.item.id
-              ? [currentDraft]
-              : [];
-          },
-        );
-        markCommentedLines(node.shadowRoot ?? node, ranges);
-      },
-      onGutterUtilityClick(range, context) {
-        if (context.item.type !== "diff") return;
-        const current = actions.current;
-        if (current.draft) {
-          current.navigateComment(current.draft);
-          return;
-        }
-        const file = current.repository?.files.find(
-          (file) => file.path === context.item.id,
-        );
-        if (file) current.begin(file, context.item.fileDiff, range);
-      },
-      onLineSelectionStart(range) {
-        setSelectionFeedback(selectionLabel("Selecting", range));
-      },
-      onLineSelectionChange(range) {
-        setSelectionFeedback(selectionLabel("Selecting", range));
-      },
-      onLineSelectionEnd(range) {
-        setSelectionFeedback(selectionLabel("Selected", range));
-      },
-      onLineEnter(_event, context) {
-        requestAnimationFrame(() =>
-          context.element?.shadowRoot
-            ?.querySelector("[data-utility-button]")
-            ?.setAttribute("aria-label", "Add review comment"),
-        );
-      },
+      ...(commentsEnabled
+        ? {
+            enableGutterUtility: true,
+            lineHoverHighlight: "both",
+            onPostRender(node, _instance, phase, context) {
+              if (phase === "unmount" || context.item.type !== "diff") return;
+              const currentDraft = actions.current.draft;
+              const ranges = (context.item.annotations ?? []).flatMap(
+                (annotation): CommentLineRange[] => {
+                  if (annotation.metadata.kind === "saved")
+                    return [annotation.metadata.comment];
+                  return currentDraft && currentDraft.path === context.item.id
+                    ? [currentDraft]
+                    : [];
+                },
+              );
+              markCommentedLines(node.shadowRoot ?? node, ranges);
+            },
+            onGutterUtilityClick(range, context) {
+              if (context.item.type !== "diff") return;
+              const current = actions.current;
+              if (current.draft) {
+                current.navigateComment(current.draft);
+                return;
+              }
+              const file = current.repository?.files.find(
+                (file) => file.path === context.item.id,
+              );
+              if (file) current.begin(file, context.item.fileDiff, range);
+            },
+            onLineSelectionStart(range) {
+              setSelectionFeedback(selectionLabel("Selecting", range));
+            },
+            onLineSelectionChange(range) {
+              setSelectionFeedback(selectionLabel("Selecting", range));
+            },
+            onLineSelectionEnd(range) {
+              setSelectionFeedback(selectionLabel("Selected", range));
+            },
+            onLineEnter(_event, context) {
+              requestAnimationFrame(() =>
+                context.element?.shadowRoot
+                  ?.querySelector("[data-utility-button]")
+                  ?.setAttribute("aria-label", "Add review comment"),
+              );
+            },
+          }
+        : {}),
     }),
-    [theme, diffTheme, lineDiffType, layout, wrap, lineHeight, piped],
+    [
+      theme,
+      diffTheme,
+      lineDiffType,
+      layout,
+      wrap,
+      lineHeight,
+      contentsEnabled,
+      commentsEnabled,
+    ],
   );
 
   const scopeDescription = piped
@@ -625,7 +653,7 @@ export function DiffWorkspace() {
         <span className="footer-details">
           <span className="footer-shortcuts">
             <kbd>Alt+J</kbd> <kbd>Alt+K</kbd> files <kbd>Alt+/</kbd> filter
-            {!piped && (
+            {refreshEnabled && (
               <>
                 {" "}
                 <kbd>Alt+R</kbd> refresh

@@ -353,6 +353,27 @@ components:
     DiffMode:
       type: string
       enum: [all, staged, unstaged]
+    CapabilityState:
+      type: string
+      enum: [enabled, disabled, unavailable]
+    Capability:
+      type: object
+      additionalProperties: false
+      required: [state]
+      properties:
+        state:
+          $ref: "#/components/schemas/CapabilityState"
+    ScopesCapability:
+      type: object
+      additionalProperties: false
+      required: [state, values]
+      properties:
+        state:
+          $ref: "#/components/schemas/CapabilityState"
+        values:
+          type: array
+          items:
+            $ref: "#/components/schemas/DiffMode"
     Session:
       type: object
       additionalProperties: false
@@ -370,16 +391,33 @@ components:
         capabilities:
           type: object
           additionalProperties: false
-          required: [scopes, live, fullFileContents]
+          required: [diff, files, review]
           properties:
-            scopes:
-              type: array
-              items:
-                $ref: "#/components/schemas/DiffMode"
-            live:
-              type: boolean
-            fullFileContents:
-              type: boolean
+            diff:
+              type: object
+              additionalProperties: false
+              required: [scopes, refresh, stagingMetadata]
+              properties:
+                scopes:
+                  $ref: "#/components/schemas/ScopesCapability"
+                refresh:
+                  $ref: "#/components/schemas/Capability"
+                stagingMetadata:
+                  $ref: "#/components/schemas/Capability"
+            files:
+              type: object
+              additionalProperties: false
+              required: [contents]
+              properties:
+                contents:
+                  $ref: "#/components/schemas/Capability"
+            review:
+              type: object
+              additionalProperties: false
+              required: [comments]
+              properties:
+                comments:
+                  $ref: "#/components/schemas/Capability"
     ChangedFile:
       type: object
       additionalProperties: false
@@ -591,4 +629,8 @@ components:
         status:
           type: integer
         detail:
+          type: string
+        code:
+          type: string
+        capability:
           type: string

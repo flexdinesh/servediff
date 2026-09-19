@@ -69,9 +69,13 @@ test("Go distribution implements the API contract", async (t) => {
   assert.equal(session.data?.source, "stdin");
   assert.equal(session.data?.name, "Piped diff");
   assert.deepEqual(session.data?.capabilities, {
-    scopes: [apiValues.allScope],
-    live: false,
-    fullFileContents: false,
+    diff: {
+      scopes: { state: "enabled", values: [apiValues.allScope] },
+      refresh: { state: "unavailable" },
+      stagingMetadata: { state: "unavailable" },
+    },
+    files: { contents: { state: "unavailable" } },
+    review: { comments: { state: "enabled" } },
   });
 
   const diff = await client.GET("/api/v1/diffs/current", {

@@ -23,6 +23,21 @@ body {
   font-size: var(--text-base);
   line-height: var(--leading-ui);
 }
+.session-status {
+  display: grid;
+  place-content: center;
+  min-height: 100dvh;
+  padding: var(--space-6);
+  text-align: center;
+}
+.session-status h1,
+.session-status p {
+  margin: 0;
+}
+.session-status p {
+  margin-top: var(--space-2);
+  color: var(--muted);
+}
 input,
 select,
 textarea {
