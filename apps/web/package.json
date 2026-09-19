@@ -35,6 +35,7 @@
     "@vitejs/plugin-react": "catalog:",
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
-    "vite": "catalog:"
+    "vite": "catalog:",
+    "webmcp-types": "catalog:"
   }
 }

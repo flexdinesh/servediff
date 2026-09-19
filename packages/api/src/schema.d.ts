@@ -148,6 +148,38 @@ export interface paths {
     patch: operations["updateComment"];
     trace?: never;
   };
+  "/api/v1/review/comments": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["listAgentReviewComments"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/review/comments/{commentId}/resolve": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["resolveAgentReviewComment"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/review-marks": {
     parameters: {
       query?: never;
@@ -279,6 +311,30 @@ export interface components {
       status: "open" | "resolved";
       createdAt: number;
       origin?: components["schemas"]["ReviewOrigin"];
+    };
+    AgentReviewComment: {
+      id: string;
+      path: string;
+      scope: components["schemas"]["DiffMode"];
+      fingerprint: string;
+      /** @enum {string} */
+      side: "additions" | "deletions";
+      start: number;
+      end: number;
+      code: string;
+      body: string;
+      /** @enum {string} */
+      status: "open" | "resolved";
+      createdAt: number;
+      origin?: components["schemas"]["ReviewOrigin"];
+      /** @enum {string} */
+      applicability: "anchored" | "stale" | "other-scope" | "unknown";
+      actionable: boolean;
+    };
+    ResolveReviewComment: {
+      comment_id: string;
+      /** @enum {string} */
+      status: "resolved";
     };
     CreateComment: {
       diffId: string;
@@ -625,6 +681,54 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ReviewComment"];
+        };
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
+  listAgentReviewComments: {
+    parameters: {
+      query?: {
+        includeResolved?: boolean;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Agent-ready comments with current applicability. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            comments: components["schemas"]["AgentReviewComment"][];
+          };
+        };
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
+  resolveAgentReviewComment: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        commentId: components["parameters"]["CommentId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Idempotently resolved comment. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ResolveReviewComment"];
         };
       };
       default: components["responses"]["Problem"];

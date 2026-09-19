@@ -76,6 +76,9 @@ svg:not([class*="size-"]) {
   width: var(--icon-base);
   height: var(--icon-base);
 }
+.control-radius-shape {
+  rx: var(--radius-control);
+}
 kbd {
   font: var(--text-xs) var(--font-mono);
   border: 1px solid var(--border);
@@ -150,10 +153,10 @@ kbd {
 }
 .branch-badge {
   display: flex;
-  gap: var(--space-2);
+  gap: var(--space-1);
   align-items: center;
   color: var(--muted);
-  font: var(--text-base) var(--font-mono);
+  font: var(--text-sm) var(--font-mono);
   overflow: hidden;
   max-width: 30%;
 }
@@ -166,8 +169,8 @@ kbd {
   flex: 1;
 }
 .branch-badge {
-  height: var(--control-height);
-  padding-inline: var(--space-3);
+  height: var(--control-small);
+  padding-inline: var(--space-2);
 }
 .live-dot {
   width: 6px;
@@ -216,7 +219,7 @@ kbd {
   min-height: var(--control-small);
   padding: 0 var(--space-1-5);
   border: 1px solid var(--border-control);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   background: var(--bg);
   color: var(--muted);
 }
@@ -249,7 +252,7 @@ kbd {
   color: var(--fg);
   padding: var(--space-0-5) var(--space-1);
   min-height: var(--control-small);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
   font: var(--text-sm) / var(--leading-tree) var(--font-mono);
   white-space: pre;
   overflow: hidden;
@@ -268,7 +271,7 @@ kbd {
   gap: var(--space-1-5);
   padding: var(--space-0-5) var(--space-1);
   min-height: var(--control-small);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
   text-align: left;
   font: var(--text-sm) / var(--leading-tree) var(--font-mono);
   white-space: pre;
@@ -389,7 +392,7 @@ main {
   display: inline-flex;
   min-height: var(--control-small);
   border: 1px solid var(--border-control);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   /* Optical inset inside the shared compact control height. */
   padding: 1px;
   gap: 1px;
@@ -399,7 +402,7 @@ main {
 .segmented button {
   padding: 0 var(--space-2);
   min-height: var(--control-compact);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
   color: var(--text-secondary);
@@ -456,6 +459,7 @@ main {
   --diffs-font-family: var(--font-mono);
   --diffs-font-size: var(--text-code);
   --diffs-line-height: calc(var(--text-code) * var(--leading-code));
+  --diff-gutter-divider-width: 2px;
 }
 .diff-line-metric {
   position: absolute;
@@ -468,6 +472,15 @@ diffs-container {
   /* Pair Pierre's measured gap with a non-geometric file-end rule. */
   box-shadow: inset 0 -1px var(--border);
 }
+.diff-collapse-gutter {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  align-self: stretch;
+  justify-content: center;
+  margin-left: calc(-1 * var(--space-4));
+  font-family: var(--diffs-font-family);
+}
 .diff-collapse {
   font-size: var(--icon-base);
   display: inline-flex;
@@ -477,9 +490,8 @@ diffs-container {
   vertical-align: middle;
   width: var(--control-compact);
   height: var(--control-compact);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
   color: var(--muted);
-  margin-right: var(--space-1);
 }
 .diff-collapse svg {
   width: 1em;
@@ -499,6 +511,9 @@ diffs-container {
   height: 1em;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+.review-checkbox rect {
+  rx: var(--radius-control);
 }
 .diff-metadata {
   display: flex;

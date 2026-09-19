@@ -214,6 +214,7 @@ export function CommentsPanel() {
           <Button
             type="button"
             variant="outline"
+            size="xs"
             onClick={() => navigateComment(draft)}
           >
             Continue draft

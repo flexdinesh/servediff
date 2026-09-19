@@ -70,6 +70,22 @@ function selectionLabel(prefix: string, range: SelectedLineRange | null) {
     : `${prefix} lines ${start}–${end}`;
 }
 
+function lineNumberColumnWidth(item: CodeViewItem<CommentAnnotation>) {
+  let maximum =
+    item.type === "file" ? item.file.contents.split(/\r\n|\r|\n/).length : 1;
+  if (item.type === "diff") {
+    for (const hunk of item.fileDiff.hunks) {
+      maximum = Math.max(
+        maximum,
+        hunk.additionStart + Math.max(0, hunk.additionCount - 1),
+        hunk.deletionStart + Math.max(0, hunk.deletionCount - 1),
+      );
+    }
+  }
+  const digits = String(maximum).length;
+  return `calc(${digits + 3}ch + var(--diff-gutter-divider-width))`;
+}
+
 async function loadDiffFiles(
   fileDiff: FileDiffMetadata,
   repository: NonNullable<
@@ -582,21 +598,28 @@ export function DiffWorkspace() {
             options={options}
             style={{ height: "100%", width: "100%", overflow: "auto" }}
             renderHeaderPrefix={(item) => (
-              <Button
-                type="button"
-                className="diff-collapse"
-                variant="ghost"
-                size="icon-xs"
-                aria-label={`${item.collapsed ? "Expand" : "Collapse"} ${item.id}`}
-                aria-expanded={!item.collapsed}
-                onClick={() =>
-                  setCollapsed((previous) => togglePath(previous, item.id))
-                }
+              <span
+                className="diff-collapse-gutter"
+                style={{ width: lineNumberColumnWidth(item) }}
               >
-                <svg viewBox="0 0 16 16" aria-hidden="true">
-                  <path d={item.collapsed ? "m6 4 4 4-4 4" : "m4 6 4 4 4-4"} />
-                </svg>
-              </Button>
+                <Button
+                  type="button"
+                  className="diff-collapse"
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={`${item.collapsed ? "Expand" : "Collapse"} ${item.id}`}
+                  aria-expanded={!item.collapsed}
+                  onClick={() =>
+                    setCollapsed((previous) => togglePath(previous, item.id))
+                  }
+                >
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <path
+                      d={item.collapsed ? "m6 4 4 4-4 4" : "m4 6 4 4 4-4"}
+                    />
+                  </svg>
+                </Button>
+              </span>
             )}
             renderHeaderMetadata={(item) => {
               const file = allFiles.find((file) => file.path === item.id);
@@ -615,7 +638,7 @@ export function DiffWorkspace() {
                     viewBox="0 0 16 16"
                     aria-hidden="true"
                   >
-                    <rect x="2" y="2" width="12" height="12" rx="2" />
+                    <rect x="2" y="2" width="12" height="12" />
                     {isReviewed(file) && <path d="m4.5 8 2.5 2.5 4.5-5" />}
                   </svg>
                   viewed

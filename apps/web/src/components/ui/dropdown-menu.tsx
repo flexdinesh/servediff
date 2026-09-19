@@ -3,7 +3,7 @@ import { CheckIcon } from "lucide-react";
 import { cn } from "cn";
 
 const dropdownMenuItemClassName =
-  "relative flex min-h-[var(--control-height)] cursor-default items-center gap-[var(--space-2)] rounded-[var(--radius-sm)] py-[var(--space-1)] pr-[var(--space-8)] pl-[var(--space-2)] text-[length:var(--text-sm)] outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-60 [&_svg]:pointer-events-none [&_svg]:size-(--icon-base) [&_svg]:shrink-0";
+  "relative flex min-h-[var(--control-height)] cursor-default items-center gap-[var(--space-2)] rounded-[var(--radius-control)] py-[var(--space-1)] pr-[var(--space-8)] pl-[var(--space-2)] text-[length:var(--text-sm)] outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-60 [&_svg]:pointer-events-none [&_svg]:size-(--icon-base) [&_svg]:shrink-0";
 
 function DropdownMenu(props: MenuPrimitive.Root.Props) {
   return <MenuPrimitive.Root data-slot="dropdown-menu" {...props} />;
@@ -37,7 +37,7 @@ function DropdownMenuContent({
         <MenuPrimitive.Popup
           data-slot="dropdown-menu-content"
           className={cn(
-            "z-50 max-h-(--available-height) min-w-32 overflow-x-hidden overflow-y-auto rounded-[var(--radius-lg)] bg-popover p-[var(--space-1)] text-popover-foreground shadow-[var(--shadow-overlay)] ring-1 ring-border outline-none",
+            "z-50 max-h-(--available-height) min-w-32 overflow-x-hidden overflow-y-auto rounded-[var(--radius-control)] bg-popover p-[var(--space-1)] text-popover-foreground shadow-[var(--shadow-overlay)] ring-1 ring-border outline-none",
             className,
           )}
           {...props}

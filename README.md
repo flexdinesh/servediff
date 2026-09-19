@@ -68,7 +68,13 @@ per file. Combined merge diffs are shown against the first parent. Use
 ## API and data
 
 The OpenAPI 3.1 contract is served at `/openapi.yaml`; REST endpoints are under
-`/api/v1`.
+`/api/v1`. Compatible coding agents can access review-comment tools through the
+MCP `2026-07-28` Streamable HTTP endpoint at `/mcp`; see
+[docs/mcp.md](docs/mcp.md).
+
+A compatible browser can expose the same tools to its browser agent through
+WebMCP while the servediff page is open; see
+[docs/webmcp.md](docs/webmcp.md).
 
 The API is unauthenticated. Browser same-origin and cross-site checks remain, but
 anyone who can reach the server can access its review data.

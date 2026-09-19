@@ -4,11 +4,13 @@ import { FileExplorerNav, SidebarResizer } from "./FileExplorerNav.tsx";
 import { Header } from "./Header.tsx";
 import { CopyDialog } from "./review.tsx";
 import { capabilityEnabled } from "./session-context.tsx";
+import { WebMCPTools } from "./WebMCPTools.tsx";
 
 export function App() {
   const { review, sidebar, capabilities } = useAppState();
   return (
     <>
+      <WebMCPTools />
       <Header />
       {sidebar.mobile && sidebar.open && (
         <button
@@ -25,8 +27,8 @@ export function App() {
         <DiffWorkspace />
       </div>
       {capabilityEnabled(capabilities.review.comments) &&
-        review.copyText !== null && (
-          <CopyDialog text={review.copyText} onClose={review.closeCopy} />
+        review.copyContent !== null && (
+          <CopyDialog content={review.copyContent} onClose={review.closeCopy} />
         )}
     </>
   );

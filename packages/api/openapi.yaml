@@ -234,6 +234,46 @@ paths:
           description: Comment deleted.
         default:
           $ref: "#/components/responses/Problem"
+  /api/v1/review/comments:
+    get:
+      operationId: listAgentReviewComments
+      parameters:
+        - name: includeResolved
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Agent-ready comments with current applicability.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [comments]
+                properties:
+                  comments:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AgentReviewComment"
+        default:
+          $ref: "#/components/responses/Problem"
+  /api/v1/review/comments/{commentId}/resolve:
+    post:
+      operationId: resolveAgentReviewComment
+      parameters:
+        - $ref: "#/components/parameters/CommentId"
+      responses:
+        "200":
+          description: Idempotently resolved comment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResolveReviewComment"
+        default:
+          $ref: "#/components/responses/Problem"
   /api/v1/review-marks:
     get:
       operationId: listReviewMarks
@@ -572,6 +612,69 @@ components:
           type: number
         origin:
           $ref: "#/components/schemas/ReviewOrigin"
+    AgentReviewComment:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          path,
+          scope,
+          fingerprint,
+          side,
+          start,
+          end,
+          code,
+          body,
+          status,
+          createdAt,
+          applicability,
+          actionable,
+        ]
+      properties:
+        id:
+          type: string
+        path:
+          type: string
+        scope:
+          $ref: "#/components/schemas/DiffMode"
+        fingerprint:
+          type: string
+        side:
+          type: string
+          enum: [additions, deletions]
+        start:
+          type: integer
+          minimum: 1
+        end:
+          type: integer
+          minimum: 1
+        code:
+          type: string
+        body:
+          type: string
+        status:
+          type: string
+          enum: [open, resolved]
+        createdAt:
+          type: number
+        origin:
+          $ref: "#/components/schemas/ReviewOrigin"
+        applicability:
+          type: string
+          enum: [anchored, stale, other-scope, unknown]
+        actionable:
+          type: boolean
+    ResolveReviewComment:
+      type: object
+      additionalProperties: false
+      required: [comment_id, status]
+      properties:
+        comment_id:
+          type: string
+        status:
+          type: string
+          enum: [resolved]
     CreateComment:
       type: object
       additionalProperties: false

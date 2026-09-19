@@ -1,6 +1,7 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
+    "types": ["node", "webmcp-types"],
     "paths": {
       "@/*": ["./src/*", "./src/*.ts", "./src/*.tsx"]
     }
@@ -8,6 +9,7 @@
   "include": [
     "src/**/*.ts",
     "src/**/*.tsx",
+    "src/**/*.d.ts",
     "test/**/*.ts",
     "vite.config.ts",
     "playwright.config.ts"

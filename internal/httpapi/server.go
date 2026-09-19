@@ -17,6 +17,7 @@ import (
 	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/processmetrics"
 	"github.com/flexdinesh/servediff/internal/review"
+	"github.com/flexdinesh/servediff/internal/reviewservice"
 	"github.com/flexdinesh/servediff/internal/reviewstore"
 	"github.com/flexdinesh/servediff/internal/session"
 	contract "github.com/flexdinesh/servediff/packages/api"
@@ -31,15 +32,16 @@ type cachedSnapshot struct {
 type Handler struct {
 	session   session.Session
 	store     *reviewstore.Store
+	review    *reviewservice.Service
 	assets    fs.FS
 	metrics   *processmetrics.Collector
 	mu        sync.Mutex
 	snapshots map[review.DiffMode]cachedSnapshot
 }
 
-func New(active session.Session, store *reviewstore.Store, assets fs.FS) *Handler {
+func New(active session.Session, store *reviewstore.Store, service *reviewservice.Service, assets fs.FS) *Handler {
 	return &Handler{
-		session: active, store: store, assets: assets,
+		session: active, store: store, review: service, assets: assets,
 		metrics:   processmetrics.New(),
 		snapshots: make(map[review.DiffMode]cachedSnapshot),
 	}
@@ -148,8 +150,23 @@ func (handler *Handler) api(response http.ResponseWriter, request *http.Request)
 	if route, ok := parseFileRoute(pathname); ok && request.Method == http.MethodGet {
 		return true, handler.getFile(response, request, route)
 	}
-	if commentRoute(pathname) && !handler.session.Capabilities.Review.Comments.Enabled() {
+	if (commentRoute(pathname) || agentReviewRoute(pathname)) && !handler.session.Capabilities.Review.Comments.Enabled() {
 		return true, session.NotEnabled(session.ReviewComments)
+	}
+	if pathname == "/api/v1/review/comments" && request.Method == http.MethodGet {
+		includeResolved, err := booleanQuery(request, "includeResolved")
+		if err != nil {
+			return true, err
+		}
+		comments, err := handler.review.ListComments(request.Context(), includeResolved)
+		return true, writeResult(response, map[string]any{"comments": comments}, err)
+	}
+	if commentID, ok := reviewResolveRoute(pathname); ok && request.Method == http.MethodPost {
+		resolution, err := handler.review.ResolveComment(commentID)
+		if errors.Is(err, reviewservice.ErrCommentNotFound) {
+			err = diffsource.Error(404, "Comment not found")
+		}
+		return true, writeResult(response, resolution, err)
 	}
 	if pathname == "/api/v1/comments" {
 		switch request.Method {
@@ -217,7 +234,8 @@ func (handler *Handler) api(response http.ResponseWriter, request *http.Request)
 	}
 	known := pathname == "/api/v1/session" || pathname == "/api/v1/diffs/current" ||
 		pathname == "/api/v1/comments" || pathname == "/api/v1/comments/import" ||
-		pathname == "/api/v1/comments/export" || pathname == "/api/v1/review-marks"
+		pathname == "/api/v1/comments/export" || pathname == "/api/v1/review/comments" ||
+		pathname == "/api/v1/review-marks"
 	if _, ok := parseFileRoute(pathname); ok {
 		known = true
 	}
@@ -225,6 +243,9 @@ func (handler *Handler) api(response http.ResponseWriter, request *http.Request)
 		known = true
 	}
 	if _, ok := routeValue(pathname, "/api/v1/review-marks/"); ok {
+		known = true
+	}
+	if _, ok := reviewResolveRoute(pathname); ok {
 		known = true
 	}
 	if known {
@@ -257,6 +278,35 @@ func commentRoute(pathname string) bool {
 	}
 	_, ok := routeValue(pathname, "/api/v1/comments/")
 	return ok
+}
+
+func agentReviewRoute(pathname string) bool {
+	if pathname == "/api/v1/review/comments" {
+		return true
+	}
+	_, ok := reviewResolveRoute(pathname)
+	return ok
+}
+
+func reviewResolveRoute(pathname string) (string, bool) {
+	const prefix = "/api/v1/review/comments/"
+	const suffix = "/resolve"
+	if !strings.HasPrefix(pathname, prefix) || !strings.HasSuffix(pathname, suffix) {
+		return "", false
+	}
+	commentID := strings.TrimSuffix(strings.TrimPrefix(pathname, prefix), suffix)
+	return commentID, commentID != "" && !strings.Contains(commentID, "/")
+}
+
+func booleanQuery(request *http.Request, name string) (bool, error) {
+	value := request.URL.Query().Get(name)
+	if !request.URL.Query().Has(name) || value == "false" {
+		return false, nil
+	}
+	if value == "true" {
+		return true, nil
+	}
+	return false, diffsource.Error(400, "Invalid %s value", name)
 }
 
 func (handler *Handler) requestScope(request *http.Request) (review.DiffMode, error) {

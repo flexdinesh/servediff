@@ -7,7 +7,7 @@ import { togglePath, useAppState } from "./app-state.tsx";
 import { CommentsPanel } from "./CommentsPanel.tsx";
 import { FileNavigation } from "./file-navigation.tsx";
 import { ancestorPaths } from "./file-tree.ts";
-import { ReviewTools } from "./ReviewTools.tsx";
+import { ChangeSummary, ReviewTools } from "./ReviewTools.tsx";
 import { capabilityEnabled } from "./session-context.tsx";
 
 export function FileExplorerNav() {
@@ -114,7 +114,13 @@ export function FileExplorerNav() {
             }}
           >
             <svg viewBox="0 0 24 24" aria-hidden="true">
-              <rect x="3" y="3" width="15" height="15" rx="2" />
+              <rect
+                className="control-radius-shape"
+                x="3"
+                y="3"
+                width="15"
+                height="15"
+              />
               <path d="M7 10.5h7M21 7v12a2 2 0 0 1-2 2H7" />
               {foldersCollapsed && <path d="M10.5 7v7" />}
             </svg>
@@ -193,7 +199,7 @@ export function FileExplorerNav() {
         </TabsContent>
         {commentsEnabled && <CommentsPanel />}
       </Tabs>
-      <ReviewTools />
+      {tab === "comments" ? <ReviewTools /> : <ChangeSummary />}
       <div className="sidebar-footer">
         <span className="live-dot" />
         <span id="connection">{connection}</span>
