@@ -192,6 +192,7 @@ export function DiffWorkspace() {
   }, []);
   const versionFor = useMemo(itemVersions, []);
   const allFiles = repository?.files ?? [];
+  const reviewedCount = allFiles.filter(isReviewed).length;
   const items = useMemo(
     () =>
       files.flatMap((file): CodeViewItem<CommentAnnotation>[] => {
@@ -641,7 +642,7 @@ export function DiffWorkspace() {
                     <rect x="2" y="2" width="12" height="12" />
                     {isReviewed(file) && <path d="m4.5 8 2.5 2.5 4.5-5" />}
                   </svg>
-                  viewed
+                  {isReviewed(file) ? "Reviewed" : "Mark reviewed"}
                 </Button>
               ) : null;
             }}
@@ -673,6 +674,12 @@ export function DiffWorkspace() {
       </div>
       <footer className="main-footer">
         <span id="scope-description">{scopeDescription}</span>
+        <span
+          className="mobile-review-progress"
+          aria-label={`${reviewedCount} of ${allFiles.length} files reviewed`}
+        >
+          {reviewedCount}/{allFiles.length} reviewed
+        </span>
         <span className="footer-details">
           <span className="footer-shortcuts">
             <kbd>Alt+J</kbd> <kbd>Alt+K</kbd> files <kbd>Alt+/</kbd> filter

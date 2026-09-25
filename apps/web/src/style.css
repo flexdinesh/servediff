@@ -577,6 +577,9 @@ h2 {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.mobile-review-progress {
+  display: none;
+}
 .footer-details,
 .server-metrics {
   display: inline-flex;
@@ -612,6 +615,10 @@ h2 {
   background: var(--backdrop);
 }
 @media (max-width: 1011px) {
+  .mobile-review-progress {
+    display: inline;
+    flex-shrink: 0;
+  }
   .footer-shortcuts {
     display: none;
   }
@@ -631,6 +638,12 @@ h2 {
   }
 }
 @media (max-width: 767px) {
+  .main-footer > #scope-description {
+    display: none;
+  }
+  .main-footer .footer-details {
+    margin-left: auto;
+  }
   .topbar {
     gap: var(--space-2);
   }
