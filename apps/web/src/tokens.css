@@ -8,7 +8,7 @@
   --muted: #686c77;
   --border: #e5e7ec;
   --border-muted: var(--border);
-  --border-control: #878c98;
+  --border-control: #7f8491;
   --border-strong: var(--border-control);
   --hover: #eeeef4;
   --diff-file-header: var(--panel);
@@ -18,19 +18,19 @@
   --on-accent: #fff;
   --success: #247446;
   --success-bg: #dafbe1;
-  --success-border: #82e596;
+  --success-border: #499a62;
   --warning: #85620f;
   --warning-bg: #fff8c5;
-  --warning-border: #d4a72c;
+  --warning-border: #aa7913;
   --review-anchor: #d5a910;
   --error: #b73840;
   --error-bg: #ffebe9;
-  --error-border: #ff8182;
+  --error-border: #d45a60;
   /* File-kind hints only; never use these as UI action/status colors. */
-  --file-code: #2876b4;
+  --file-code: #236a9f;
   --file-data: #85620f;
   --file-markup: #ad4c34;
-  --file-config: #8761b4;
+  --file-config: #7954a3;
 
   --space-1: 0.25rem;
   --space-0-5: 0.125rem;
@@ -82,7 +82,7 @@
   --muted: #a0a3ad;
   --border: #303137;
   --border-muted: var(--border);
-  --border-control: #6b6f7b;
+  --border-control: #747985;
   --border-strong: var(--border-control);
   --hover: #282930;
   --accent: #aba7ff;
@@ -91,14 +91,14 @@
   --on-accent: #151619;
   --success: #70cc95;
   --success-bg: #1b4721;
-  --success-border: #347d39;
+  --success-border: #58ad76;
   --warning: #dfbd68;
   --warning-bg: #4d2d00;
-  --warning-border: #966600;
+  --warning-border: #bd8b2f;
   --review-anchor: #ffd452;
   --error: #ed8a8e;
   --error-bg: #4c1e22;
-  --error-border: #a40e26;
+  --error-border: #de6974;
   --file-code: #75b9f2;
   --file-data: #dfbd68;
   --file-markup: #e5a18b;
