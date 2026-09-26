@@ -323,13 +323,13 @@ test("file diffs have measured gaps and end dividers", async ({ page }) => {
   expect(headerColors.sidebar).toBe(headerColors.panel);
 });
 
-test("reset viewed clears file review marks and disables when empty", async ({
+test("reset reviewed clears file review marks and disables when empty", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 4_000 });
   await page.goto("/");
 
-  const reset = page.getByRole("button", { name: "Reset viewed" });
+  const reset = page.getByRole("button", { name: "Reset reviewed" });
   await expect(reset).toBeDisabled();
   await expect(reset).toHaveAttribute("data-variant", "outline");
   await expect(reset).toHaveAttribute("data-size", "xs");
@@ -359,6 +359,19 @@ test("reset viewed clears file review marks and disables when empty", async ({
   await expect(manuallyCollapsed).toHaveAttribute("aria-expanded", "true");
   await expect(page.locator("#review-count")).toHaveText("0 of 12 reviewed");
   await expect(reset).toBeDisabled();
+});
+
+test("mobile keeps review progress visible beside the diff", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+
+  const progress = page.locator(".mobile-review-progress");
+  await expect(progress).toBeVisible();
+  await expect(progress).toHaveText("0/12 reviewed");
+  await page.locator("#viewer .review-button").first().click();
+  await expect(progress).toHaveText("1/12 reviewed");
 });
 
 test("inline comments use a distinct structured surface while sidebar comments remain cards", async ({
@@ -1227,7 +1240,7 @@ test("mobile sidebar preserves accessible touch targets", async ({ page }) => {
     .getByRole("button", { name: "Hide summary" })
     .boundingBox();
   const resetBox = await page
-    .getByRole("button", { name: "Reset viewed" })
+    .getByRole("button", { name: "Reset reviewed" })
     .boundingBox();
   const searchBox = await page.locator(".search-box").boundingBox();
   const filesTabBox = await page

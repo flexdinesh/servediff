@@ -206,10 +206,10 @@ export function ChangeSummary() {
               variant="outline"
               size="xs"
               disabled={reviewedCount === 0}
-              title="Clear all viewed files"
+              title="Clear all reviewed files"
               onClick={resetReviewed}
             >
-              Reset viewed
+              Reset reviewed
             </Button>
           </div>
         </div>

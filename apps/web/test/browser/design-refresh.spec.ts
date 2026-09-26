@@ -427,16 +427,36 @@ test("light and dark themes retain readable text and visible control boundaries"
       };
       const root = getComputedStyle(document.documentElement);
       const probe = document.createElement("span");
-      probe.style.color = "var(--border-control)";
       document.body.append(probe);
-      const controlBorder = getComputedStyle(probe).color;
+      const token = (name: string) => {
+        probe.style.color = `var(--${name})`;
+        return getComputedStyle(probe).color;
+      };
+      const controlBorder = token("border-control");
+      const hover = token("hover");
+      const selected = token("accent-bg");
+      const fileHints = ["file-code", "file-config"].flatMap((name) => [
+        ratio(token(name), hover),
+        ratio(token(name), selected),
+      ]);
+      const statusBorders = [
+        ratio(token("success-border"), token("success-bg")),
+        ratio(token("warning-border"), token("warning-bg")),
+        ratio(token("error-border"), token("error-bg")),
+      ];
       probe.remove();
       return {
         text: ratio(root.color, root.backgroundColor),
         control: ratio(controlBorder, root.backgroundColor),
+        hoverControl: ratio(controlBorder, hover),
+        fileHint: Math.min(...fileHints),
+        statusBorder: Math.min(...statusBorders),
       };
     });
     expect(contrast.text).toBeGreaterThanOrEqual(4.5);
     expect(contrast.control).toBeGreaterThanOrEqual(3);
+    expect(contrast.hoverControl).toBeGreaterThanOrEqual(3);
+    expect(contrast.fileHint).toBeGreaterThanOrEqual(4.5);
+    expect(contrast.statusBorder).toBeGreaterThanOrEqual(3);
   }
 });
