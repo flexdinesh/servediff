@@ -499,6 +499,26 @@ diffs-container {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+.diff-collapse[data-slot="button"][aria-expanded] {
+  background: transparent;
+}
+.diff-collapse[data-slot="button"][aria-expanded]:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+.copy-path {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+}
+.copy-path-feedback {
+  color: var(--success);
+  font: var(--text-xs) / var(--leading-ui) var(--font-sans);
+}
+.copy-path[data-status="error"] .copy-path-feedback {
+  color: var(--error);
+}
 .review-button {
   color: var(--muted);
 }

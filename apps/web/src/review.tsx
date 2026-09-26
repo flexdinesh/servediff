@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { useAppState } from "./app-state.tsx";
+import { CopyPathButton } from "./CopyPathButton.tsx";
 import { commentApplicability, type ReviewComment } from "./review-model.ts";
 
 function location(comment: ReviewComment) {
@@ -127,9 +128,11 @@ export function CommentEditor({
       <Card size="sm" className="comment-editor">
         <CardHeader className="comment-editor-header">
           <CardTitle className="comment-editor-title">
-            <span>
-              New comment <small>· {location(draft)}</small>
-            </span>
+            <small>{location(draft)}</small>
+            <CopyPathButton
+              value={`${draft.path}:${draft.start}${draft.end !== draft.start ? `-${draft.end}` : ""}`}
+              label="Copy path and lines"
+            />
           </CardTitle>
         </CardHeader>
         <CardContent className="comment-editor-content">

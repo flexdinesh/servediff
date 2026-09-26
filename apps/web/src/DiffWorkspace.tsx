@@ -13,6 +13,7 @@ import { api, errorDetail } from "@servediff/api";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { togglePath, useAppState } from "./app-state.tsx";
+import { CopyPathButton } from "./CopyPathButton.tsx";
 import { DiffToolbar } from "./DiffToolbar.tsx";
 import { themesFor } from "./display-options.ts";
 import { DraftComment, ReviewCommentCard } from "./review.tsx";
@@ -375,7 +376,6 @@ export function DiffWorkspace() {
         : {}),
       unsafeCSS: `
         [data-diffs-header] {
-          cursor: pointer;
           height: calc(2 * var(--space-4) + var(--space-1));
           min-height: calc(2 * var(--space-4) + var(--space-1));
           background: var(--diff-file-header);
@@ -561,33 +561,7 @@ export function DiffWorkspace() {
         {selectionFeedback}
       </p>
       <div className="review-surface">
-        <section
-          id="viewer"
-          aria-label="Code differences"
-          onClickCapture={(event) => {
-            const path = event.nativeEvent.composedPath();
-            if (
-              path.some(
-                (target) =>
-                  target instanceof HTMLElement &&
-                  target.matches(
-                    "button, a, input, select, textarea, [role=button]",
-                  ),
-              ) ||
-              !path.some(
-                (target) =>
-                  target instanceof HTMLElement &&
-                  target.hasAttribute("data-diffs-header"),
-              )
-            )
-              return;
-            const item = viewer.current
-              ?.getInstance()
-              ?.getRenderedItems()
-              .find((rendered) => path.includes(rendered.element));
-            if (item) setCollapsed((previous) => togglePath(previous, item.id));
-          }}
-        >
+        <section id="viewer" aria-label="Code differences">
           <span
             ref={lineMetric}
             className="diff-line-metric"
@@ -609,6 +583,7 @@ export function DiffWorkspace() {
                   variant="ghost"
                   size="icon-xs"
                   aria-label={`${item.collapsed ? "Expand" : "Collapse"} ${item.id}`}
+                  title={item.collapsed ? "Expand file" : "Collapse file"}
                   aria-expanded={!item.collapsed}
                   onClick={() =>
                     setCollapsed((previous) => togglePath(previous, item.id))
@@ -621,6 +596,9 @@ export function DiffWorkspace() {
                   </svg>
                 </Button>
               </span>
+            )}
+            renderHeaderFilenameSuffix={(item) => (
+              <CopyPathButton value={item.id} label="Copy relative path" />
             )}
             renderHeaderMetadata={(item) => {
               const file = allFiles.find((file) => file.path === item.id);
