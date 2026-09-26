@@ -323,6 +323,148 @@ test("file diffs have measured gaps and end dividers", async ({ page }) => {
   expect(headerColors.sidebar).toBe(headerColors.panel);
 });
 
+test("only the diff collapse button toggles a file and paths copy independently", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto("/");
+  const file = page
+    .locator("#viewer diffs-container")
+    .filter({ hasText: "src/components/Badge.tsx" });
+  const title = file.locator("[data-title]");
+  const collapse = file.locator(".diff-collapse");
+  const copy = file.getByRole("button", {
+    name: "Copy relative path: src/components/Badge.tsx",
+    exact: true,
+  });
+
+  await title.click();
+  await expect(collapse).toHaveAttribute("aria-expanded", "true");
+  await expect(collapse).toHaveAttribute("title", "Collapse file");
+  await expect(collapse).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await collapse.hover();
+  await expect(collapse).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+
+  await copy.click();
+  await expect(file.locator(".copy-path-feedback")).toHaveText("Copied");
+  await expect(copy).toHaveAttribute("title", "Copied");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    "src/components/Badge.tsx",
+  );
+  await expect(collapse).toHaveAttribute("aria-expanded", "true");
+  await expect(file.locator(".copy-path-feedback")).toHaveText("");
+
+  await collapse.click();
+  await expect(collapse).toHaveAttribute("aria-expanded", "false");
+  await expect(collapse).toHaveAttribute("title", "Expand file");
+  await title.click();
+  await expect(collapse).toHaveAttribute("aria-expanded", "false");
+  await copy.click();
+  await expect(file.locator(".copy-path-feedback")).toHaveText("Copied");
+  await expect(collapse).toHaveAttribute("aria-expanded", "false");
+  await collapse.focus();
+  await page.keyboard.press("Enter");
+  await expect(collapse).toHaveAttribute("aria-expanded", "true");
+
+  const renamed = page.getByRole("button", {
+    name: "Copy relative path: src/utils/format.ts",
+    exact: true,
+  });
+  await page.locator('#file-tree [data-path="src/utils/format.ts"]').click();
+  await renamed.click();
+  await expect(renamed).toHaveAttribute("title", "Copied");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    "src/utils/format.ts",
+  );
+});
+
+for (const [start, end] of [
+  [3, 3],
+  [2, 4],
+]) {
+  test(`comment selection copies file location for lines ${start}-${end}`, async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.goto("/");
+    const file = page
+      .locator("#viewer diffs-container")
+      .filter({ hasText: "src/components/Badge.tsx" });
+    await file.locator(`[data-gutter] [data-column-number="${start}"]`).hover();
+    const add = file.locator("[data-utility-button]");
+    await expect(add).toBeVisible();
+    if (start === end) {
+      await add.click();
+    } else {
+      const button = await add.boundingBox();
+      const lastLine = await file
+        .locator(`[data-gutter] [data-column-number="${end}"]`)
+        .boundingBox();
+      if (!button || !lastLine) throw new Error("Missing selection targets");
+      await page.mouse.move(
+        button.x + button.width / 2,
+        button.y + button.height / 2,
+      );
+      await page.mouse.down();
+      await page.mouse.move(
+        lastLine.x + lastLine.width / 2,
+        lastLine.y + lastLine.height / 2,
+      );
+      await page.mouse.up();
+    }
+
+    const editor = page.locator("#viewer .comment-editor");
+    const displayLocation = `src/components/Badge.tsx:${start}${end !== start ? `–${end}` : ""}`;
+    const copiedLocation = `src/components/Badge.tsx:${start}${end !== start ? `-${end}` : ""}`;
+    await expect(editor.locator(".comment-editor-title small")).toHaveText(
+      displayLocation,
+    );
+    await expect(editor.locator(".comment-editor-header")).not.toContainText(
+      "New comment",
+    );
+    await expect(editor.locator(".comment-editor-header")).not.toContainText(
+      "·",
+    );
+    await editor
+      .getByRole("button", { name: `Copy path and lines: ${copiedLocation}` })
+      .click();
+    await expect(editor.locator(".copy-path-feedback")).toHaveText("Copied");
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+      copiedLocation,
+    );
+    await expect(
+      editor.getByRole("textbox", { name: "Review comment" }),
+    ).toHaveValue("");
+    await expect(file.locator(".diff-collapse")).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+  });
+}
+
+test("path copy failures show feedback and allow retry", async ({ page }) => {
+  await page.addInitScript(() => {
+    let attempts = 0;
+    Object.defineProperty(navigator, "clipboard", {
+      value: {
+        async writeText() {
+          if (++attempts === 1) throw new Error("Clipboard unavailable");
+        },
+      },
+    });
+  });
+  await page.goto("/");
+  const file = page.locator("#viewer diffs-container").first();
+  const copy = file.getByRole("button", { name: /^Copy relative path:/ });
+  await copy.click();
+  await expect(file.locator(".copy-path-feedback")).toHaveText("Copy failed");
+  await expect(copy).toBeEnabled();
+  await copy.click();
+  await expect(file.locator(".copy-path-feedback")).toHaveText("Copied");
+});
+
 test("reset reviewed clears file review marks and disables when empty", async ({
   page,
 }) => {
