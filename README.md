@@ -11,10 +11,17 @@ With Homebrew:
 brew install flexdinesh/tap/servediff
 ```
 
-With Go 1.25 or later:
+Latest stable release with Go 1.25 or later:
 
 ```sh
 go install github.com/flexdinesh/servediff/cmd/servediff@latest
+```
+
+Or install a specific stable version or the latest development changes from `main`:
+
+```sh
+go install github.com/flexdinesh/servediff/cmd/servediff@v0.1.1
+go install github.com/flexdinesh/servediff/cmd/servediff@dev
 ```
 
 ## Usage
