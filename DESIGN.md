@@ -272,8 +272,9 @@ such detail into a token. New layout spacing must use the scale.
   expands the body and actions; reopening restores the expanded open state.
 - Comment views default to open comments and offer Open, Resolved, and All filters.
   Export uses one primary `Copy review` action plus a menu for broader scopes.
-- Keep `Save comment` enabled; empty submission focuses the labeled editor and
-  shows an inline error. Deleting a saved comment requires explicit confirmation.
+- Keep `Save comment` enabled when idle; empty submission focuses the labeled
+  editor and shows an inline error. Disable it while saving. Deleting a saved
+  comment requires explicit confirmation.
 - Tint every old/new diff row covered by a visible comment, including its
   gutter and multi-line range. Use a stronger green/red tint for addition and
   deletion rows; reserve `--review-anchor` yellow for unchanged context. Mix

@@ -6,6 +6,7 @@ import {
   useEffect,
   useState,
 } from "react";
+import { Button } from "@/components/ui/button";
 
 type LoadState =
   | { status: "loading" }
@@ -20,6 +21,7 @@ export function capabilityEnabled(capability: { state: string }) {
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
     void api
@@ -41,7 +43,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           });
       });
     return () => controller.abort();
-  }, []);
+  }, [attempt]);
   if (state.status !== "ready")
     return (
       <main className="session-status" role="status">
@@ -55,6 +57,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             ? "Reading session capabilities…"
             : state.detail}
         </p>
+        {state.status === "error" && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setState({ status: "loading" });
+              setAttempt((current) => current + 1);
+            }}
+          >
+            Retry
+          </Button>
+        )}
       </main>
     );
   return <SessionContext value={state.session}>{children}</SessionContext>;

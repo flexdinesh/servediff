@@ -389,33 +389,44 @@ for (const [start, end] of [
   }) => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     await page.goto("/");
+    await expect(page.locator("#additions")).toHaveText("+43");
+    await page.evaluate(() => document.fonts.ready);
+    await page
+      .locator('#file-tree [data-path="src/components/Badge.tsx"]')
+      .click();
     const file = page
       .locator("#viewer diffs-container")
       .filter({ hasText: "src/components/Badge.tsx" });
-    await file.locator(`[data-gutter] [data-column-number="${start}"]`).hover();
     const add = file.locator("[data-utility-button]");
-    await expect(add).toBeVisible();
-    if (start === end) {
-      await add.click();
-    } else {
-      const button = await add.boundingBox();
-      const lastLine = await file
-        .locator(`[data-gutter] [data-column-number="${end}"]`)
-        .boundingBox();
-      if (!button || !lastLine) throw new Error("Missing selection targets");
-      await page.mouse.move(
-        button.x + button.width / 2,
-        button.y + button.height / 2,
-      );
-      await page.mouse.down();
-      await page.mouse.move(
-        lastLine.x + lastLine.width / 2,
-        lastLine.y + lastLine.height / 2,
-      );
-      await page.mouse.up();
-    }
-
     const editor = page.locator("#viewer .comment-editor");
+    // Worker rendering can replace the hover utility before the drag starts.
+    await expect(async () => {
+      if (await editor.isVisible()) return;
+      await file
+        .locator(`[data-gutter] [data-column-number="${start}"]`)
+        .hover({ timeout: 1_000 });
+      await expect(add).toBeVisible({ timeout: 1_000 });
+      if (start === end) {
+        await add.click({ timeout: 1_000 });
+      } else {
+        const button = await add.boundingBox();
+        const lastLine = await file
+          .locator(`[data-gutter] [data-column-number="${end}"]`)
+          .boundingBox();
+        if (!button || !lastLine) throw new Error("Missing selection targets");
+        await page.mouse.move(
+          button.x + button.width / 2,
+          button.y + button.height / 2,
+        );
+        await page.mouse.down();
+        await page.mouse.move(
+          lastLine.x + lastLine.width / 2,
+          lastLine.y + lastLine.height / 2,
+        );
+        await page.mouse.up();
+      }
+      await expect(editor).toBeVisible({ timeout: 1_000 });
+    }).toPass({ timeout: 10_000 });
     const displayLocation = `src/components/Badge.tsx:${start}${end !== start ? `–${end}` : ""}`;
     const copiedLocation = `src/components/Badge.tsx:${start}${end !== start ? `-${end}` : ""}`;
     await expect(editor.locator(".comment-editor-title small")).toHaveText(

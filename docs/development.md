@@ -81,9 +81,13 @@ map into Tailwind and shadcn theme roles. Reuse primitives from
 `apps/web/src/components/ui`; keep authored CSS for specialized layout, dynamic
 geometry, and Pierre's measured rendering boundary.
 
-`App.tsx` composes page sections. `app-state.tsx` owns shared state through
-`AppProvider`; `DiffWorkspace.tsx` owns Pierre rendering; `use-review.ts` uses
-the generated REST client. Keep section-only state within its component.
+`App.tsx` composes page sections. `AppProvider` composes appearance, sidebar,
+and workspace owners. Consumers subscribe through domain hooks for diff source,
+navigation, draft, review, reviewed files, and collapse state. One draft persists
+across scopes and pauses diff polling. `DiffWorkspace.tsx` owns Pierre rendering,
+versions, worker options, and measured geometry. `use-review.ts` and
+`use-reviewed-files.ts` own their REST requests and recovery; reads cannot settle
+across writes or owner disposal. Keep section-only state within its component.
 
 See [architecture.md](architecture.md) for repository boundaries and dependency
 rules.

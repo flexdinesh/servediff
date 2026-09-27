@@ -3,35 +3,40 @@ import { XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { togglePath, useAppState } from "./app-state.tsx";
+import {
+  togglePath,
+  useDiffSource,
+  useNavigation,
+  useReviewState,
+  useReviewedFilesState,
+} from "./app-state.tsx";
+import { useSidebarState } from "./sidebar-context.tsx";
 import { CommentsPanel } from "./CommentsPanel.tsx";
 import { FileNavigation } from "./file-navigation.tsx";
 import { ancestorPaths } from "./file-tree.ts";
 import { ChangeSummary, ReviewTools } from "./ReviewTools.tsx";
-import { capabilityEnabled } from "./session-context.tsx";
+import { capabilityEnabled, useSession } from "./session-context.tsx";
 
 export function FileExplorerNav() {
+  const { repository, diff } = useDiffSource();
+  const { capabilities } = useSession();
   const {
-    source: { repository, diff },
-    capabilities,
-    navigation: {
-      tab,
-      setTab,
-      filter,
-      setFilter,
-      files,
-      activePath,
-      closed,
-      setClosed,
-      filteredClosed,
-      setFilteredClosed,
-      selectFile,
-      search,
-    },
-    sidebar,
-    review,
-    reviewed: { isReviewed },
-  } = useAppState();
+    tab,
+    setTab,
+    filter,
+    setFilter,
+    files,
+    activePath,
+    closed,
+    setClosed,
+    filteredClosed,
+    setFilteredClosed,
+    selectFile,
+    search,
+  } = useNavigation();
+  const sidebar = useSidebarState();
+  const review = useReviewState();
+  const { isReviewed } = useReviewedFilesState();
   const commentsEnabled = capabilityEnabled(capabilities.review.comments);
   const refreshEnabled = capabilityEnabled(capabilities.diff.refresh);
   const stagingMetadataEnabled = capabilityEnabled(
@@ -210,7 +215,7 @@ export function FileExplorerNav() {
 }
 
 export function SidebarResizer() {
-  const { sidebar } = useAppState();
+  const sidebar = useSidebarState();
   return (
     <hr
       id="sidebar-resizer"

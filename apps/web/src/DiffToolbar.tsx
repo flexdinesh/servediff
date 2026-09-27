@@ -11,33 +11,31 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { useAppState } from "./app-state.tsx";
+import { useDiffSource, useDiffCollapse, useNavigation } from "./app-state.tsx";
+import { useAppearance } from "./appearance-context.tsx";
 import {
   DIFF_THEMES,
   LINE_DIFF_TYPES,
   readDiffTheme,
   readLineDiffType,
 } from "./display-options.ts";
-import { capabilityEnabled } from "./session-context.tsx";
+import { capabilityEnabled, useSession } from "./session-context.tsx";
 
 export function DiffToolbar() {
+  const { mode, changeMode } = useDiffSource();
+  const { capabilities } = useSession();
   const {
-    source: { mode, changeMode },
-    capabilities,
-    display: {
-      layout,
-      setLayout,
-      wrap,
-      setWrap,
-      diffTheme,
-      setDiffTheme,
-      lineDiffType,
-      setLineDiffType,
-      collapsed,
-      setCollapsed,
-    },
-    navigation: { files },
-  } = useAppState();
+    layout,
+    setLayout,
+    wrap,
+    setWrap,
+    diffTheme,
+    setDiffTheme,
+    lineDiffType,
+    setLineDiffType,
+  } = useAppearance();
+  const { collapsed, setCollapsed } = useDiffCollapse();
+  const { files } = useNavigation();
   const scopes = capabilities.diff.scopes;
   const allCollapsed =
     files.length > 0 && files.every((file) => collapsed.has(file.path));

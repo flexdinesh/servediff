@@ -10,10 +10,13 @@ import {
   type SetStateAction,
   useCallback,
   useEffect,
+  useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
 import { removeSaved, saved } from "./preferences.ts";
+import { createRequestOwner } from "./request-owner.ts";
 import {
   commentContext,
   createCommentId,
@@ -38,6 +41,8 @@ interface CopyOptions {
   title?: string;
 }
 
+const noComments: ReviewComment[] = [];
+
 function fileBlock(content: string) {
   const start = content.indexOf("<file ");
   const close = "</file>";
@@ -58,34 +63,53 @@ export function useReview(
     comments: ReviewComment[];
   }>({ key: "", comments: [] });
   const key = root ? `servediff:comments:${root}` : stored.key;
-  const previousRoot = useRef("");
-  const comments = enabled && stored.key === key ? stored.comments : [];
-  const rounds = reviewRounds(comments, repository);
-  const currentComments = rounds.find((round) => round.current)?.comments ?? [];
+  const previousKey = useRef("");
+  const requests = useRef<ReturnType<typeof createRequestOwner> | null>(null);
+  const refreshComments = useRef<() => void>(() => {});
+  const comments = enabled && stored.key === key ? stored.comments : noComments;
+  const rounds = useMemo(
+    () => reviewRounds(comments, repository),
+    [comments, repository],
+  );
+  const currentComments =
+    rounds.find((round) => round.current)?.comments ?? noComments;
   const [feedback, setFeedback] = useState("");
   const [copyContent, setCopyContent] = useState<CopyContent | null>(null);
+  const [pending, setPending] = useState(new Set<string>());
+  const [saveError, setSaveError] = useState<{
+    draftId: string;
+    message: string;
+  } | null>(null);
+  const latest = useRef({ repository, draft, comments });
+  useLayoutEffect(() => {
+    latest.current = { repository, draft, comments };
+  });
 
   useEffect(() => {
-    if (!enabled || !root) return;
-    if (previousRoot.current && previousRoot.current !== root) setDraft(null);
-    previousRoot.current = root;
-    let disposed = false;
-    let controller = new AbortController();
-    async function load(importLegacy: boolean) {
-      controller.abort();
-      const requestController = new AbortController();
-      controller = requestController;
+    if (!enabled || !key) return;
+    if (previousKey.current && previousKey.current !== key) setDraft(null);
+    previousKey.current = key;
+    const owner = createRequestOwner(key);
+    requests.current = owner;
+    setStored((current) =>
+      current.key === key ? current : { key, comments: [] },
+    );
+    setPending(new Set());
+    setSaveError(null);
+    async function load(importLegacy: boolean, force = false) {
+      const request = owner.beginRead(force);
+      if (!request) return;
       try {
         const legacy = importLegacy ? parseComments(saved(key)) : [];
         const result = legacy.length
           ? await api.POST("/api/v1/comments/import", {
               body: { comments: legacy },
-              signal: requestController.signal,
+              signal: request.signal,
             })
           : await api.GET("/api/v1/comments", {
-              signal: requestController.signal,
+              signal: request.signal,
             });
-        if (disposed || requestController.signal.aborted) return;
+        if (!request.isCurrent()) return;
         if (!result.data) {
           setFeedback(errorDetail(result.error, "Unable to load comments"));
           return;
@@ -93,85 +117,137 @@ export function useReview(
         if (legacy.length) removeSaved(key);
         setStored({ key, comments: result.data.comments });
       } catch (error) {
-        if (disposed || requestController.signal.aborted) return;
+        if (!request.isCurrent()) return;
         setFeedback(errorDetail(error, "Unable to load comments"));
+      } finally {
+        request.finish();
       }
     }
+    refreshComments.current = () => void load(false);
     void load(true);
     const timer = setInterval(() => {
       if (!document.hidden) void load(false);
     }, 3_000);
     return () => {
-      disposed = true;
-      controller.abort();
+      owner.dispose();
       clearInterval(timer);
     };
-  }, [enabled, key, root, setDraft]);
+  }, [enabled, key, setDraft]);
 
-  function replace(comment: ReviewComment) {
-    setStored((current) => ({
-      key,
-      comments: current.comments.some((entry) => entry.id === comment.id)
-        ? current.comments.map((entry) =>
-            entry.id === comment.id ? comment : entry,
-          )
-        : [...current.comments, comment],
-    }));
-  }
+  const startMutation = useCallback(
+    (id: string) => {
+      const owner = requests.current;
+      if (!enabled || owner?.key !== key) return null;
+      const request = owner.beginWrite(id);
+      if (!request) return null;
+      setPending((current) => new Set(current).add(id));
+      return request;
+    },
+    [enabled, key],
+  );
 
-  const markResolved = useCallback(
-    (commentId: string) => {
+  const finishMutation = useCallback(
+    (
+      id: string,
+      request: NonNullable<
+        ReturnType<ReturnType<typeof createRequestOwner>["beginWrite"]>
+      >,
+    ) => {
+      const current = request.isCurrent();
+      request.finish();
+      if (!current) return;
+      setPending((previous) => {
+        const next = new Set(previous);
+        next.delete(id);
+        return next;
+      });
+      refreshComments.current();
+    },
+    [],
+  );
+
+  const replace = useCallback(
+    (comment: ReviewComment) => {
       setStored((current) => ({
         key,
-        comments: current.comments.map((comment) =>
-          comment.id === commentId
-            ? { ...comment, status: "resolved" }
-            : comment,
-        ),
+        comments:
+          current.key !== key
+            ? [comment]
+            : current.comments.some((entry) => entry.id === comment.id)
+              ? current.comments.map((entry) =>
+                  entry.id === comment.id ? comment : entry,
+                )
+              : [...current.comments, comment],
       }));
     },
     [key],
   );
 
-  function begin(
-    file: ChangedFile,
-    diff: FileDiffMetadata,
-    range: SelectedLineRange,
-  ) {
-    if (!enabled) return;
-    if (draft) {
-      setFeedback("Finish or cancel your current draft first.");
-      return;
-    }
-    if (!repository) return;
-    const context = commentContext(diff, range);
-    if (!context) {
-      setFeedback("Select up to 200 visible lines on one side to comment.");
-      return;
-    }
-    setDraft({
-      id: createCommentId(),
-      path: file.path,
-      scope: repository.mode,
-      fingerprint: file.fingerprint,
-      ...context,
-      body: "",
-      status: "open",
-      createdAt: Date.now(),
-      origin: {
-        source: repository.source,
-        repository: repository.name,
-        branch: repository.branch,
-        head: repository.head,
-        revision: repository.revision,
-        file: { status: file.status, oldPath: file.oldPath },
-      },
-    });
-    setFeedback("Draft open — automatic refresh paused.");
-  }
+  const markResolved = useCallback(
+    (commentId: string) => {
+      const owner = requests.current;
+      if (owner?.key !== key) return;
+      owner.invalidateReads();
+      setStored((current) =>
+        current.key !== key
+          ? current
+          : {
+              ...current,
+              comments: current.comments.map((comment) =>
+                comment.id === commentId
+                  ? { ...comment, status: "resolved" }
+                  : comment,
+              ),
+            },
+      );
+    },
+    [key],
+  );
 
-  async function submit() {
+  const begin = useCallback(
+    (file: ChangedFile, diff: FileDiffMetadata, range: SelectedLineRange) => {
+      const { repository, draft } = latest.current;
+      if (!enabled) return;
+      if (draft) {
+        setFeedback("Finish or cancel your current draft first.");
+        return;
+      }
+      if (!repository) return;
+      const context = commentContext(diff, range);
+      if (!context) {
+        setFeedback("Select up to 200 visible lines on one side to comment.");
+        return;
+      }
+      setDraft({
+        id: createCommentId(),
+        path: file.path,
+        scope: repository.mode,
+        fingerprint: file.fingerprint,
+        ...context,
+        body: "",
+        status: "open",
+        createdAt: Date.now(),
+        origin: {
+          source: repository.source,
+          repository: repository.name,
+          branch: repository.branch,
+          head: repository.head,
+          revision: repository.revision,
+          file: { status: file.status, oldPath: file.oldPath },
+        },
+      });
+      setSaveError(null);
+      setFeedback("Draft open — automatic refresh paused.");
+    },
+    [enabled, setDraft],
+  );
+
+  const submit = useCallback(async () => {
+    const { repository, draft, comments } = latest.current;
     if (!draft?.body.trim() || !repository) return;
+    const request = startMutation(draft.id);
+    if (!request) return;
+    setSaveError(null);
     setFeedback("Saving comment…");
     try {
       const existing = comments.some((comment) => comment.id === draft.id);
@@ -183,6 +259,7 @@ export function useReview(
         ? await api.PATCH("/api/v1/comments/{commentId}", {
             params: { path: { commentId: draft.id } },
             body: { body: draft.body.trim() },
+            signal: request.signal,
           })
         : file
           ? await api.POST("/api/v1/comments", {
@@ -196,189 +273,302 @@ export function useReview(
                 end: draft.end,
                 body: draft.body.trim(),
               },
+              signal: request.signal,
             })
           : null;
-      if (!result) {
-        setFeedback("Unable to save comment: file changed");
-        return;
-      }
-      if (!result.data) {
-        setFeedback(errorDetail(result.error, "Unable to save comment"));
-        return;
-      }
-      replace(result.data);
-      setDraft(null);
+      if (!request.isCurrent()) return;
+      if (!result) throw new Error("Unable to save comment: file changed");
+      if (!result.data)
+        throw new Error(errorDetail(result.error, "Unable to save comment"));
+      const savedComment = result.data;
+      replace(savedComment);
+      setDraft((current) => {
+        if (current?.id !== draft.id) return current;
+        // A newly created comment receives its stable ID from the server.
+        // Retain newer text under that ID so its next save updates, not creates.
+        return current === draft
+          ? null
+          : { ...savedComment, body: current.body };
+      });
       setFeedback("Comment saved.");
     } catch (error) {
-      setFeedback(errorDetail(error, "Unable to save comment"));
+      if (!request.isCurrent()) return;
+      const message = errorDetail(error, "Unable to save comment");
+      setSaveError({ draftId: draft.id, message });
+      setFeedback(message);
+    } finally {
+      finishMutation(draft.id, request);
     }
-  }
+  }, [startMutation, finishMutation, replace, setDraft]);
 
-  function cancel() {
+  const cancel = useCallback(() => {
     setDraft(null);
+    setSaveError(null);
     setFeedback("Draft cancelled.");
-  }
+  }, [setDraft]);
 
-  function edit(comment: ReviewComment) {
-    if (draft) {
-      setFeedback("Finish or cancel your current draft first.");
-      return false;
-    }
-    setDraft({ ...comment });
-    setFeedback("Draft open — automatic refresh paused.");
-    return true;
-  }
-
-  async function toggle(comment: ReviewComment) {
-    try {
-      const status = comment.status === "open" ? "resolved" : "open";
-      const { data, error } = await api.PATCH("/api/v1/comments/{commentId}", {
-        params: { path: { commentId: comment.id } },
-        body: { status },
-      });
-      if (!data) {
-        setFeedback(errorDetail(error, "Unable to update comment"));
-        return;
+  const edit = useCallback(
+    (comment: ReviewComment) => {
+      const { draft } = latest.current;
+      if (draft) {
+        setFeedback("Finish or cancel your current draft first.");
+        return false;
       }
-      replace(data);
-    } catch (error) {
-      setFeedback(errorDetail(error, "Unable to update comment"));
-    }
-  }
+      setDraft({ ...comment });
+      setSaveError(null);
+      setFeedback("Draft open — automatic refresh paused.");
+      return true;
+    },
+    [setDraft],
+  );
 
-  async function remove(comment: ReviewComment) {
-    try {
-      const { response, error } = await api.DELETE(
-        "/api/v1/comments/{commentId}",
-        { params: { path: { commentId: comment.id } } },
-      );
-      if (!response.ok) {
-        setFeedback(errorDetail(error, "Unable to delete comment"));
-        return;
-      }
-      if (draft?.id === comment.id) setDraft(null);
-      setStored((current) => ({
-        key,
-        comments: current.comments.filter((entry) => entry.id !== comment.id),
-      }));
-    } catch (error) {
-      setFeedback(errorDetail(error, "Unable to delete comment"));
-    }
-  }
-
-  async function removeComments(status: "all" | "open" | "resolved" | "stale") {
-    try {
-      const { data, error } = await api.DELETE("/api/v1/comments", {
-        params: { query: { status } },
-      });
-      if (!data) {
-        setFeedback(errorDetail(error, "Unable to delete comments"));
-        return;
-      }
-      if (
-        draft &&
-        comments.some((comment) => comment.id === draft.id) &&
-        !data.comments.some((comment) => comment.id === draft.id)
-      )
-        setDraft(null);
-      setStored({ key, comments: data.comments });
-      setFeedback(
-        `Deleted ${data.deleted} ${data.deleted === 1 ? "comment" : "comments"}.`,
-      );
-    } catch (error) {
-      setFeedback(errorDetail(error, "Unable to delete comments"));
-    }
-  }
-
-  async function writeClipboard(
-    content: CopyPayload,
-    successMessage: string,
-    showDialogOnSuccess = false,
-  ) {
-    try {
-      await navigator.clipboard.writeText(content.text);
-      setFeedback(successMessage);
-      if (showDialogOnSuccess)
-        setCopyContent({ ...content, clipboard: "copied" });
-    } catch {
-      setCopyContent({ ...content, clipboard: "manual" });
-    }
-  }
-
-  async function copy(
-    includeResolved: boolean,
-    commentId?: string,
-    options: CopyOptions = {},
-  ) {
-    try {
-      const { data, error } = await api.GET("/api/v1/comments/export", {
-        params: {
-          query: {
-            includeResolved,
-            ...(commentId ? { commentId } : {}),
+  const toggle = useCallback(
+    async (comment: ReviewComment) => {
+      const request = startMutation(comment.id);
+      if (!request) return;
+      try {
+        const status = comment.status === "open" ? "resolved" : "open";
+        const { data, error } = await api.PATCH(
+          "/api/v1/comments/{commentId}",
+          {
+            params: { path: { commentId: comment.id } },
+            body: { status },
+            signal: request.signal,
           },
-        },
-        parseAs: "text",
-      });
-      if (data === undefined) {
-        setFeedback(errorDetail(error, "Unable to export comments"));
-        return;
+        );
+        if (!request.isCurrent()) return;
+        if (!data) {
+          setFeedback(errorDetail(error, "Unable to update comment"));
+          return;
+        }
+        replace(data);
+      } catch (error) {
+        if (!request.isCurrent()) return;
+        setFeedback(errorDetail(error, "Unable to update comment"));
+      } finally {
+        finishMutation(comment.id, request);
       }
-      if (!data) return;
-      const text = options.fileOnly ? fileBlock(data) : data;
-      if (!text) {
-        setFeedback("Unable to export comment");
-        return;
-      }
-      await writeClipboard(
-        {
-          label: options.label ?? "Comments XML",
-          text,
-          title: options.title ?? "Copy review comments",
-        },
-        commentId
-          ? "Copied comment as XML."
-          : `Copied ${includeResolved ? "all" : "unresolved"} comments as XML.`,
-        options.showDialogOnSuccess,
-      );
-    } catch (error) {
-      setFeedback(errorDetail(error, "Unable to export comments"));
-    }
-  }
+    },
+    [startMutation, finishMutation, replace],
+  );
 
-  return {
-    comments,
-    rounds,
-    currentComments,
-    feedback,
-    setFeedback,
-    begin,
-    submit,
-    cancel,
-    edit,
-    toggle,
-    markResolved,
-    remove,
-    removeComments,
-    copy: (includeResolved: boolean) => copy(includeResolved),
-    copyComment: (comment: ReviewComment) => copy(true, comment.id),
-    copySidebarComment: (comment: ReviewComment) =>
-      copy(true, comment.id, {
-        fileOnly: true,
-        showDialogOnSuccess: true,
-        label: "Comment XML",
-        title: "Copy review comment",
-      }),
-    copyWebMCPInstruction: (instruction: string) =>
-      writeClipboard(
-        {
-          label: "WebMCP instruction",
-          text: instruction,
-          title: "Copy WebMCP instruction",
-        },
-        "Copied WebMCP instruction.",
-      ),
-    copyContent,
-    closeCopy: () => setCopyContent(null),
-  };
+  const remove = useCallback(
+    async (comment: ReviewComment) => {
+      const request = startMutation(comment.id);
+      if (!request) return;
+      try {
+        const { response, error } = await api.DELETE(
+          "/api/v1/comments/{commentId}",
+          {
+            params: { path: { commentId: comment.id } },
+            signal: request.signal,
+          },
+        );
+        if (!request.isCurrent()) return;
+        if (!response.ok) {
+          setFeedback(errorDetail(error, "Unable to delete comment"));
+          return;
+        }
+        setDraft((current) => (current?.id === comment.id ? null : current));
+        setStored((current) => ({
+          key,
+          comments: current.comments.filter((entry) => entry.id !== comment.id),
+        }));
+      } catch (error) {
+        if (!request.isCurrent()) return;
+        setFeedback(errorDetail(error, "Unable to delete comment"));
+      } finally {
+        finishMutation(comment.id, request);
+      }
+    },
+    [key, startMutation, finishMutation, setDraft],
+  );
+
+  const removeComments = useCallback(
+    async (status: "all" | "open" | "resolved" | "stale") => {
+      const request = startMutation("*");
+      if (!request) return;
+      try {
+        await request.ready;
+        if (!request.isCurrent()) return;
+        const previousComments = latest.current.comments;
+        const { data, error } = await api.DELETE("/api/v1/comments", {
+          params: { query: { status } },
+          signal: request.signal,
+        });
+        if (!request.isCurrent()) return;
+        if (!data) {
+          setFeedback(errorDetail(error, "Unable to delete comments"));
+          return;
+        }
+        setDraft((current) =>
+          current &&
+          previousComments.some((comment) => comment.id === current.id) &&
+          !data.comments.some((comment) => comment.id === current.id)
+            ? null
+            : current,
+        );
+        setStored({ key, comments: data.comments });
+        setFeedback(
+          `Deleted ${data.deleted} ${data.deleted === 1 ? "comment" : "comments"}.`,
+        );
+      } catch (error) {
+        if (!request.isCurrent()) return;
+        setFeedback(errorDetail(error, "Unable to delete comments"));
+      } finally {
+        finishMutation("*", request);
+      }
+    },
+    [key, startMutation, finishMutation, setDraft],
+  );
+
+  const resolveComment = useCallback(
+    async (commentId: string, signal: AbortSignal) => {
+      const request = startMutation(commentId);
+      if (!request) throw new Error("Comment update already pending");
+      try {
+        const { data, error } = await api.POST(
+          "/api/v1/review/comments/{commentId}/resolve",
+          {
+            params: { path: { commentId } },
+            signal: AbortSignal.any([signal, request.signal]),
+          },
+        );
+        if (!data)
+          throw new Error(
+            errorDetail(error, "Unable to resolve review comment"),
+          );
+        signal.throwIfAborted();
+        if (!request.isCurrent()) throw new Error("Comment update cancelled");
+        markResolved(commentId);
+        return data;
+      } finally {
+        finishMutation(commentId, request);
+      }
+    },
+    [startMutation, finishMutation, markResolved],
+  );
+
+  const writeClipboard = useCallback(
+    async (
+      content: CopyPayload,
+      successMessage: string,
+      showDialogOnSuccess = false,
+    ) => {
+      try {
+        await navigator.clipboard.writeText(content.text);
+        setFeedback(successMessage);
+        if (showDialogOnSuccess)
+          setCopyContent({ ...content, clipboard: "copied" });
+      } catch {
+        setCopyContent({ ...content, clipboard: "manual" });
+      }
+    },
+    [],
+  );
+
+  const copy = useCallback(
+    async (
+      includeResolved: boolean,
+      commentId?: string,
+      options: CopyOptions = {},
+    ) => {
+      try {
+        const { data, error } = await api.GET("/api/v1/comments/export", {
+          params: {
+            query: {
+              includeResolved,
+              ...(commentId ? { commentId } : {}),
+            },
+          },
+          parseAs: "text",
+        });
+        if (data === undefined) {
+          setFeedback(errorDetail(error, "Unable to export comments"));
+          return;
+        }
+        if (!data) return;
+        const text = options.fileOnly ? fileBlock(data) : data;
+        if (!text) {
+          setFeedback("Unable to export comment");
+          return;
+        }
+        await writeClipboard(
+          {
+            label: options.label ?? "Comments XML",
+            text,
+            title: options.title ?? "Copy review comments",
+          },
+          commentId
+            ? "Copied comment as XML."
+            : `Copied ${includeResolved ? "all" : "unresolved"} comments as XML.`,
+          options.showDialogOnSuccess,
+        );
+      } catch (error) {
+        setFeedback(errorDetail(error, "Unable to export comments"));
+      }
+    },
+    [writeClipboard],
+  );
+
+  return useMemo(
+    () => ({
+      comments,
+      rounds,
+      currentComments,
+      feedback,
+      setFeedback,
+      pending,
+      saveError,
+      begin,
+      submit,
+      cancel,
+      edit,
+      toggle,
+      markResolved,
+      resolveComment,
+      remove,
+      removeComments,
+      copy: (includeResolved: boolean) => copy(includeResolved),
+      copyComment: (comment: ReviewComment) => copy(true, comment.id),
+      copySidebarComment: (comment: ReviewComment) =>
+        copy(true, comment.id, {
+          fileOnly: true,
+          showDialogOnSuccess: true,
+          label: "Comment XML",
+          title: "Copy review comment",
+        }),
+      copyWebMCPInstruction: (instruction: string) =>
+        writeClipboard(
+          {
+            label: "WebMCP instruction",
+            text: instruction,
+            title: "Copy WebMCP instruction",
+          },
+          "Copied WebMCP instruction.",
+        ),
+      copyContent,
+      closeCopy: () => setCopyContent(null),
+    }),
+    [
+      comments,
+      rounds,
+      currentComments,
+      feedback,
+      pending,
+      saveError,
+      begin,
+      submit,
+      cancel,
+      edit,
+      toggle,
+      markResolved,
+      resolveComment,
+      remove,
+      removeComments,
+      copy,
+      writeClipboard,
+      copyContent,
+    ],
+  );
 }

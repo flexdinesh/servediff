@@ -30,7 +30,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { useAppState } from "./app-state.tsx";
+import {
+  useDiffSource,
+  useDraft,
+  useNavigation,
+  useReviewState,
+} from "./app-state.tsx";
+import { useAppearance } from "./appearance-context.tsx";
 import { CopyPathButton } from "./CopyPathButton.tsx";
 import { commentApplicability, type ReviewComment } from "./review-model.ts";
 
@@ -40,7 +46,8 @@ function location(comment: ReviewComment) {
 
 // Both the diff annotations and sidebar edit the same page-level draft.
 export function DraftComment() {
-  const { draft, setDraft, review } = useAppState();
+  const { draft, setDraft } = useDraft();
+  const review = useReviewState();
   return draft ? (
     <CommentEditor
       draft={draft}
@@ -49,6 +56,10 @@ export function DraftComment() {
       }
       onSave={review.submit}
       onCancel={review.cancel}
+      isSaving={review.pending.has(draft.id) || review.pending.has("*")}
+      saveError={
+        review.saveError?.draftId === draft.id ? review.saveError.message : ""
+      }
     />
   ) : null;
 }
@@ -60,12 +71,10 @@ export function ReviewCommentCard({
   comment: ReviewComment;
   sidebar?: boolean;
 }) {
-  const {
-    source: { repository },
-    display: { layout },
-    review,
-    navigateComment,
-  } = useAppState();
+  const { repository } = useDiffSource();
+  const { layout } = useAppearance();
+  const review = useReviewState();
+  const { navigateComment } = useNavigation();
   const file = repository?.files.find((file) => file.path === comment.path);
   const oneSided =
     file?.status === "A" || file?.status === "D" || file?.status === "?";
@@ -92,16 +101,21 @@ export function CommentEditor({
   onChange,
   onSave,
   onCancel,
+  isSaving,
+  saveError,
 }: {
   draft: ReviewComment;
   onChange: (body: string) => void;
   onSave: () => void;
   onCancel: () => void;
+  isSaving: boolean;
+  saveError: string;
 }) {
   const input = useRef<HTMLTextAreaElement>(null);
   const inputId = useId();
   const errorId = useId();
-  const [error, setError] = useState("");
+  const [validationError, setError] = useState("");
+  const error = validationError || saveError;
   const id = draft.id;
   useEffect(() => {
     if (!id) return;
@@ -109,6 +123,7 @@ export function CommentEditor({
     input.current?.scrollIntoView({ block: "nearest" });
   }, [id]);
   function saveComment() {
+    if (isSaving) return;
     if (!draft.body.trim()) {
       setError("Enter a comment before saving.");
       input.current?.focus();
@@ -175,7 +190,12 @@ export function CommentEditor({
             <XIcon aria-hidden="true" />
             Cancel
           </Button>
-          <Button type="submit" size="sm">
+          <Button
+            type="submit"
+            size="sm"
+            disabled={isSaving}
+            aria-busy={isSaving}
+          >
             <SendIcon aria-hidden="true" />
             Save comment
           </Button>
