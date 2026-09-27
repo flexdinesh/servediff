@@ -1,6 +1,18 @@
 # Releases
 
-## Release
+## Stable releases
+
+Only the manual **Release** workflow creates stable version tags and GitHub
+Releases. It checks out the latest `main` when the run starts and marks the
+release as GitHub's latest stable release. Dispatches from other branches are
+skipped.
+
+Install the latest stable release or a specific version:
+
+```sh
+go install github.com/flexdinesh/servediff/cmd/servediff@latest
+go install github.com/flexdinesh/servediff/cmd/servediff@v0.1.1
+```
 
 Required repository secret:
 
@@ -8,7 +20,7 @@ Required repository secret:
   write access to `flexdinesh/homebrew-tap`.
 
 1. Merge release-ready code to `main`.
-2. Run the **Release** workflow. It requires no inputs.
+2. Run the **Release** workflow with `main` selected. It requires no inputs.
 3. The workflow verifies the repository, creates the tag, and publishes the
    GitHub Release with GoReleaser.
 4. It generates `Formula/servediff.rb` and opens or updates a pull request in
@@ -27,6 +39,23 @@ not rebuilt or replaced.
 
 The tap repository owns Homebrew style, strict audit, install, and formula test
 checks before merge.
+
+## Development releases
+
+Every push to `main` runs **Release dev**, which creates or updates the `dev`
+branch to the latest `main` commit. Runs are serialized and resolve `main` when
+they start, so a queued run cannot move `dev` back to an older push.
+
+```sh
+go install github.com/flexdinesh/servediff/cmd/servediff@dev
+```
+
+`dev` is an automatically managed mirror; do not commit to it directly. This
+workflow uses `GITHUB_TOKEN` with contents write permission and publishes no
+version tags or GitHub Releases. Stable `@latest` installs remain on the highest
+stable version tag. Go resolves `@dev` to the commit's pseudo-version, or its
+stable version if that commit is already tagged. Module proxies may briefly
+cache branch lookups; use `GOPROXY=direct` when an immediate refresh is needed.
 
 ## Version series
 

@@ -1,5 +1,9 @@
 version: 2
 
+release:
+  prerelease: false
+  make_latest: true
+
 before:
   hooks:
     - pnpm install --frozen-lockfile
