@@ -3,6 +3,14 @@
 servediff is a Go server with a React/Vite web application embedded into the
 release binary. Node and pnpm are build and test dependencies only.
 
+## Install development version
+
+Install the latest development changes from `main` with Go 1.25 or later:
+
+```sh
+go install github.com/flexdinesh/servediff/cmd/servediff@dev
+```
+
 ## Requirements
 
 - Go 1.25

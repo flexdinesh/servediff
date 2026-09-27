@@ -17,11 +17,10 @@ Latest stable release with Go 1.25 or later:
 go install github.com/flexdinesh/servediff/cmd/servediff@latest
 ```
 
-Or install a specific stable version or the latest development changes from `main`:
+Or install a specific stable version:
 
 ```sh
 go install github.com/flexdinesh/servediff/cmd/servediff@v0.1.1
-go install github.com/flexdinesh/servediff/cmd/servediff@dev
 ```
 
 ## Usage
