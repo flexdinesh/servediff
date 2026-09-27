@@ -18,7 +18,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { TabsContent } from "@/components/ui/tabs";
-import { useAppState } from "./app-state.tsx";
+import {
+  useDiffSource,
+  useDraft,
+  useNavigation,
+  useReviewState,
+} from "./app-state.tsx";
 import { DraftComment, ReviewCommentCard } from "./review.tsx";
 import {
   anchored,
@@ -54,12 +59,10 @@ export function CommentsPanel() {
   const [deleteSelection, setDeleteSelection] = useState<CommentFilter | null>(
     null,
   );
-  const {
-    source: { repository },
-    draft,
-    review,
-    navigateComment,
-  } = useAppState();
+  const { repository } = useDiffSource();
+  const { draft } = useDraft();
+  const review = useReviewState();
+  const { navigateComment } = useNavigation();
   const state = (comment: ReviewComment): CommentState =>
     commentApplicability(comment, repository) === "stale"
       ? "stale"

@@ -14,6 +14,7 @@ import {
   useCallback,
   useEffect,
   useEffectEvent,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -287,5 +288,5 @@ export function useDiff(
         document.removeEventListener("visibilitychange", check);
     };
   }, [mode, refreshEnabled]);
-  return { ...state, refresh };
+  return useMemo(() => ({ ...state, refresh }), [state, refresh]);
 }

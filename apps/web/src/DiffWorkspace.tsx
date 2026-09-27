@@ -10,16 +10,27 @@ import {
   useWorkerPool,
 } from "@pierre/diffs/react";
 import { api, errorDetail } from "@servediff/api";
+import type { RepositoryDiff } from "@servediff/shared";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { togglePath, useAppState } from "./app-state.tsx";
+import {
+  togglePath,
+  useDiffSource,
+  useDiffCollapse,
+  useDraft,
+  useNavigation,
+  useReviewState,
+  useReviewedFilesState,
+} from "./app-state.tsx";
+import { useAppearance } from "./appearance-context.tsx";
 import { CopyPathButton } from "./CopyPathButton.tsx";
 import { DiffToolbar } from "./DiffToolbar.tsx";
 import { themesFor } from "./display-options.ts";
 import { DraftComment, ReviewCommentCard } from "./review.tsx";
 import type { CommentAnnotation } from "./review-model.ts";
 import { ServerMetrics } from "./ServerMetrics.tsx";
-import { capabilityEnabled } from "./session-context.tsx";
+import { WorkspaceFeedback } from "./WorkspaceFeedback.tsx";
+import { capabilityEnabled, useSession } from "./session-context.tsx";
 
 const NAVIGATION_CUE_MS = 1_000;
 
@@ -89,9 +100,7 @@ function lineNumberColumnWidth(item: CodeViewItem<CommentAnnotation>) {
 
 async function loadDiffFiles(
   fileDiff: FileDiffMetadata,
-  repository: NonNullable<
-    ReturnType<typeof useAppState>["source"]["repository"]
-  >,
+  repository: RepositoryDiff,
 ) {
   const file = repository.files.find((entry) => entry.path === fileDiff.name);
   if (!file) throw new Error("File is no longer in this diff");
@@ -142,31 +151,22 @@ function itemVersions() {
 
 // Keep Pierre's annotation versions and event callbacks local to its renderer.
 export function DiffWorkspace() {
+  const { diff, repository, piped, mode } = useDiffSource();
+  const { capabilities } = useSession();
+  const { theme, diffTheme, lineDiffType, layout, wrap } = useAppearance();
+  const { collapsed, setCollapsed } = useDiffCollapse();
   const {
-    source: { diff, repository, piped, mode },
-    capabilities,
-    display: {
-      theme,
-      diffTheme,
-      lineDiffType,
-      layout,
-      wrap,
-      collapsed,
-      setCollapsed,
-    },
-    navigation: {
-      files,
-      filter,
-      setFilter,
-      navigationTarget,
-      commentNavigationTarget,
-    },
-    reviewed: { isReviewed, toggleReviewed },
-    draft,
-    review,
+    files,
+    filter,
+    setFilter,
+    navigationTarget,
+    commentNavigationTarget,
     navigateComment,
     viewer,
-  } = useAppState();
+  } = useNavigation();
+  const { isReviewed, toggleReviewed, pending } = useReviewedFilesState();
+  const { draft } = useDraft();
+  const review = useReviewState();
   const commentsEnabled = capabilityEnabled(capabilities.review.comments);
   const contentsEnabled = capabilityEnabled(capabilities.files.contents);
   const refreshEnabled = capabilityEnabled(capabilities.diff.refresh);
@@ -554,6 +554,7 @@ export function DiffWorkspace() {
   return (
     <main>
       <DiffToolbar />
+      <WorkspaceFeedback />
       <div id="notice" role="status" hidden={!diff.notice}>
         {diff.notice}
       </div>
@@ -610,6 +611,8 @@ export function DiffWorkspace() {
                   size="sm"
                   aria-label={`Mark ${file.path} ${isReviewed(file) ? "unreviewed" : "reviewed"}`}
                   aria-pressed={isReviewed(file)}
+                  disabled={pending.has(file.id) || pending.has("*")}
+                  aria-busy={pending.has(file.id)}
                   onClick={() => toggleReviewed(file)}
                 >
                   <svg

@@ -317,6 +317,22 @@
 #comment-feedback:empty {
   margin: 0;
 }
+.workspace-feedback {
+  padding: var(--space-2) var(--page-gutter);
+  border-bottom: 1px solid var(--border-muted);
+}
+.workspace-feedback #comment-feedback {
+  margin: 0;
+}
+.reviewed-error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--error);
+}
+.reviewed-error p {
+  margin: 0;
+}
 #comments-panel {
   flex: 1 0 calc(4 * var(--space-12));
   min-height: 0;
