@@ -52,6 +52,38 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/diffs/captures": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["listCaptures"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/diffs/{diffId}/versions/{versionId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["getDiffVersion"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/diffs/{diffId}/files/{fileId}/patch": {
     parameters: {
       query?: never;
@@ -233,6 +265,9 @@ export interface components {
     };
     Session: {
       id: string;
+      user: components["schemas"]["User"];
+      locationId: string | null;
+      repositoryId: string | null;
       /** @enum {string} */
       source: "local" | "stdin";
       name: string;
@@ -265,6 +300,10 @@ export interface components {
       recreated?: boolean;
     };
     RepositoryDiff: {
+      id: string;
+      versionId: string;
+      locationId: string | null;
+      repositoryId: string | null;
       /** @enum {string} */
       source: "local" | "stdin";
       root: string;
@@ -285,6 +324,8 @@ export interface components {
       after: string;
     };
     ReviewOrigin: {
+      diffId: string;
+      versionId: string;
       /** @enum {string} */
       source: "local" | "stdin";
       repository: string;
@@ -298,6 +339,8 @@ export interface components {
     };
     ReviewComment: {
       id: string;
+      diffId: string;
+      versionId: string;
       path: string;
       scope: components["schemas"]["DiffMode"];
       fingerprint: string;
@@ -314,6 +357,8 @@ export interface components {
     };
     AgentReviewComment: {
       id: string;
+      diffId: string;
+      versionId: string;
       path: string;
       scope: components["schemas"]["DiffMode"];
       fingerprint: string;
@@ -338,6 +383,7 @@ export interface components {
     };
     CreateComment: {
       diffId: string;
+      versionId: string;
       fileId: string;
       scope: components["schemas"]["DiffMode"];
       fileVersion: string;
@@ -353,9 +399,21 @@ export interface components {
       status?: "open" | "resolved";
     };
     ReviewMark: {
+      diffId: string;
+      versionId: string;
       fileId: string;
       fileVersion: string;
       scope: components["schemas"]["DiffMode"];
+    };
+    User: {
+      id: string;
+      name: string;
+    };
+    CaptureInfo: {
+      id: string;
+      versionId: string;
+      createdAt: number;
+      expiresAt: number;
     };
     Problem: {
       type: string;
@@ -380,6 +438,8 @@ export interface components {
   parameters: {
     Scope: components["schemas"]["DiffMode"];
     DiffId: string;
+    VersionId: string;
+    VersionIdPath: string;
     FileId: string;
     FileVersion: string;
     CommentId: string;
@@ -455,9 +515,57 @@ export interface operations {
       default: components["responses"]["Problem"];
     };
   };
+  listCaptures: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Retained captures for the current user. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            captures: components["schemas"]["CaptureInfo"][];
+          };
+        };
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
+  getDiffVersion: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        diffId: components["parameters"]["DiffId"];
+        versionId: components["parameters"]["VersionIdPath"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Retained immutable diff version. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RepositoryDiff"];
+        };
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
   getFilePatch: {
     parameters: {
       query: {
+        versionId: components["parameters"]["VersionId"];
         scope: components["parameters"]["Scope"];
         fileVersion: components["parameters"]["FileVersion"];
       };
@@ -485,6 +593,7 @@ export interface operations {
   getFileContents: {
     parameters: {
       query: {
+        versionId: components["parameters"]["VersionId"];
         scope: components["parameters"]["Scope"];
         fileVersion: components["parameters"]["FileVersion"];
       };
@@ -795,6 +904,7 @@ export interface operations {
       content: {
         "application/json": {
           fileVersion: string;
+          versionId: string;
         };
       };
     };

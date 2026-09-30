@@ -7,6 +7,8 @@ import type { DiffMode, RepositoryDiff } from "./index.ts";
 
 export interface ReviewComment {
   id: string;
+  diffId: string;
+  versionId: string;
   path: string;
   scope: DiffMode;
   fingerprint: string;
@@ -21,6 +23,8 @@ export interface ReviewComment {
 }
 
 export interface ReviewOrigin {
+  diffId: string;
+  versionId: string;
   source: "local" | "stdin";
   repository: string;
   branch: string;
@@ -103,6 +107,8 @@ export function commentContext(
 }
 
 export interface ReviewMark {
+  diffId: string;
+  versionId: string;
   fileId: string;
   fileVersion: string;
   scope: DiffMode;
@@ -119,6 +125,8 @@ function diffMode(value: unknown): value is DiffMode {
 function validOrigin(value: unknown): value is ReviewOrigin {
   if (!record(value) || !record(value.file)) return false;
   return (
+    typeof value.diffId === "string" &&
+    typeof value.versionId === "string" &&
     (value.source === "local" || value.source === "stdin") &&
     typeof value.repository === "string" &&
     typeof value.branch === "string" &&
@@ -133,6 +141,8 @@ export function validComment(value: unknown): value is ReviewComment {
   return (
     record(value) &&
     typeof value.id === "string" &&
+    typeof value.diffId === "string" &&
+    typeof value.versionId === "string" &&
     typeof value.path === "string" &&
     diffMode(value.scope) &&
     typeof value.fingerprint === "string" &&
@@ -206,6 +216,8 @@ function snapshotKey(origin: ReviewOrigin | undefined) {
   return origin
     ? JSON.stringify([
         origin.source,
+        origin.diffId,
+        origin.versionId,
         origin.repository,
         origin.branch,
         origin.head,
@@ -317,6 +329,7 @@ export function commentApplicability(
   repository: RepositoryDiff | null,
 ): CommentApplicability {
   if (!repository) return "unknown";
+  if (comment.diffId !== repository.id) return "other-scope";
   if (comment.scope !== repository.mode) return "other-scope";
   return repository.files.some(
     (file) =>
@@ -330,8 +343,9 @@ function currentComment(
   comment: ReviewComment,
   repository: RepositoryDiff | null,
 ) {
-  if (comment.scope !== repository?.mode) return false;
-  if (comment.origin) return comment.origin.revision === repository.revision;
+  if (comment.scope !== repository?.mode || comment.diffId !== repository.id)
+    return false;
+  if (comment.versionId) return comment.versionId === repository.versionId;
   return repository.files.some(
     (file) =>
       file.path === comment.path && file.fingerprint === comment.fingerprint,
@@ -345,8 +359,8 @@ export function reviewRounds(
   const rounds = new Map<string, ReviewRound>();
   for (const comment of comments) {
     const current = currentComment(comment, repository);
-    const key = comment.origin
-      ? `snapshot:${comment.scope}:${comment.origin.revision}`
+    const key = comment.versionId
+      ? `snapshot:${comment.diffId}:${comment.versionId}`
       : `legacy:${current ? "current" : comment.fingerprint}`;
     const round = rounds.get(key) ?? { key, comments: [], current };
     round.comments.push(comment);

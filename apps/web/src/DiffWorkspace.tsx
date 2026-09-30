@@ -108,10 +108,11 @@ async function loadDiffFiles(
     "/api/v1/diffs/{diffId}/files/{fileId}/contents",
     {
       params: {
-        path: { diffId: repository.revision, fileId: file.id },
+        path: { diffId: repository.id, fileId: file.id },
         query: {
           scope: repository.mode,
           fileVersion: file.fingerprint,
+          versionId: repository.versionId,
         },
       },
     },

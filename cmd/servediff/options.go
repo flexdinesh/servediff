@@ -18,6 +18,7 @@ type options struct {
 	directory     string
 	repositorySet bool
 	fixture       string
+	capture       string
 	state         string
 	webDir        string
 	noBrowser     bool
@@ -32,12 +33,13 @@ func parseOptions(arguments []string, stderr io.Writer) (options, error) {
 	flags.IntVar(&values.port, "port", 0, "HTTP port; defaults to the first available port from 7981 to 7990")
 	flags.IntVar(&values.port, "p", 0, "HTTP port; defaults to the first available port from 7981 to 7990")
 	flags.StringVar(&values.fixture, "fixture", "", "read a Git patch fixture")
-	flags.StringVar(&values.state, "state", "", "review state path; memory disables persistence")
+	flags.StringVar(&values.capture, "capture", "", "reopen a retained capture by ID")
+	flags.StringVar(&values.state, "state", "", "state database path; memory disables persistence")
 	flags.StringVar(&values.webDir, "web-dir", "", "serve web assets from a directory")
 	flags.BoolVar(&values.noBrowser, "no-browser", false, "do not open a browser")
 	flags.BoolVar(&values.version, "version", false, "print version and exit")
 	flags.Usage = func() {
-		fmt.Fprintln(stderr, "  Usage: servediff [directory | -] [options]")
+		fmt.Fprintln(stderr, "  Usage: servediff [directory | - | --capture ID] [options]")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(normalizeArguments(arguments)); err != nil {
@@ -61,6 +63,9 @@ func parseOptions(arguments []string, stderr io.Writer) (options, error) {
 		values.directory = flags.Arg(0)
 		values.repositorySet = true
 	}
+	if values.capture != "" && (values.repositorySet || values.fixture != "") {
+		return options{}, errors.New("capture cannot be combined with a directory or fixture")
+	}
 	flags.Visit(func(value *flag.Flag) {
 		if value.Name == "port" || value.Name == "p" {
 			values.portSet = true
@@ -72,7 +77,7 @@ func parseOptions(arguments []string, stderr io.Writer) (options, error) {
 func normalizeArguments(arguments []string) []string {
 	valueOptions := map[string]bool{
 		"-p": true, "--port": true, "--host": true, "--fixture": true,
-		"--state": true, "--web-dir": true,
+		"--state": true, "--web-dir": true, "--capture": true,
 	}
 	options, positionals := make([]string, 0, len(arguments)), make([]string, 0, 1)
 	for index := 0; index < len(arguments); index++ {

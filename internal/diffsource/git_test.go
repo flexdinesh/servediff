@@ -22,6 +22,31 @@ func testGit(t *testing.T, root string, arguments ...string) string {
 	return string(output)
 }
 
+func TestRepositoryIdentityGroupsWorktrees(t *testing.T) {
+	root := t.TempDir()
+	testGit(t, root, "init", "-q")
+	testGit(t, root, "config", "user.email", "servediff@example.com")
+	testGit(t, root, "config", "user.name", "servediff")
+	if err := os.WriteFile(filepath.Join(root, "value.txt"), []byte("base\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	testGit(t, root, "add", "value.txt")
+	testGit(t, root, "commit", "-qm", "initial")
+	linked := filepath.Join(t.TempDir(), "linked")
+	testGit(t, root, "worktree", "add", "-b", "linked", linked)
+	firstRepo, firstTree, err := RepositoryIdentity(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondRepo, secondTree, err := RepositoryIdentity(t.Context(), linked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstRepo != secondRepo || firstTree == secondTree {
+		t.Fatalf("repo/worktree identity: %q %q; %q %q", firstRepo, firstTree, secondRepo, secondTree)
+	}
+}
+
 func TestRepositoryFingerprintDetectsSameSizeEditWithRestoredMtime(t *testing.T) {
 	root := t.TempDir()
 	testGit(t, root, "init", "-q")

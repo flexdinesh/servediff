@@ -128,7 +128,6 @@ export function useDiff(
         let next = 0;
         let failed = 0;
         let loadedBytes = 0;
-        const repositoryRoot = data.root;
         async function loadNext() {
           while (next < pending.length && !signal.aborted) {
             const file = pending[next++];
@@ -138,9 +137,10 @@ export function useDiff(
                 "/api/v1/diffs/{diffId}/files/{fileId}/patch",
                 {
                   params: {
-                    path: { diffId: data.revision, fileId: file.id },
+                    path: { diffId: data.id, fileId: file.id },
                     query: {
                       scope: mode,
+                      versionId: data.versionId,
                       fileVersion: file.fingerprint,
                     },
                   },
@@ -188,7 +188,7 @@ export function useDiff(
                     : parsed;
                   // Reuse worker highlighting across navigation and scope reloads.
                   displayDiff.cacheKey = JSON.stringify([
-                    repositoryRoot,
+                    data.id,
                     mode,
                     file.path,
                     file.fingerprint,

@@ -15,12 +15,10 @@ import {
   useRef,
   useState,
 } from "react";
-import { removeSaved, saved } from "./preferences.ts";
 import { createRequestOwner } from "./request-owner.ts";
 import {
   commentContext,
   createCommentId,
-  parseComments,
   reviewRounds,
 } from "./review-model.ts";
 
@@ -57,12 +55,12 @@ export function useReview(
   setDraft: Dispatch<SetStateAction<ReviewComment | null>>,
   enabled: boolean,
 ) {
-  const root = repository?.root ?? "";
+  const contextId = repository?.locationId ?? repository?.id ?? "";
   const [stored, setStored] = useState<{
     key: string;
     comments: ReviewComment[];
   }>({ key: "", comments: [] });
-  const key = root ? `servediff:comments:${root}` : stored.key;
+  const key = contextId ? `servediff:comments:${contextId}` : stored.key;
   const previousKey = useRef("");
   const requests = useRef<ReturnType<typeof createRequestOwner> | null>(null);
   const refreshComments = useRef<() => void>(() => {});
@@ -96,25 +94,18 @@ export function useReview(
     );
     setPending(new Set());
     setSaveError(null);
-    async function load(importLegacy: boolean, force = false) {
+    async function load(force = false) {
       const request = owner.beginRead(force);
       if (!request) return;
       try {
-        const legacy = importLegacy ? parseComments(saved(key)) : [];
-        const result = legacy.length
-          ? await api.POST("/api/v1/comments/import", {
-              body: { comments: legacy },
-              signal: request.signal,
-            })
-          : await api.GET("/api/v1/comments", {
-              signal: request.signal,
-            });
+        const result = await api.GET("/api/v1/comments", {
+          signal: request.signal,
+        });
         if (!request.isCurrent()) return;
         if (!result.data) {
           setFeedback(errorDetail(result.error, "Unable to load comments"));
           return;
         }
-        if (legacy.length) removeSaved(key);
         setStored({ key, comments: result.data.comments });
       } catch (error) {
         if (!request.isCurrent()) return;
@@ -123,10 +114,10 @@ export function useReview(
         request.finish();
       }
     }
-    refreshComments.current = () => void load(false);
+    refreshComments.current = () => void load();
     void load(true);
     const timer = setInterval(() => {
-      if (!document.hidden) void load(false);
+      if (!document.hidden) void load();
     }, 3_000);
     return () => {
       owner.dispose();
@@ -220,6 +211,8 @@ export function useReview(
       }
       setDraft({
         id: createCommentId(),
+        diffId: repository.id,
+        versionId: repository.versionId,
         path: file.path,
         scope: repository.mode,
         fingerprint: file.fingerprint,
@@ -228,6 +221,8 @@ export function useReview(
         status: "open",
         createdAt: Date.now(),
         origin: {
+          diffId: repository.id,
+          versionId: repository.versionId,
           source: repository.source,
           repository: repository.name,
           branch: repository.branch,
@@ -264,7 +259,8 @@ export function useReview(
         : file
           ? await api.POST("/api/v1/comments", {
               body: {
-                diffId: repository.revision,
+                diffId: repository.id,
+                versionId: repository.versionId,
                 fileId: file.id,
                 scope: draft.scope,
                 fileVersion: draft.fingerprint,

@@ -9,9 +9,14 @@ async function seedReviewComments(page: Page) {
     const data: unknown = await response.json();
     if (typeof data !== "object" || data === null)
       throw new Error("Bad fixture");
-    const root = Reflect.get(data, "root");
+    const diffId = Reflect.get(data, "id");
+    const versionId = Reflect.get(data, "versionId");
     const files = Reflect.get(data, "files");
-    if (typeof root !== "string" || !Array.isArray(files))
+    if (
+      typeof diffId !== "string" ||
+      typeof versionId !== "string" ||
+      !Array.isArray(files)
+    )
       throw new Error("Missing fixture metadata");
     const file = files.find(
       (entry) =>
@@ -25,37 +30,45 @@ async function seedReviewComments(page: Page) {
         : undefined;
     if (typeof fingerprint !== "string")
       throw new Error("Missing fixture fingerprint");
-    localStorage.setItem(
-      `servediff:comments:${root}`,
-      JSON.stringify([
-        {
-          id: "open-review-comment",
-          path: "src/value.ts",
-          scope: "all",
-          fingerprint,
-          side: "additions",
-          start: 3,
-          end: 3,
-          code: '+ export const label = "servediff";',
-          body: "Open feedback",
-          status: "open",
-          createdAt: 1,
-        },
-        {
-          id: "resolved-review-comment",
-          path: "src/value.ts",
-          scope: "all",
-          fingerprint,
-          side: "additions",
-          start: 3,
-          end: 3,
-          code: '+ export const label = "servediff";',
-          body: "Resolved feedback",
-          status: "resolved",
-          createdAt: 2,
-        },
-      ]),
-    );
+    const imported = await fetch("/api/v1/comments/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        comments: [
+          {
+            id: "open-review-comment",
+            diffId,
+            versionId,
+            path: "src/value.ts",
+            scope: "all",
+            fingerprint,
+            side: "additions",
+            start: 3,
+            end: 3,
+            code: '+ export const label = "servediff";',
+            body: "Open feedback",
+            status: "open",
+            createdAt: 1,
+          },
+          {
+            id: "resolved-review-comment",
+            diffId,
+            versionId,
+            path: "src/value.ts",
+            scope: "all",
+            fingerprint,
+            side: "additions",
+            start: 3,
+            end: 3,
+            code: '+ export const label = "servediff";',
+            body: "Resolved feedback",
+            status: "resolved",
+            createdAt: 2,
+          },
+        ],
+      }),
+    });
+    if (!imported.ok) throw new Error("Could not seed review comments");
   });
   await page.reload();
 }

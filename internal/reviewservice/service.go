@@ -24,7 +24,7 @@ func (err *CommentNotFoundError) Unwrap() error {
 }
 
 type CommentStore interface {
-	Comments(string) []review.ReviewComment
+	Comments(string) ([]review.ReviewComment, error)
 	PutComment(string, review.ReviewComment) error
 }
 
@@ -54,7 +54,11 @@ func (service *Service) ListComments(ctx context.Context, includeResolved bool) 
 	}
 	selected := make([]review.ReviewComment, 0)
 	needed := make(map[review.DiffMode]bool)
-	for _, comment := range service.store.Comments(service.session.ID) {
+	storedComments, err := service.store.Comments(service.session.ContextID)
+	if err != nil {
+		return nil, err
+	}
+	for _, comment := range storedComments {
 		if !includeResolved && comment.Status != "open" {
 			continue
 		}
@@ -74,6 +78,7 @@ func (service *Service) ListComments(ctx context.Context, includeResolved bool) 
 		if err != nil {
 			return nil, err
 		}
+		repository.ID = service.session.DiffIDs[scope]
 		repositories[scope] = repository
 	}
 
@@ -97,13 +102,17 @@ func (service *Service) ResolveComment(commentID string) (Resolution, error) {
 	if err := service.requireComments(); err != nil {
 		return Resolution{}, err
 	}
-	for _, comment := range service.store.Comments(service.session.ID) {
+	comments, err := service.store.Comments(service.session.ContextID)
+	if err != nil {
+		return Resolution{}, err
+	}
+	for _, comment := range comments {
 		if comment.ID != commentID {
 			continue
 		}
 		if comment.Status != "resolved" {
 			comment.Status = "resolved"
-			if err := service.store.PutComment(service.session.ID, comment); err != nil {
+			if err := service.store.PutComment(service.session.ContextID, comment); err != nil {
 				return Resolution{}, err
 			}
 		}

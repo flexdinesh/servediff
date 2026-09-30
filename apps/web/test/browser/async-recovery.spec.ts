@@ -30,6 +30,8 @@ function commentFor(
   if (!file) throw new Error("Missing fixture file");
   return {
     id: "saved-comment",
+    diffId: repository.id,
+    versionId: repository.versionId,
     path: file.path,
     scope: "all",
     fingerprint: file.fingerprint,
@@ -41,6 +43,8 @@ function commentFor(
     status: "open",
     createdAt: 1,
     origin: {
+      diffId: repository.id,
+      versionId: repository.versionId,
       source: repository.source,
       repository: repository.name,
       branch: repository.branch,
