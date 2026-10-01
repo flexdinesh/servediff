@@ -1,8 +1,7 @@
 package session
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
+	"crypto/rand"
 
 	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/review"
@@ -80,8 +79,19 @@ type Policies struct {
 
 type Session struct {
 	ID           string
+	User         User
+	ContextID    string
+	LocationID   *string
+	RepositoryID *string
+	DiffIDs      map[review.DiffMode]string
+	VersionID    string
 	Source       diffsource.Source
 	Capabilities Capabilities
+}
+
+type User struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 type CapabilityError struct {
@@ -103,8 +113,7 @@ func Resolve(source diffsource.Source, policies Policies) Session {
 	capabilities.Diff.StagingMetadata = Capability{State: supported(support.StagingMetadata)}
 	capabilities.Files.Contents = Capability{State: supported(support.FileContents)}
 	capabilities.Review.Comments = Capability{State: policyState(true, policies.Comments)}
-	hash := sha256.Sum256([]byte(source.Kind() + "\x00" + source.Root()))
-	return Session{ID: hex.EncodeToString(hash[:]), Source: source, Capabilities: capabilities}
+	return Session{ID: rand.Text(), Source: source, Capabilities: capabilities}
 }
 
 func supported(value bool) State {

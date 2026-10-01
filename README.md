@@ -52,7 +52,7 @@ Switch between all, staged, and unstaged changes. Use the file tree to navigate,
 mark files as reviewed, and select **+** beside a line to comment. **Copy
 unresolved** and **Copy all** export review comments as agent-ready XML.
 
-Comments and reviewed-file marks persist by repository. Display preferences stay
+Comments and reviewed-file marks persist by worktree or capture. Display preferences stay
 in the browser.
 
 ## Piped diffs
@@ -67,7 +67,10 @@ servediff - < saved.patch
 ```
 
 Piped input takes priority over a directory argument. Re-run the command to
-refresh a piped diff. Standard Git patches are limited to 16 MiB total and 2 MiB
+refresh a piped diff. Each run creates a capture with a distinct ID, printed at
+startup when persistence is enabled. Reopen it within 14 days with
+`servediff --capture <id>`. Captures and their reviews expire 14 days after
+creation. Standard Git patches are limited to 16 MiB total and 2 MiB
 per file. Combined merge diffs are shown against the first parent. Use
 `git show --diff-merges=separate` to review the result against every parent.
 
@@ -82,11 +85,14 @@ A compatible browser can expose the same tools to its browser agent through
 WebMCP while the servediff page is open; see
 [docs/webmcp.md](docs/webmcp.md).
 
-The API is unauthenticated. Browser same-origin and cross-site checks remain, but
-anyone who can reach the server can access its review data.
+The API is unauthenticated. The process account is the current user for all
+browser and MCP requests. Browser same-origin and cross-site checks remain, but
+anyone who can reach the server can access that user's review data.
 
-Review data is stored under `$XDG_STATE_HOME/servediff/reviews`, or
-`~/.local/state/servediff/reviews` when `XDG_STATE_HOME` is unset.
+Review data is stored in `$XDG_STATE_HOME/servediff/state.db`, or
+`~/.local/state/servediff/state.db` when `XDG_STATE_HOME` is unset. Existing
+review JSON is discarded; there is no data migration. Use `--state memory` to
+disable persistence. `/api/v1/diffs/captures` lists retained captures.
 
 For source setup, development commands, and architecture, see
 [docs/development.md](docs/development.md). Maintainers can find publishing

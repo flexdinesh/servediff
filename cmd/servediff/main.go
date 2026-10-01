@@ -8,11 +8,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	osuser "os/user"
 	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/flexdinesh/servediff/internal/browser"
+	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/httpapi"
 	"github.com/flexdinesh/servediff/internal/mcpapi"
 	"github.com/flexdinesh/servediff/internal/reviewservice"
@@ -34,11 +36,69 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 		fmt.Fprintln(stdout, buildversion.String())
 		return nil
 	}
-	input, err := loadInput(ctx, values, stdin)
+	statePath := values.state
+	if statePath == "" {
+		statePath, err = reviewstore.DefaultPath()
+		if err != nil {
+			return err
+		}
+	}
+	store, err := reviewstore.Open(mapStatePath(statePath))
 	if err != nil {
 		return err
 	}
+	defer store.Close()
+	if values.state == "" {
+		if err := reviewstore.RemoveLegacyReviews(statePath); err != nil {
+			return err
+		}
+	}
+	processUser, err := osuser.Current()
+	if err != nil {
+		return fmt.Errorf("resolve process user: %w", err)
+	}
+	currentUser, err := store.User(processUser.Uid, processUser.Username)
+	if err != nil {
+		return err
+	}
+	if err := store.PruneExpired(time.Now()); err != nil {
+		return err
+	}
+	var input loadedInput
+	var binding reviewstore.Binding
+	if values.capture != "" {
+		var raw string
+		raw, binding, err = store.ReopenCapture(currentUser.ID, values.capture, time.Now())
+		if err == nil {
+			input, err = loadCapturedInput(ctx, raw)
+		}
+	} else {
+		input, err = loadInput(ctx, values, stdin)
+		if err == nil {
+			if input.source.Kind() == "local" {
+				var commonDir, worktreeDir string
+				commonDir, worktreeDir, err = diffsource.RepositoryIdentity(ctx, input.source.Root())
+				if err == nil {
+					binding, err = store.RegisterGit(currentUser.ID, input.source.Root(), commonDir, worktreeDir)
+				}
+			} else {
+				binding, err = store.Capture(currentUser.ID, input.raw, input.snapshot)
+			}
+		}
+	}
+	if err != nil {
+		return err
+	}
+	if input.source.Kind() == "stdin" && statePath != "memory" {
+		input.captureID = binding.ContextID
+	}
 	active := session.Resolve(input.source, session.Policies{})
+	active.User = session.User{ID: currentUser.ID, Name: currentUser.Name}
+	active.ContextID = binding.ContextID
+	active.LocationID = binding.LocationID
+	active.RepositoryID = binding.RepositoryID
+	active.DiffIDs = binding.DiffIDs
+	active.VersionID = binding.VersionID
 	if os.Getenv("SERVEDIFF_EXIT_ON_STDIN_CLOSE") == "1" {
 		childContext, cancel := context.WithCancel(ctx)
 		defer cancel()
@@ -55,17 +115,6 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 			return pathError
 		}
 		assets = os.DirFS(absolute)
-	}
-	statePath := values.state
-	if statePath == "" {
-		statePath, err = reviewstore.DefaultPath(active.ID)
-		if err != nil {
-			return err
-		}
-	}
-	store, err := reviewstore.Open(mapStatePath(statePath))
-	if err != nil {
-		return err
 	}
 	reviews := reviewservice.New(active, store)
 	rest := httpapi.New(active, store, reviews, assets)
@@ -91,6 +140,20 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}
 	serverErrors := make(chan error, 1)
 	go func() { serverErrors <- server.Serve(bound.listener) }()
+	go func() {
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := store.PruneExpired(time.Now()); err != nil {
+					fmt.Fprintf(stderr, "  servediff: prune captures: %v\n", err)
+				}
+			}
+		}
+	}()
 	select {
 	case <-ctx.Done():
 		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)

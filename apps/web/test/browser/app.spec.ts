@@ -537,9 +537,14 @@ test("inline comments use a distinct structured surface while sidebar comments r
     const data: unknown = await response.json();
     if (typeof data !== "object" || data === null)
       throw new Error("Bad fixture");
-    const root = Reflect.get(data, "root");
+    const diffId = Reflect.get(data, "id");
+    const versionId = Reflect.get(data, "versionId");
     const files = Reflect.get(data, "files");
-    if (typeof root !== "string" || !Array.isArray(files))
+    if (
+      typeof diffId !== "string" ||
+      typeof versionId !== "string" ||
+      !Array.isArray(files)
+    )
       throw new Error("Missing fixture metadata");
     const fingerprintFor = (path: string) => {
       const file = files.find(
@@ -556,50 +561,60 @@ test("inline comments use a distinct structured surface while sidebar comments r
         throw new Error(`Missing fixture fingerprint for ${path}`);
       return fingerprint;
     };
-    localStorage.setItem(
-      `servediff:comments:${root}`,
-      JSON.stringify([
-        {
-          id: "styled-comment",
-          path: "src/value.ts",
-          scope: "all",
-          fingerprint: fingerprintFor("src/value.ts"),
-          side: "additions",
-          start: 3,
-          end: 3,
-          code: '  export const label = "servediff";',
-          body: "Keep the exported value stable.",
-          status: "open",
-          createdAt: 1,
-        },
-        {
-          id: "range-comment",
-          path: "src/components/Badge.tsx",
-          scope: "all",
-          fingerprint: fingerprintFor("src/components/Badge.tsx"),
-          side: "additions",
-          start: 2,
-          end: 4,
-          code: "+ lines 2–4",
-          body: "Review the full component body.",
-          status: "open",
-          createdAt: 2,
-        },
-        {
-          id: "deletion-comment",
-          path: "docs/legacy.md",
-          scope: "all",
-          fingerprint: fingerprintFor("docs/legacy.md"),
-          side: "deletions",
-          start: 3,
-          end: 3,
-          code: "- This documentation is no longer current.",
-          body: "Confirm this removal.",
-          status: "resolved",
-          createdAt: 3,
-        },
-      ]),
-    );
+    const imported = await fetch("/api/v1/comments/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        comments: [
+          {
+            id: "styled-comment",
+            diffId,
+            versionId,
+            path: "src/value.ts",
+            scope: "all",
+            fingerprint: fingerprintFor("src/value.ts"),
+            side: "additions",
+            start: 3,
+            end: 3,
+            code: '  export const label = "servediff";',
+            body: "Keep the exported value stable.",
+            status: "open",
+            createdAt: 1,
+          },
+          {
+            id: "range-comment",
+            diffId,
+            versionId,
+            path: "src/components/Badge.tsx",
+            scope: "all",
+            fingerprint: fingerprintFor("src/components/Badge.tsx"),
+            side: "additions",
+            start: 2,
+            end: 4,
+            code: "+ lines 2–4",
+            body: "Review the full component body.",
+            status: "open",
+            createdAt: 2,
+          },
+          {
+            id: "deletion-comment",
+            diffId,
+            versionId,
+            path: "docs/legacy.md",
+            scope: "all",
+            fingerprint: fingerprintFor("docs/legacy.md"),
+            side: "deletions",
+            start: 3,
+            end: 3,
+            code: "- This documentation is no longer current.",
+            body: "Confirm this removal.",
+            status: "resolved",
+            createdAt: 3,
+          },
+        ],
+      }),
+    });
+    if (!imported.ok) throw new Error("Could not seed review comments");
   });
   await page.reload();
 
@@ -1157,9 +1172,14 @@ test("copy dialog reports clipboard status and restores focus", async ({
     const data: unknown = await response.json();
     if (typeof data !== "object" || data === null)
       throw new Error("Bad fixture");
-    const root = Reflect.get(data, "root");
+    const diffId = Reflect.get(data, "id");
+    const versionId = Reflect.get(data, "versionId");
     const files = Reflect.get(data, "files");
-    if (typeof root !== "string" || !Array.isArray(files))
+    if (
+      typeof diffId !== "string" ||
+      typeof versionId !== "string" ||
+      !Array.isArray(files)
+    )
       throw new Error("Missing fixture metadata");
     const value = files.find(
       (entry) =>
@@ -1173,37 +1193,45 @@ test("copy dialog reports clipboard status and restores focus", async ({
         : undefined;
     if (typeof fingerprint !== "string")
       throw new Error("Missing fixture fingerprint");
-    localStorage.setItem(
-      `servediff:comments:${root}`,
-      JSON.stringify([
-        {
-          id: "browser-current",
-          path: "src/value.ts",
-          scope: "all",
-          fingerprint,
-          side: "additions",
-          start: 1,
-          end: 1,
-          code: "+ export const value = 2;",
-          body: "Keep the current value stable.",
-          status: "open",
-          createdAt: 2,
-        },
-        {
-          id: "browser-test",
-          path: "src/value.ts",
-          scope: "all",
-          fingerprint: "earlier",
-          side: "additions",
-          start: 1,
-          end: 1,
-          code: "+ export const value = 2;",
-          body: "Keep the exported value stable.",
-          status: "open",
-          createdAt: 1,
-        },
-      ]),
-    );
+    const imported = await fetch("/api/v1/comments/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        comments: [
+          {
+            id: "browser-current",
+            diffId,
+            versionId,
+            path: "src/value.ts",
+            scope: "all",
+            fingerprint,
+            side: "additions",
+            start: 1,
+            end: 1,
+            code: "+ export const value = 2;",
+            body: "Keep the current value stable.",
+            status: "open",
+            createdAt: 2,
+          },
+          {
+            id: "browser-test",
+            diffId,
+            versionId: "",
+            path: "src/value.ts",
+            scope: "all",
+            fingerprint: "earlier",
+            side: "additions",
+            start: 1,
+            end: 1,
+            code: "+ export const value = 2;",
+            body: "Keep the exported value stable.",
+            status: "open",
+            createdAt: 1,
+          },
+        ],
+      }),
+    });
+    if (!imported.ok) throw new Error("Could not seed review comments");
   });
   await page.reload();
 

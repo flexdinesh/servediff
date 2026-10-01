@@ -22,6 +22,9 @@ async function localWorkspace(page: Page) {
   };
   const session: ApiSession = {
     id: "local-review",
+    user: { id: "user", name: "tester" },
+    locationId: "location",
+    repositoryId: "repo",
     source: "local",
     root: "/local-review",
     name: "Local review",
@@ -37,6 +40,10 @@ async function localWorkspace(page: Page) {
   };
   function repository(mode: DiffMode): ApiRepositoryDiff {
     return {
+      id: `diff-${mode}`,
+      versionId: `${mode}-v${state.version}`,
+      locationId: "location",
+      repositoryId: "repo",
       source: "local",
       root: session.root,
       name: session.name,
@@ -256,6 +263,8 @@ test("comment navigation changes scope and clears filters after previews load", 
   state.comments = [
     {
       id: "staged-comment",
+      diffId: "diff-staged",
+      versionId: "staged-v1",
       path: "src/value.ts",
       scope: "staged",
       fingerprint: "staged-v1",

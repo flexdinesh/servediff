@@ -46,8 +46,8 @@ type storeStub struct {
 	putError error
 }
 
-func (store *storeStub) Comments(string) []review.ReviewComment {
-	return append([]review.ReviewComment(nil), store.comments...)
+func (store *storeStub) Comments(string) ([]review.ReviewComment, error) {
+	return append([]review.ReviewComment(nil), store.comments...), nil
 }
 
 func (store *storeStub) PutComment(_ string, comment review.ReviewComment) error {

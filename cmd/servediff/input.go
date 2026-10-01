@@ -14,10 +14,12 @@ import (
 
 type loadedInput struct {
 	source    diffsource.Source
+	raw       string
 	directory string
 	mode      string
 	snapshot  review.RepositoryDiff
 	processed time.Duration
+	captureID string
 }
 
 func loadInput(ctx context.Context, values options, stdin *os.File) (loadedInput, error) {
@@ -27,12 +29,14 @@ func loadInput(ctx context.Context, values options, stdin *os.File) (loadedInput
 		return loadedInput{}, err
 	}
 	var source diffsource.Source
+	var rawPatch string
 	if values.fixture != "" {
 		raw, readError := os.ReadFile(values.fixture)
 		if readError != nil {
 			return loadedInput{}, readError
 		}
-		source, err = diffsource.OpenPatch(string(raw))
+		rawPatch = string(raw)
+		source, err = diffsource.OpenPatch(rawPatch)
 	} else {
 		piped, statError := redirected(stdin)
 		if statError != nil {
@@ -46,7 +50,8 @@ func loadInput(ctx context.Context, values options, stdin *os.File) (loadedInput
 			if len(raw) > diffsource.MaxInputBytes {
 				return loadedInput{}, errors.New("piped diff exceeds the 16 MiB input limit")
 			}
-			source, err = diffsource.OpenPatch(string(raw))
+			rawPatch = string(raw)
+			source, err = diffsource.OpenPatch(rawPatch)
 		} else {
 			if !values.repositorySet {
 				return loadedInput{}, errors.New("provide a repository path, a fixture, or pipe a Git diff")
@@ -66,7 +71,24 @@ func loadInput(ctx context.Context, values options, stdin *os.File) (loadedInput
 	if err != nil {
 		return loadedInput{}, err
 	}
-	return loadedInput{source: source, directory: absolute, mode: mode, snapshot: snapshot, processed: time.Since(started)}, nil
+	return loadedInput{source: source, raw: rawPatch, directory: absolute, mode: mode, snapshot: snapshot, processed: time.Since(started)}, nil
+}
+
+func loadCapturedInput(ctx context.Context, raw string) (loadedInput, error) {
+	started := time.Now()
+	directory, err := filepath.Abs(".")
+	if err != nil {
+		return loadedInput{}, err
+	}
+	source, err := diffsource.OpenPatch(raw)
+	if err != nil {
+		return loadedInput{}, err
+	}
+	snapshot, err := source.Snapshot(ctx, review.DiffAll)
+	if err != nil {
+		return loadedInput{}, err
+	}
+	return loadedInput{source: source, raw: raw, directory: directory, mode: "pipe", snapshot: snapshot, processed: time.Since(started)}, nil
 }
 
 func redirected(stdin *os.File) (bool, error) {

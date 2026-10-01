@@ -12,6 +12,9 @@ func Applicability(comment ReviewComment, repository *RepositoryDiff) string {
 	if comment.Scope != repository.Mode {
 		return "other-scope"
 	}
+	if comment.DiffID != "" && repository.ID != "" && comment.DiffID != repository.ID {
+		return "other-scope"
+	}
 	for _, file := range repository.Files {
 		if file.Path == comment.Path && file.Fingerprint == comment.Fingerprint {
 			return "anchored"
@@ -73,7 +76,7 @@ func FormatComments(comments []ReviewComment, includeResolved bool, repositories
 	for index, comment := range selected {
 		key := "unknown"
 		if comment.Origin != nil {
-			key = strings.Join([]string{comment.Origin.Source, comment.Origin.Repository, comment.Origin.Branch, value(comment.Origin.Head), comment.Origin.Revision}, "\x00")
+			key = strings.Join([]string{comment.Origin.DiffID, comment.Origin.VersionID, comment.Origin.Source, comment.Origin.Repository, comment.Origin.Branch, value(comment.Origin.Head), comment.Origin.Revision}, "\x00")
 		}
 		reviewIndex, ok := keys[key]
 		if !ok {

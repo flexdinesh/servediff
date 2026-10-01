@@ -64,6 +64,9 @@ func writeStartup(writer io.Writer, input loadedInput, url string) {
 	fmt.Fprintf(writer, "  %s  %s\n", color.paint(color.dim, "serving directory:"), input.directory)
 	fmt.Fprintf(writer, "  %s               %s\n", color.paint(color.dim, "mode:"), input.mode)
 	fmt.Fprintf(writer, "  %s                %s\n", color.paint(color.dim, "url:"), color.paint(color.green, url))
+	if input.captureID != "" {
+		fmt.Fprintf(writer, "  %s         %s\n", color.paint(color.dim, "capture ID:"), input.captureID)
+	}
 	fmt.Fprintln(writer, "  ")
 	elapsed := max(input.processed.Round(time.Millisecond).Milliseconds(), 1)
 	fmt.Fprintf(writer, "  %s %s\n", color.paint(color.dim, "diff statistics"), color.paint(color.magenta, fmt.Sprintf("%dms", elapsed)))

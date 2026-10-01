@@ -232,6 +232,23 @@ func OpenRepository(ctx context.Context, directory string) (Source, error) {
 	return &gitSource{root: strings.TrimSuffix(root, "\n")}, nil
 }
 
+func RepositoryIdentity(ctx context.Context, root string) (commonDir, worktreeDir string, err error) {
+	worktreeDir, err = runGit(ctx, root, 16*1024, "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		return "", "", err
+	}
+	commonDir, err = runGit(ctx, root, 16*1024, "rev-parse", "--git-common-dir")
+	if err != nil {
+		return "", "", err
+	}
+	worktreeDir = filepath.Clean(strings.TrimSpace(worktreeDir))
+	commonDir = strings.TrimSpace(commonDir)
+	if !filepath.IsAbs(commonDir) {
+		commonDir = filepath.Join(root, commonDir)
+	}
+	return filepath.Clean(commonDir), worktreeDir, nil
+}
+
 func (source *gitSource) Root() string { return source.root }
 func (source *gitSource) Kind() string { return "local" }
 func (source *gitSource) Support() Support {

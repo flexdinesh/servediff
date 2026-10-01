@@ -19,6 +19,10 @@ export interface ChangedFile {
 }
 
 export interface RepositoryDiff {
+  id: string;
+  versionId: string;
+  locationId: string | null;
+  repositoryId: string | null;
   source: "local" | "stdin";
   root: string;
   name: string;

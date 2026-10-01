@@ -92,8 +92,12 @@ test("Go distribution implements the API contract", async (t) => {
     "/api/v1/diffs/{diffId}/files/{fileId}/patch",
     {
       params: {
-        path: { diffId: diff.data.revision, fileId: file.id },
-        query: { scope: apiValues.allScope, fileVersion: file.fingerprint },
+        path: { diffId: diff.data.id, fileId: file.id },
+        query: {
+          scope: apiValues.allScope,
+          versionId: diff.data.versionId,
+          fileVersion: file.fingerprint,
+        },
       },
     },
   );
@@ -101,7 +105,8 @@ test("Go distribution implements the API contract", async (t) => {
 
   const created = await client.POST("/api/v1/comments", {
     body: {
-      diffId: diff.data.revision,
+      diffId: diff.data.id,
+      versionId: diff.data.versionId,
       fileId: file.id,
       scope: apiValues.allScope,
       fileVersion: file.fingerprint,

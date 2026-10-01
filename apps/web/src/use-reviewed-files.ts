@@ -10,7 +10,6 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
-import { removeSaved, savedReviews } from "./preferences.ts";
 import { createRequestOwner } from "./request-owner.ts";
 
 const noReviews = new Map<string, string>();
@@ -20,8 +19,8 @@ export function useReviewedFiles(
   mode: DiffMode,
   setCollapsed: Dispatch<SetStateAction<Set<string>>>,
 ) {
-  const root = repository?.root ?? "";
-  const key = `reviewed:${root}:${mode}`;
+  const diffId = repository?.id ?? "";
+  const key = `reviewed:${diffId}`;
   const [stored, setStored] = useState({
     key: "",
     entries: new Map<string, string>(),
@@ -41,31 +40,17 @@ export function useReviewedFiles(
   });
 
   useEffect(() => {
-    if (!root) return;
+    if (!diffId) return;
     const owner = createRequestOwner(key);
     requests.current = owner;
     setPending(new Set());
     setFailure(null);
     async function load(force = false) {
       const current = latest.current.repository;
-      if (!current || current.root !== root || current.mode !== mode) return;
+      if (!current || current.id !== diffId || current.mode !== mode) return;
       const request = owner.beginRead(force);
       if (!request) return;
       try {
-        const legacy = savedReviews(key);
-        for (const file of current.files) {
-          if (legacy.get(file.path) !== file.fingerprint) continue;
-          const result = await api.PUT("/api/v1/review-marks/{fileId}", {
-            params: { path: { fileId: file.id }, query: { scope: mode } },
-            body: { fileVersion: file.fingerprint },
-            signal: request.signal,
-          });
-          if (!request.isCurrent()) return;
-          if (!result.response.ok)
-            throw new Error(
-              errorDetail(result.error, "Unable to import reviewed files"),
-            );
-        }
         const { data, error } = await api.GET("/api/v1/review-marks", {
           params: { query: { scope: mode } },
           signal: request.signal,
@@ -73,7 +58,6 @@ export function useReviewedFiles(
         if (!request.isCurrent()) return;
         if (!data)
           throw new Error(errorDetail(error, "Unable to load reviewed files"));
-        if (legacy.size) removeSaved(key);
         setStored({
           key,
           entries: new Map(
@@ -94,7 +78,7 @@ export function useReviewedFiles(
     reload.current = (force) => void load(force);
     void load();
     return () => owner.dispose();
-  }, [root, key, mode]);
+  }, [diffId, key, mode]);
 
   // A new diff snapshot may invalidate marks, but keeps this scope's write owner.
   useEffect(() => {
@@ -104,7 +88,8 @@ export function useReviewedFiles(
   const toggleReviewed = useCallback(
     async (file: ChangedFile) => {
       const owner = requests.current;
-      if (owner?.key !== key) return;
+      const currentRepository = latest.current.repository;
+      if (owner?.key !== key || currentRepository?.id !== diffId) return;
       const request = owner.beginWrite(file.id);
       if (!request) return;
       const marked = latest.current.entries.get(file.id) === file.fingerprint;
@@ -118,7 +103,10 @@ export function useReviewedFiles(
             })
           : await api.PUT("/api/v1/review-marks/{fileId}", {
               params: { path: { fileId: file.id }, query: { scope: mode } },
-              body: { fileVersion: file.fingerprint },
+              body: {
+                fileVersion: file.fingerprint,
+                versionId: currentRepository.versionId,
+              },
               signal: request.signal,
             });
         if (!request.isCurrent()) return;
@@ -159,7 +147,7 @@ export function useReviewedFiles(
         }
       }
     },
-    [key, mode, setCollapsed],
+    [diffId, key, mode, setCollapsed],
   );
 
   const resetReviewed = useCallback(async () => {

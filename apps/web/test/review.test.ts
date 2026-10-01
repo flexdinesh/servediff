@@ -101,6 +101,8 @@ const diff = parsePatchFiles(patch, "test", true)[0]?.files[0];
 if (!diff) throw new Error("Missing test diff");
 const comment: ReviewComment = {
   id: "one",
+  diffId: "diff",
+  versionId: "old",
   path: "src/file.ts",
   scope: "staged",
   fingerprint: "private-fingerprint",
@@ -238,6 +240,10 @@ test("copies unresolved comments by default and all comments when requested", ()
 
 test("treats changed file references as stale export-only context", () => {
   const repository: RepositoryDiff = {
+    id: "diff",
+    versionId: "current",
+    locationId: "location",
+    repositoryId: "repo",
     source: "local",
     root: "/repo",
     name: "repo",
@@ -290,6 +296,8 @@ test("treats changed file references as stale export-only context", () => {
 
 test("groups comments by snapshot then file while preserving export order", () => {
   const firstOrigin: ReviewOrigin = {
+    diffId: "diff",
+    versionId: "revision-1",
     source: "local",
     repository: "servediff",
     branch: "main",
@@ -299,6 +307,7 @@ test("groups comments by snapshot then file while preserving export order", () =
   };
   const secondOrigin: ReviewOrigin = {
     ...firstOrigin,
+    versionId: "revision-2",
     source: "stdin",
     head: null,
     revision: "revision-2",
@@ -329,6 +338,10 @@ test("groups comments by snapshot then file while preserving export order", () =
 
 test("separates current comments from earlier review rounds", () => {
   const repository: RepositoryDiff = {
+    id: "diff",
+    versionId: "current",
+    locationId: "location",
+    repositoryId: "repo",
     source: "local",
     root: "/repo",
     name: "repo",
@@ -339,6 +352,8 @@ test("separates current comments from earlier review rounds", () => {
     files: [file("src/file.ts")],
   };
   const oldOrigin: ReviewOrigin = {
+    diffId: "diff",
+    versionId: "earlier",
     source: "local",
     repository: "repo",
     branch: "main",
@@ -346,12 +361,28 @@ test("separates current comments from earlier review rounds", () => {
     revision: "earlier",
     file: { status: "M", oldPath: null },
   };
-  const currentOrigin: ReviewOrigin = { ...oldOrigin, revision: "current" };
+  const currentOrigin: ReviewOrigin = {
+    ...oldOrigin,
+    versionId: "current",
+    revision: "current",
+  };
   const rounds = reviewRounds(
     [
-      { ...comment, origin: oldOrigin, createdAt: 1 },
-      { ...comment, id: "two", origin: currentOrigin, createdAt: 2 },
-      { ...comment, id: "three", origin: oldOrigin, createdAt: 3 },
+      { ...comment, versionId: "earlier", origin: oldOrigin, createdAt: 1 },
+      {
+        ...comment,
+        id: "two",
+        versionId: "current",
+        origin: currentOrigin,
+        createdAt: 2,
+      },
+      {
+        ...comment,
+        id: "three",
+        versionId: "earlier",
+        origin: oldOrigin,
+        createdAt: 3,
+      },
     ],
     repository,
   );
@@ -373,6 +404,8 @@ test("copies rename and status metadata with XML-safe attributes and content", (
         code: "+ if (a < b && b > 1)",
         body: '</body><evil attr="x"> & more',
         origin: {
+          diffId: "diff",
+          versionId: "special",
           source: "local",
           repository: 'repo\n"&<name>',
           branch: 'branch\t"&<name>',
@@ -386,6 +419,8 @@ test("copies rename and status metadata with XML-safe attributes and content", (
         id: "renamed",
         path: "renamed.ts",
         origin: {
+          diffId: "diff",
+          versionId: "rename",
           source: "local",
           repository: "repo",
           branch: "main",
@@ -419,6 +454,8 @@ test("maps supported file statuses and omits private implementation metadata", (
       id: `${index}`,
       path: `${index}.ts`,
       origin: {
+        diffId: "diff",
+        versionId: "captured",
         source: "local",
         repository: "repo",
         branch: "main",
@@ -457,6 +494,8 @@ test("reloads saved comments and rejects malformed storage without losing valid 
   const withOrigin: ReviewComment = {
     ...comment,
     origin: {
+      diffId: "diff",
+      versionId: "revision",
       source: "local",
       repository: "servediff",
       branch: "main",

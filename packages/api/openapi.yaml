@@ -44,12 +44,46 @@ paths:
                 $ref: "#/components/schemas/RepositoryDiff"
         default:
           $ref: "#/components/responses/Problem"
+  /api/v1/diffs/captures:
+    get:
+      operationId: listCaptures
+      responses:
+        "200":
+          description: Retained captures for the current user.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [captures]
+                properties:
+                  captures:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CaptureInfo"
+        default:
+          $ref: "#/components/responses/Problem"
+  /api/v1/diffs/{diffId}/versions/{versionId}:
+    get:
+      operationId: getDiffVersion
+      parameters:
+        - $ref: "#/components/parameters/DiffId"
+        - $ref: "#/components/parameters/VersionIdPath"
+      responses:
+        "200":
+          description: Retained immutable diff version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepositoryDiff"
+        default:
+          $ref: "#/components/responses/Problem"
   /api/v1/diffs/{diffId}/files/{fileId}/patch:
     get:
       operationId: getFilePatch
       parameters:
         - $ref: "#/components/parameters/DiffId"
         - $ref: "#/components/parameters/FileId"
+        - $ref: "#/components/parameters/VersionId"
         - $ref: "#/components/parameters/Scope"
         - $ref: "#/components/parameters/FileVersion"
       responses:
@@ -67,6 +101,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/DiffId"
         - $ref: "#/components/parameters/FileId"
+        - $ref: "#/components/parameters/VersionId"
         - $ref: "#/components/parameters/Scope"
         - $ref: "#/components/parameters/FileVersion"
       responses:
@@ -315,9 +350,11 @@ paths:
           application/json:
             schema:
               type: object
-              required: [fileVersion]
+              required: [fileVersion, versionId]
               properties:
                 fileVersion:
+                  type: string
+                versionId:
                   type: string
       responses:
         "200":
@@ -348,6 +385,18 @@ components:
         $ref: "#/components/schemas/DiffMode"
     DiffId:
       name: diffId
+      in: path
+      required: true
+      schema:
+        type: string
+    VersionId:
+      name: versionId
+      in: query
+      required: true
+      schema:
+        type: string
+    VersionIdPath:
+      name: versionId
       in: path
       required: true
       schema:
@@ -417,10 +466,17 @@ components:
     Session:
       type: object
       additionalProperties: false
-      required: [id, source, name, root, capabilities]
+      required:
+        [id, user, locationId, repositoryId, source, name, root, capabilities]
       properties:
         id:
           type: string
+        user:
+          $ref: "#/components/schemas/User"
+        locationId:
+          type: [string, "null"]
+        repositoryId:
+          type: [string, "null"]
         source:
           type: string
           enum: [local, stdin]
@@ -500,8 +556,30 @@ components:
     RepositoryDiff:
       type: object
       additionalProperties: false
-      required: [source, root, name, branch, head, mode, files, revision]
+      required:
+        [
+          id,
+          versionId,
+          locationId,
+          repositoryId,
+          source,
+          root,
+          name,
+          branch,
+          head,
+          mode,
+          files,
+          revision,
+        ]
       properties:
+        id:
+          type: string
+        versionId:
+          type: string
+        locationId:
+          type: [string, "null"]
+        repositoryId:
+          type: [string, "null"]
         source:
           type: string
           enum: [local, stdin]
@@ -544,8 +622,13 @@ components:
     ReviewOrigin:
       type: object
       additionalProperties: false
-      required: [source, repository, branch, head, revision, file]
+      required:
+        [diffId, versionId, source, repository, branch, head, revision, file]
       properties:
+        diffId:
+          type: string
+        versionId:
+          type: string
         source:
           type: string
           enum: [local, stdin]
@@ -572,6 +655,8 @@ components:
       required:
         [
           id,
+          diffId,
+          versionId,
           path,
           scope,
           fingerprint,
@@ -585,6 +670,10 @@ components:
         ]
       properties:
         id:
+          type: string
+        diffId:
+          type: string
+        versionId:
           type: string
         path:
           type: string
@@ -618,6 +707,8 @@ components:
       required:
         [
           id,
+          diffId,
+          versionId,
           path,
           scope,
           fingerprint,
@@ -633,6 +724,10 @@ components:
         ]
       properties:
         id:
+          type: string
+        diffId:
+          type: string
+        versionId:
           type: string
         path:
           type: string
@@ -678,9 +773,12 @@ components:
     CreateComment:
       type: object
       additionalProperties: false
-      required: [diffId, fileId, scope, fileVersion, side, start, end, body]
+      required:
+        [diffId, versionId, fileId, scope, fileVersion, side, start, end, body]
       properties:
         diffId:
+          type: string
+        versionId:
           type: string
         fileId:
           type: string
@@ -712,14 +810,40 @@ components:
     ReviewMark:
       type: object
       additionalProperties: false
-      required: [fileId, fileVersion, scope]
+      required: [diffId, versionId, fileId, fileVersion, scope]
       properties:
+        diffId:
+          type: string
+        versionId:
+          type: string
         fileId:
           type: string
         fileVersion:
           type: string
         scope:
           $ref: "#/components/schemas/DiffMode"
+    User:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+    CaptureInfo:
+      type: object
+      additionalProperties: false
+      required: [id, versionId, createdAt, expiresAt]
+      properties:
+        id:
+          type: string
+        versionId:
+          type: string
+        createdAt:
+          type: integer
+        expiresAt:
+          type: integer
     Problem:
       type: object
       additionalProperties: false

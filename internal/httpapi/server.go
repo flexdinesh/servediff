@@ -67,6 +67,16 @@ func (handler *Handler) snapshot(request *http.Request, mode review.DiffMode, fr
 		}
 	}
 	snapshot, err := handler.session.Source.Snapshot(request.Context(), mode)
+	if err == nil {
+		snapshot.ID = handler.session.DiffIDs[mode]
+		snapshot.LocationID = handler.session.LocationID
+		snapshot.RepositoryID = handler.session.RepositoryID
+		if handler.session.VersionID != "" {
+			snapshot.VersionID = handler.session.VersionID
+		} else {
+			snapshot.VersionID = reviewstore.VersionID(snapshot.ID, snapshot.Revision)
+		}
+	}
 	handler.mu.Lock()
 	handler.snapshots[mode] = cachedSnapshot{at: time.Now(), snapshot: snapshot, err: err}
 	handler.mu.Unlock()
@@ -80,6 +90,17 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	if err := handler.checkRequest(request); err != nil {
 		handler.problem(response, err)
 		return
+	}
+	if handler.session.Source.Kind() == "stdin" && strings.HasPrefix(request.URL.Path, "/api/v1/") && request.URL.Path != "/api/v1/diffs/captures" && request.URL.Path != "/api/v1/metrics" {
+		alive, err := handler.store.CaptureAlive(handler.session.User.ID, handler.session.ContextID, time.Now())
+		if err != nil {
+			handler.problem(response, err)
+			return
+		}
+		if !alive {
+			handler.problem(response, diffsource.Error(410, "Capture expired"))
+			return
+		}
 	}
 	handled, err := handler.api(response, request)
 	if err != nil {
@@ -136,8 +157,13 @@ func (handler *Handler) api(response http.ResponseWriter, request *http.Request)
 		}
 		return true, writeJSON(response, 200, map[string]any{
 			"id": handler.session.ID, "source": handler.session.Source.Kind(), "name": snapshot.Name, "root": snapshot.Root,
+			"user": handler.session.User, "locationId": handler.session.LocationID, "repositoryId": handler.session.RepositoryID,
 			"capabilities": handler.session.Capabilities,
 		})
+	}
+	if pathname == "/api/v1/diffs/captures" && request.Method == http.MethodGet {
+		captures, err := handler.store.ListCaptures(handler.session.User.ID, time.Now())
+		return true, writeResult(response, map[string]any{"captures": captures}, err)
 	}
 	if pathname == "/api/v1/diffs/current" && request.Method == http.MethodGet {
 		mode, err := handler.requestScope(request)
@@ -145,6 +171,13 @@ func (handler *Handler) api(response http.ResponseWriter, request *http.Request)
 			return true, err
 		}
 		snapshot, err := handler.snapshot(request, mode, false)
+		return true, writeResult(response, snapshot, err)
+	}
+	if diffID, versionID, ok := parseVersionRoute(pathname); ok && request.Method == http.MethodGet {
+		snapshot, err := handler.store.StoredVersion(handler.session.User.ID, diffID, versionID, time.Now())
+		if errors.Is(err, reviewstore.ErrNotFound) {
+			err = diffsource.Error(404, "Diff version not found")
+		}
 		return true, writeResult(response, snapshot, err)
 	}
 	if route, ok := parseFileRoute(pathname); ok && request.Method == http.MethodGet {
@@ -171,7 +204,8 @@ func (handler *Handler) api(response http.ResponseWriter, request *http.Request)
 	if pathname == "/api/v1/comments" {
 		switch request.Method {
 		case http.MethodGet:
-			return true, writeJSON(response, 200, map[string]any{"comments": handler.store.Comments(handler.session.ID)})
+			comments, err := handler.store.Comments(handler.session.ContextID)
+			return true, writeResult(response, map[string]any{"comments": comments}, err)
 		case http.MethodPost:
 			return true, handler.createComment(response, request)
 		case http.MethodDelete:
@@ -189,7 +223,7 @@ func (handler *Handler) api(response http.ResponseWriter, request *http.Request)
 		case http.MethodPatch:
 			return true, handler.updateComment(response, request, commentID)
 		case http.MethodDelete:
-			deleted, err := handler.store.DeleteComment(handler.session.ID, commentID)
+			deleted, err := handler.store.DeleteComment(handler.session.ContextID, commentID)
 			if err != nil {
 				return true, err
 			}
@@ -207,9 +241,10 @@ func (handler *Handler) api(response http.ResponseWriter, request *http.Request)
 		}
 		switch request.Method {
 		case http.MethodGet:
-			return true, writeJSON(response, 200, map[string]any{"marks": handler.store.Marks(handler.session.ID, mode)})
+			marks, err := handler.store.Marks(handler.session.ContextID, mode)
+			return true, writeResult(response, map[string]any{"marks": marks}, err)
 		case http.MethodDelete:
-			if err := handler.store.ClearMarks(handler.session.ID, mode); err != nil {
+			if err := handler.store.ClearMarks(handler.session.ContextID, mode); err != nil {
 				return true, err
 			}
 			response.WriteHeader(http.StatusNoContent)
@@ -223,7 +258,7 @@ func (handler *Handler) api(response http.ResponseWriter, request *http.Request)
 		case http.MethodDelete:
 			mode, err := handler.requestScope(request)
 			if err == nil {
-				err = handler.store.DeleteMark(handler.session.ID, mode, fileID)
+				err = handler.store.DeleteMark(handler.session.ContextID, mode, fileID)
 			}
 			if err != nil {
 				return true, err
@@ -232,11 +267,14 @@ func (handler *Handler) api(response http.ResponseWriter, request *http.Request)
 			return true, nil
 		}
 	}
-	known := pathname == "/api/v1/session" || pathname == "/api/v1/diffs/current" ||
+	known := pathname == "/api/v1/session" || pathname == "/api/v1/diffs/current" || pathname == "/api/v1/diffs/captures" ||
 		pathname == "/api/v1/comments" || pathname == "/api/v1/comments/import" ||
 		pathname == "/api/v1/comments/export" || pathname == "/api/v1/review/comments" ||
 		pathname == "/api/v1/review-marks"
 	if _, ok := parseFileRoute(pathname); ok {
+		known = true
+	}
+	if _, _, ok := parseVersionRoute(pathname); ok {
 		known = true
 	}
 	if _, ok := routeValue(pathname, "/api/v1/comments/"); ok {
@@ -255,6 +293,14 @@ func (handler *Handler) api(response http.ResponseWriter, request *http.Request)
 }
 
 type fileRoute struct{ diffID, fileID, resource string }
+
+func parseVersionRoute(pathname string) (string, string, bool) {
+	parts := strings.Split(strings.TrimPrefix(pathname, "/"), "/")
+	if len(parts) != 6 || parts[0] != "api" || parts[1] != "v1" || parts[2] != "diffs" || parts[4] != "versions" || parts[3] == "" || parts[5] == "" {
+		return "", "", false
+	}
+	return parts[3], parts[5], true
+}
 
 func parseFileRoute(pathname string) (fileRoute, bool) {
 	parts := strings.Split(strings.TrimPrefix(pathname, "/"), "/")
@@ -320,12 +366,12 @@ func (handler *Handler) requestScope(request *http.Request) (review.DiffMode, er
 	return mode, nil
 }
 
-func (handler *Handler) currentFile(request *http.Request, mode review.DiffMode, diffID, fileID, fileVersion string, fresh bool) (review.RepositoryDiff, review.ChangedFile, error) {
+func (handler *Handler) currentFile(request *http.Request, mode review.DiffMode, diffID, versionID, fileID, fileVersion string, fresh bool) (review.RepositoryDiff, review.ChangedFile, error) {
 	snapshot, err := handler.snapshot(request, mode, fresh)
 	if err != nil {
 		return review.RepositoryDiff{}, review.ChangedFile{}, err
 	}
-	if snapshot.Revision != diffID {
+	if snapshot.ID != diffID || snapshot.VersionID != versionID {
 		return review.RepositoryDiff{}, review.ChangedFile{}, diffsource.Error(409, "Diff changed. Refresh to load the latest version.")
 	}
 	for _, file := range snapshot.Files {
@@ -348,7 +394,71 @@ func (handler *Handler) getFile(response http.ResponseWriter, request *http.Requ
 	if err != nil {
 		return err
 	}
-	snapshot, file, err := handler.currentFile(request, mode, route.diffID, route.fileID, request.URL.Query().Get("fileVersion"), false)
+	versionID := request.URL.Query().Get("versionId")
+	if versionID == "" {
+		return diffsource.Error(400, "Version ID is required")
+	}
+	fileVersion := request.URL.Query().Get("fileVersion")
+	if route.diffID == handler.session.DiffIDs[mode] {
+		current, err := handler.snapshot(request, mode, false)
+		if err != nil {
+			return err
+		}
+		if current.VersionID != versionID {
+			stored, err := handler.store.StoredVersion(handler.session.User.ID, route.diffID, versionID, time.Now())
+			if errors.Is(err, reviewstore.ErrNotFound) {
+				return diffsource.Error(409, "Diff changed. Refresh to load the latest version.")
+			}
+			if err != nil {
+				return err
+			}
+			for _, file := range stored.Files {
+				if file.ID != route.fileID || file.Fingerprint != fileVersion {
+					continue
+				}
+				preview, err := handler.store.StoredPatch(versionID, route.fileID, fileVersion)
+				if err != nil {
+					return diffsource.Error(404, "File preview not retained")
+				}
+				if route.resource == "contents" {
+					if preview.Contents == nil {
+						return diffsource.Error(404, "Full context not retained")
+					}
+					return writeJSON(response, 200, preview.Contents)
+				}
+				return writeJSON(response, 200, preview)
+			}
+			return diffsource.Error(404, "File is not in the diff version")
+		}
+	}
+	if route.diffID != handler.session.DiffIDs[mode] {
+		stored, err := handler.store.StoredVersion(handler.session.User.ID, route.diffID, versionID, time.Now())
+		if errors.Is(err, reviewstore.ErrNotFound) {
+			return diffsource.Error(404, "Diff version not found")
+		}
+		if err != nil {
+			return err
+		}
+		if stored.Source != "stdin" || route.resource != "patch" || stored.Mode != mode {
+			return diffsource.Error(404, "File preview not found")
+		}
+		raw, _, err := handler.store.ReopenCapture(handler.session.User.ID, route.diffID, time.Now())
+		if err != nil {
+			return diffsource.Error(404, "Diff version not found")
+		}
+		source, err := diffsource.OpenPatch(raw)
+		if err != nil {
+			return err
+		}
+		for _, file := range stored.Files {
+			if file.ID == route.fileID && file.Fingerprint == fileVersion {
+				preview, err := source.Patch(request.Context(), mode, file, stored.Head)
+				return writeResult(response, preview, err)
+			}
+		}
+		return diffsource.Error(404, "File is not in the diff version")
+	}
+	snapshot, file, err := handler.currentFile(request, mode, route.diffID, versionID, route.fileID, fileVersion, false)
 	if err != nil {
 		return err
 	}
@@ -360,8 +470,41 @@ func (handler *Handler) getFile(response http.ResponseWriter, request *http.Requ
 	return writeResult(response, result, err)
 }
 
+func (handler *Handler) pinSnapshot(request *http.Request, snapshot review.RepositoryDiff) error {
+	complete, err := handler.store.VersionComplete(snapshot.VersionID, len(snapshot.Files))
+	if err != nil {
+		return err
+	}
+	if complete {
+		return nil
+	}
+	previews := make(map[string]review.FilePatch, len(snapshot.Files))
+	for _, file := range snapshot.Files {
+		preview, err := handler.session.Source.Patch(request.Context(), snapshot.Mode, file, snapshot.Head)
+		if err != nil {
+			return err
+		}
+		if handler.session.Capabilities.Files.Contents.Enabled() && !file.Binary && file.Status != "U" && preview.Contents == nil {
+			contents, contentError := handler.session.Source.Contents(request.Context(), snapshot.Mode, file, snapshot.Head)
+			if contentError == nil {
+				preview.Contents = &contents
+			}
+		}
+		previews[file.ID] = preview
+	}
+	current, err := handler.session.Source.Snapshot(request.Context(), snapshot.Mode)
+	if err != nil {
+		return err
+	}
+	if current.Revision != snapshot.Revision {
+		return diffsource.Error(409, "Diff changed while saving the review. Refresh to try again.")
+	}
+	return handler.store.PinVersion(snapshot, previews)
+}
+
 type createCommentRequest struct {
 	DiffID      string          `json:"diffId"`
+	VersionID   string          `json:"versionId"`
 	FileID      string          `json:"fileId"`
 	Scope       review.DiffMode `json:"scope"`
 	FileVersion string          `json:"fileVersion"`
@@ -382,7 +525,7 @@ func (handler *Handler) createComment(response http.ResponseWriter, request *htt
 	if !handler.session.Capabilities.Diff.Scopes.Allows(body.Scope) {
 		return session.NotEnabled(session.DiffScopes)
 	}
-	snapshot, file, err := handler.currentFile(request, body.Scope, body.DiffID, body.FileID, body.FileVersion, true)
+	snapshot, file, err := handler.currentFile(request, body.Scope, body.DiffID, body.VersionID, body.FileID, body.FileVersion, true)
 	if err != nil {
 		return err
 	}
@@ -409,12 +552,15 @@ func (handler *Handler) createComment(response http.ResponseWriter, request *htt
 	if err != nil {
 		return err
 	}
-	comment := review.ReviewComment{
-		ID: id, Path: file.Path, Scope: body.Scope, Fingerprint: file.Fingerprint,
-		Side: body.Side, Start: start, End: end, Code: code, Body: strings.TrimSpace(body.Body), Status: "open", CreatedAt: float64(time.Now().UnixMilli()),
-		Origin: &review.ReviewOrigin{Source: snapshot.Source, Repository: snapshot.Name, Branch: snapshot.Branch, Head: snapshot.Head, Revision: snapshot.Revision, File: review.ReviewFileOrigin{Status: file.Status, OldPath: file.OldPath}},
+	if err := handler.pinSnapshot(request, snapshot); err != nil {
+		return err
 	}
-	if err := handler.store.PutComment(handler.session.ID, comment); err != nil {
+	comment := review.ReviewComment{
+		ID: id, DiffID: snapshot.ID, VersionID: snapshot.VersionID, Path: file.Path, Scope: body.Scope, Fingerprint: file.Fingerprint,
+		Side: body.Side, Start: start, End: end, Code: code, Body: strings.TrimSpace(body.Body), Status: "open", CreatedAt: float64(time.Now().UnixMilli()),
+		Origin: &review.ReviewOrigin{DiffID: snapshot.ID, VersionID: snapshot.VersionID, Source: snapshot.Source, Repository: snapshot.Name, Branch: snapshot.Branch, Head: snapshot.Head, Revision: snapshot.Revision, File: review.ReviewFileOrigin{Status: file.Status, OldPath: file.OldPath}},
+	}
+	if err := handler.store.PutComment(handler.session.ContextID, comment); err != nil {
 		return err
 	}
 	return writeJSON(response, http.StatusCreated, comment)
@@ -475,7 +621,10 @@ func (handler *Handler) deleteComments(response http.ResponseWriter, request *ht
 	if selection != "all" && selection != "open" && selection != "resolved" && selection != "stale" {
 		return diffsource.Error(400, "Invalid comment status")
 	}
-	comments := handler.store.Comments(handler.session.ID)
+	comments, err := handler.store.Comments(handler.session.ContextID)
+	if err != nil {
+		return err
+	}
 	repositories, err := handler.repositories(request, comments)
 	if err != nil {
 		return err
@@ -487,11 +636,12 @@ func (handler *Handler) deleteComments(response http.ResponseWriter, request *ht
 			selected[comment.ID] = true
 		}
 	}
-	deleted, err := handler.store.DeleteComments(handler.session.ID, selected)
+	deleted, err := handler.store.DeleteComments(handler.session.ContextID, selected)
 	if err != nil {
 		return err
 	}
-	return writeJSON(response, 200, map[string]any{"comments": handler.store.Comments(handler.session.ID), "deleted": deleted})
+	remaining, err := handler.store.Comments(handler.session.ContextID)
+	return writeResult(response, map[string]any{"comments": remaining, "deleted": deleted}, err)
 }
 
 func (handler *Handler) importComments(response http.ResponseWriter, request *http.Request) error {
@@ -509,7 +659,7 @@ func (handler *Handler) importComments(response http.ResponseWriter, request *ht
 			return diffsource.Error(400, "Invalid comment import")
 		}
 	}
-	comments, err := handler.store.ImportComments(handler.session.ID, *body.Comments)
+	comments, err := handler.store.ImportComments(handler.session.ContextID, *body.Comments)
 	if err != nil {
 		return err
 	}
@@ -550,7 +700,11 @@ func (handler *Handler) exportComments(response http.ResponseWriter, request *ht
 		current = &snapshot
 	}
 	selected := make([]review.ReviewComment, 0)
-	for _, comment := range handler.store.Comments(handler.session.ID) {
+	comments, err := handler.store.Comments(handler.session.ContextID)
+	if err != nil {
+		return err
+	}
+	for _, comment := range comments {
 		if id := query.Get("commentId"); id != "" && comment.ID != id {
 			continue
 		}
@@ -587,7 +741,10 @@ func (handler *Handler) updateComment(response http.ResponseWriter, request *htt
 	if body.Body == nil && body.Status == nil || body.Body != nil && strings.TrimSpace(*body.Body) == "" || body.Status != nil && *body.Status != "open" && *body.Status != "resolved" {
 		return diffsource.Error(400, "Invalid comment update")
 	}
-	comments := handler.store.Comments(handler.session.ID)
+	comments, err := handler.store.Comments(handler.session.ContextID)
+	if err != nil {
+		return err
+	}
 	for _, comment := range comments {
 		if comment.ID != commentID {
 			continue
@@ -598,7 +755,7 @@ func (handler *Handler) updateComment(response http.ResponseWriter, request *htt
 		if body.Status != nil {
 			comment.Status = *body.Status
 		}
-		if err := handler.store.PutComment(handler.session.ID, comment); err != nil {
+		if err := handler.store.PutComment(handler.session.ContextID, comment); err != nil {
 			return err
 		}
 		return writeJSON(response, 200, comment)
@@ -613,16 +770,20 @@ func (handler *Handler) putMark(response http.ResponseWriter, request *http.Requ
 	}
 	var body struct {
 		FileVersion *string `json:"fileVersion"`
+		VersionID   *string `json:"versionId"`
 	}
 	if err := decodeBody(response, request, &body); err != nil {
 		return err
 	}
-	if body.FileVersion == nil {
+	if body.FileVersion == nil || body.VersionID == nil {
 		return diffsource.Error(400, "Invalid review mark")
 	}
 	snapshot, err := handler.snapshot(request, mode, true)
 	if err != nil {
 		return err
+	}
+	if snapshot.VersionID != *body.VersionID {
+		return diffsource.Error(409, "Diff changed. Refresh to try again.")
 	}
 	for _, file := range snapshot.Files {
 		if file.ID != fileID {
@@ -631,8 +792,11 @@ func (handler *Handler) putMark(response http.ResponseWriter, request *http.Requ
 		if file.Fingerprint != *body.FileVersion {
 			return diffsource.Error(409, "File changed. Refresh to try again.")
 		}
-		mark := review.ReviewMark{FileID: fileID, FileVersion: *body.FileVersion, Scope: mode}
-		if err := handler.store.PutMark(handler.session.ID, mark); err != nil {
+		if err := handler.pinSnapshot(request, snapshot); err != nil {
+			return err
+		}
+		mark := review.ReviewMark{DiffID: snapshot.ID, VersionID: snapshot.VersionID, FileID: fileID, FileVersion: *body.FileVersion, Scope: mode}
+		if err := handler.store.PutMark(handler.session.ContextID, mark); err != nil {
 			return err
 		}
 		return writeJSON(response, 200, mark)

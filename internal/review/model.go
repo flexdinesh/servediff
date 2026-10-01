@@ -39,14 +39,18 @@ type ChangedFile struct {
 }
 
 type RepositoryDiff struct {
-	Source   string        `json:"source"`
-	Root     string        `json:"root"`
-	Name     string        `json:"name"`
-	Branch   string        `json:"branch"`
-	Head     *string       `json:"head"`
-	Mode     DiffMode      `json:"mode"`
-	Files    []ChangedFile `json:"files"`
-	Revision string        `json:"revision"`
+	ID           string        `json:"id"`
+	VersionID    string        `json:"versionId"`
+	LocationID   *string       `json:"locationId"`
+	RepositoryID *string       `json:"repositoryId"`
+	Source       string        `json:"source"`
+	Root         string        `json:"root"`
+	Name         string        `json:"name"`
+	Branch       string        `json:"branch"`
+	Head         *string       `json:"head"`
+	Mode         DiffMode      `json:"mode"`
+	Files        []ChangedFile `json:"files"`
+	Revision     string        `json:"revision"`
 }
 
 type FileContents struct {
@@ -66,6 +70,8 @@ type ReviewFileOrigin struct {
 }
 
 type ReviewOrigin struct {
+	DiffID     string           `json:"diffId"`
+	VersionID  string           `json:"versionId"`
 	Source     string           `json:"source"`
 	Repository string           `json:"repository"`
 	Branch     string           `json:"branch"`
@@ -76,6 +82,8 @@ type ReviewOrigin struct {
 
 type ReviewComment struct {
 	ID          string        `json:"id"`
+	DiffID      string        `json:"diffId"`
+	VersionID   string        `json:"versionId"`
 	Path        string        `json:"path"`
 	Scope       DiffMode      `json:"scope"`
 	Fingerprint string        `json:"fingerprint"`
@@ -100,6 +108,8 @@ func (comment ReviewComment) Valid() bool {
 }
 
 type ReviewMark struct {
+	DiffID      string   `json:"diffId"`
+	VersionID   string   `json:"versionId"`
 	FileID      string   `json:"fileId"`
 	FileVersion string   `json:"fileVersion"`
 	Scope       DiffMode `json:"scope"`
