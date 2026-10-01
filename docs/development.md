@@ -8,7 +8,7 @@ release binary. Node and pnpm are build and test dependencies only.
 Install the latest development changes from `main` with Go 1.25 or later:
 
 ```sh
-go install github.com/flexdinesh/servediff/cmd/servediff@dev
+go install github.com/flexdinesh/servediff/cmd/servediff@main
 ```
 
 ## Requirements
@@ -49,9 +49,9 @@ pnpm install
 `PATH`. The task also removes obsolete pnpm-global Node shims created by older
 versions of the repository.
 
-The production web build is committed under `internal/webui/dist` so tagged
-Go installs contain the complete application. Run `task web:stage` and commit
-asset changes after modifying the frontend.
+The production web build is committed under `internal/webui/dist` so installs
+from tags and `main` contain the complete application. Run `task web:stage` and
+commit asset changes after modifying the frontend.
 
 ## Development data
 
