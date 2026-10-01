@@ -74,7 +74,11 @@ test("shows server process metrics in the compact status bar", async ({
     "title",
     /ServeDiff server process/,
   );
-  await expect(page.locator(".main-footer")).toHaveCSS("min-height", "28px");
+  const sidebar = await page.locator(".sidebar-footer").boundingBox();
+  const main = await page.locator(".main-footer").boundingBox();
+  if (!sidebar || !main) throw new Error("Missing status bars");
+  expect(main.height).toBeCloseTo(sidebar.height, 1);
+  expect(main.y).toBeCloseTo(sidebar.y, 1);
 });
 
 test("renders and filters a piped diff", async ({ page }) => {

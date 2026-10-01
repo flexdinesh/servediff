@@ -638,9 +638,6 @@ export function DiffWorkspace() {
           />
         </section>
         <div id="empty" role="status" hidden={files.length > 0}>
-          <div className="empty-symbol" aria-hidden="true">
-            {!repository && diff.notice ? "!" : "±"}
-          </div>
           <h2>{emptyTitle}</h2>
           <p>{emptyDescription}</p>
           {!!filter && (

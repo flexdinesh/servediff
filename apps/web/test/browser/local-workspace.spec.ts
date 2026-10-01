@@ -231,8 +231,17 @@ test("full-file context and selection survive layout changes", async ({
   await expect(page.locator("#viewer")).toContainText("line 30");
   await ready(page);
   await page.getByRole("button", { name: "Split", exact: true }).click();
-  await page.locator('[data-gutter] [data-column-number="50"]').last().hover();
-  await page.locator("[data-utility-button]").click();
+  const editor = page.locator("#viewer .comment-editor-title");
+  // Worker rendering can replace the hover utility after switching layouts.
+  await expect(async () => {
+    if (await editor.isVisible()) return;
+    await page
+      .locator('[data-gutter] [data-column-number="50"]')
+      .last()
+      .hover({ timeout: 1_000 });
+    await page.locator("[data-utility-button]").click({ timeout: 1_000 });
+    await expect(editor).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 10_000 });
   await expect(page.locator("#viewer .comment-editor-title")).toContainText(
     "src/value.ts:50",
   );
