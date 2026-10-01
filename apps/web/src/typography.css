@@ -24,10 +24,6 @@
   --tracking-heading: -0.02em;
   --tracking-label: 0.06em;
 
-  /* Symbols are illustrations, not additional text styles. */
-  --symbol-brand: 1.5rem;
-  --symbol-empty: 3rem;
-
   --icon-sm: 0.875rem;
   --icon-base: 1rem;
   --icon-lg: 1.25rem;

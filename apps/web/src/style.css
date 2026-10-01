@@ -355,6 +355,7 @@ kbd {
 .sidebar-footer {
   display: flex;
   flex-shrink: 0;
+  min-height: var(--statusbar-height);
   flex-wrap: wrap;
   gap: var(--space-2);
   align-items: center;
@@ -551,11 +552,6 @@ diffs-container {
   background: var(--bg);
   text-align: center;
   padding: var(--page-gutter);
-}
-.empty-symbol {
-  color: var(--accent);
-  font: var(--symbol-empty) var(--font-mono);
-  margin-bottom: var(--space-3);
 }
 h2 {
   font-size: var(--text-xl);

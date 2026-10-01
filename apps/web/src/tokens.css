@@ -62,7 +62,9 @@
   --touch-target: 2.75rem;
   --topbar-height: 3.5rem;
   --toolbar-height: 2.75rem;
-  --statusbar-height: 1.75rem;
+  --statusbar-height: calc(
+    var(--text-xs) * var(--leading-ui) + 2 * var(--space-2) + 1px
+  );
   --page-gutter: var(--space-6);
   --sidebar-width: 330px;
   --reading-width: 42.5rem;
