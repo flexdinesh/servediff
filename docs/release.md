@@ -40,22 +40,19 @@ not rebuilt or replaced.
 The tap repository owns Homebrew style, strict audit, install, and formula test
 checks before merge.
 
-## Development releases
+## Development installs
 
-Every push to `main` runs **Release dev**, which creates or updates the `dev`
-branch to the latest `main` commit. Runs are serialized and resolve `main` when
-they start, so a queued run cannot move `dev` back to an older push.
+Install the latest code directly from `main`, including unreleased changes:
 
 ```sh
-go install github.com/flexdinesh/servediff/cmd/servediff@dev
+go install github.com/flexdinesh/servediff/cmd/servediff@main
 ```
 
-`dev` is an automatically managed mirror; do not commit to it directly. This
-workflow uses `GITHUB_TOKEN` with contents write permission and publishes no
-version tags or GitHub Releases. Stable `@latest` installs remain on the highest
-stable version tag. Go resolves `@dev` to the commit's pseudo-version, or its
-stable version if that commit is already tagged. Module proxies may briefly
-cache branch lookups; use `GOPROXY=direct` when an immediate refresh is needed.
+No publishing workflow or release tag is required. Stable `@latest` installs
+remain on the highest stable version tag. Go resolves `@main` to the commit's
+pseudo-version, or its stable version if that commit is already tagged. Module
+proxies may briefly cache branch lookups; use `GOPROXY=direct` when an immediate
+refresh is needed.
 
 ## Version series
 

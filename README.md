@@ -23,6 +23,12 @@ Or install a specific stable version:
 go install github.com/flexdinesh/servediff/cmd/servediff@v0.1.1
 ```
 
+Or install the latest development changes from `main`:
+
+```sh
+go install github.com/flexdinesh/servediff/cmd/servediff@main
+```
+
 ## Usage
 
 Run from a Git repository:
