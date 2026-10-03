@@ -6,6 +6,9 @@ on:
 permissions:
   contents: write
 
+env:
+  HUSKY: 0
+
 concurrency:
   group: release
   cancel-in-progress: false
@@ -41,9 +44,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Install Chromium
-        run: pnpm --filter @servediff/web exec playwright install --with-deps chromium
-
       - name: Select release version
         id: version
         env:
@@ -75,18 +75,20 @@ jobs:
           echo "release_exists=$release_exists" >> "$GITHUB_OUTPUT"
 
       - name: Check JavaScript
-        run: pnpm check:js
+        run: pnpm check:static
 
       - name: Check Go
         run: |
-          test -z "$(gofmt -l cmd internal packages/api tools)"
+          test -z "$(gofmt -l cmd internal packages/api tools test/conformance)"
           go vet ./...
-          go test ./...
+
+      - name: Build web assets
+        run: pnpm build
 
       - name: Verify embedded web assets
         run: |
           go run ./tools/stage-web apps/web/dist internal/webui/dist
-          test -z "$(git status --porcelain --untracked-files=all -- internal/webui/dist)"
+          test -z "$(git status --porcelain --untracked-files=all -- packages/api/src/schema.d.ts internal/webui/dist)"
 
       - name: Test distribution
         run: |

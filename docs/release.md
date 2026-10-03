@@ -7,6 +7,10 @@ Releases. It checks out the latest `main` when the run starts and marks the
 release as GitHub's latest stable release. Dispatches from other branches are
 skipped.
 
+Full test suites run locally through the pre-push hook. Release verification
+runs static checks, rebuilds generated files, rejects drift, and smoke-tests the
+distribution before publishing.
+
 Install the latest stable release or a specific version:
 
 ```sh
