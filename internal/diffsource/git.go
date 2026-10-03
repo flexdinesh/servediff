@@ -465,10 +465,14 @@ func (source *gitSource) Snapshot(ctx context.Context, mode review.DiffMode) (re
 		content := fingerprintContent{ID: file.ID, Path: file.Path, OldPath: file.OldPath, Status: file.Status, Additions: file.Additions, Deletions: file.Deletions, Binary: file.Binary, Fingerprint: file.Fingerprint, Recreated: file.Recreated}
 		var size, modified, changed any
 		if mode != review.DiffStaged {
-			if stat, statError := os.Lstat(filepath.Join(source.root, filepath.FromSlash(file.Path))); statError == nil {
+			path := filepath.Join(source.root, filepath.FromSlash(file.Path))
+			if stat, statError := os.Lstat(path); statError == nil {
 				size = stat.Size()
 				modified = float64(stat.ModTime().UnixNano()) / 1_000_000
-				changed = changedTime(stat)
+				changed, err = changedTime(path, stat)
+				if err != nil {
+					return review.RepositoryDiff{}, fmt.Errorf("read change time for %q: %w", file.Path, err)
+				}
 			}
 		}
 		rawFingerprint, _ := json.Marshal([]any{mode, head, content, size, modified, changed})
