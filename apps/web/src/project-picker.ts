@@ -6,6 +6,21 @@ export function contextDetail(context: ApiContext) {
     : (context.branch ?? "Branch unknown");
 }
 
+export function contextHasChanges(context: ApiContext) {
+  return (
+    context.availability !== "unavailable" &&
+    context.changedFileCount !== null &&
+    context.changedFileCount > 0
+  );
+}
+
+export function contextChangeLabel(context: ApiContext) {
+  if (context.availability === "unavailable") return "Unavailable";
+  if (context.changedFileCount === null) return "Status unknown";
+  if (context.changedFileCount === 0) return "No changes";
+  return `${context.changedFileCount} changed ${context.changedFileCount === 1 ? "file" : "files"}`;
+}
+
 function matchScore(value: string, word: string): number {
   if (value === word) return 4;
   if (value.startsWith(word)) return 3;
@@ -41,6 +56,8 @@ export function pickerResults(contexts: ApiContext[], query: string) {
     .filter(({ matches }) => matches.every((score) => score > 0))
     .sort(
       (left, right) =>
+        Number(contextHasChanges(right.context)) -
+          Number(contextHasChanges(left.context)) ||
         right.context.lastChangedAt - left.context.lastChangedAt ||
         right.score - left.score ||
         left.context.name.localeCompare(right.context.name) ||

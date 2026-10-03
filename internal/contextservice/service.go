@@ -21,21 +21,22 @@ import (
 )
 
 type Context struct {
-	ID              string               `json:"id"`
-	Kind            string               `json:"kind"`
-	Name            string               `json:"name"`
-	Root            *string              `json:"root"`
-	LocationID      *string              `json:"locationId"`
-	RepositoryID    *string              `json:"repositoryId"`
-	CreatedAt       int64                `json:"createdAt"`
-	LastSubmittedAt int64                `json:"lastSubmittedAt"`
-	LastChangedAt   int64                `json:"lastChangedAt"`
-	ExpiresAt       *int64               `json:"expiresAt"`
-	SubmittedFrom   *string              `json:"submittedFrom"`
-	Capabilities    session.Capabilities `json:"capabilities"`
-	Availability    string               `json:"availability"`
-	Branch          *string              `json:"branch"`
-	WorktreeName    *string              `json:"worktreeName"`
+	ID               string               `json:"id"`
+	Kind             string               `json:"kind"`
+	Name             string               `json:"name"`
+	Root             *string              `json:"root"`
+	LocationID       *string              `json:"locationId"`
+	RepositoryID     *string              `json:"repositoryId"`
+	CreatedAt        int64                `json:"createdAt"`
+	LastSubmittedAt  int64                `json:"lastSubmittedAt"`
+	LastChangedAt    int64                `json:"lastChangedAt"`
+	ChangedFileCount *int                 `json:"changedFileCount"`
+	ExpiresAt        *int64               `json:"expiresAt"`
+	SubmittedFrom    *string              `json:"submittedFrom"`
+	Capabilities     session.Capabilities `json:"capabilities"`
+	Availability     string               `json:"availability"`
+	Branch           *string              `json:"branch"`
+	WorktreeName     *string              `json:"worktreeName"`
 }
 
 type Page struct {
@@ -294,10 +295,12 @@ func (service *Service) Count(ctx context.Context) (int, int, error) {
 func (service *Service) present(item reviewstore.ContextInfo) Context {
 	var branch, worktreeName *string
 	lastChangedAt := item.LastSubmittedAt
+	changedFileCount := item.ChangedFileCount
 	availability := "available"
 	name := "Piped diff · " + time.UnixMilli(item.CreatedAt).Format("2006-01-02 15:04") + " · " + item.ID[:min(8, len(item.ID))]
 	if item.Kind == "worktree" {
 		lastChangedAt = 0
+		changedFileCount = nil
 		availability = "unchecked"
 		if item.Root != nil {
 			name = filepath.Base(*item.Root)
@@ -308,6 +311,7 @@ func (service *Service) present(item reviewstore.ContextInfo) Context {
 			branch = &metadata.branch
 			worktreeName = metadata.worktreeName
 			lastChangedAt = metadata.lastChangedAt
+			changedFileCount = metadata.changedFileCount
 		}
 		if known, ok := service.availability[item.ID]; ok {
 			availability = known
@@ -315,7 +319,7 @@ func (service *Service) present(item reviewstore.ContextInfo) Context {
 		service.mu.Unlock()
 	}
 	return Context{ID: item.ID, Kind: item.Kind, Name: name, Branch: branch, WorktreeName: worktreeName, Root: item.Root, LocationID: item.LocationID,
-		RepositoryID: item.RepositoryID, CreatedAt: item.CreatedAt, LastSubmittedAt: item.LastSubmittedAt, LastChangedAt: lastChangedAt,
+		RepositoryID: item.RepositoryID, CreatedAt: item.CreatedAt, LastSubmittedAt: item.LastSubmittedAt, LastChangedAt: lastChangedAt, ChangedFileCount: changedFileCount,
 		ExpiresAt: item.ExpiresAt, SubmittedFrom: item.SubmittedFrom, Capabilities: capabilities(item.Kind), Availability: availability}
 }
 

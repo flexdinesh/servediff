@@ -906,10 +906,22 @@ h2 {
   color: var(--accent);
   font-size: var(--text-xs);
 }
-.project-picker-unavailable {
-  display: block;
-  color: var(--warning);
+.project-picker-changes {
+  flex-shrink: 0;
+  color: var(--muted);
   font-size: var(--text-xs);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.project-picker-changes[data-has-changes="true"] {
+  padding: var(--space-0-5) var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--hover);
+  color: var(--fg);
+  font-weight: var(--weight-medium);
+}
+.project-picker-changes[data-availability="unavailable"] {
+  color: var(--warning);
 }
 .project-picker-empty {
   padding: var(--space-8) var(--space-4);

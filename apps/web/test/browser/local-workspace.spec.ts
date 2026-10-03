@@ -31,6 +31,7 @@ async function localWorkspace(page: Page) {
     createdAt: 1,
     lastSubmittedAt: 1,
     lastChangedAt: 1,
+    changedFileCount: 1,
     expiresAt: null,
     submittedFrom: null,
     availability: "available",
@@ -486,7 +487,13 @@ test("repository popup orders checkouts by changes and shares click and keyboard
 }) => {
   const state = await localWorkspace(page);
   const contexts: ApiContext[] = [
-    { ...state.context, name: "servediff", branch: "main" },
+    {
+      ...state.context,
+      name: "servediff",
+      branch: "main",
+      changedFileCount: 0,
+      lastChangedAt: 10,
+    },
     {
       ...state.context,
       id: "external-tree",
@@ -495,6 +502,7 @@ test("repository popup orders checkouts by changes and shares click and keyboard
       worktreeName: "picker-folder",
       root: "/elsewhere/picker-folder",
       lastChangedAt: 3,
+      changedFileCount: 6,
     },
     {
       ...state.context,
@@ -503,6 +511,7 @@ test("repository popup orders checkouts by changes and shares click and keyboard
       repositoryId: "dotfiles",
       root: "/dotfiles",
       lastChangedAt: 2,
+      changedFileCount: 0,
     },
   ];
   await page.route("**/api/v2/contexts?*", (route) =>
@@ -531,8 +540,13 @@ test("repository popup orders checkouts by changes and shares click and keyboard
   await expect(dialog.getByRole("option")).toHaveCount(3);
   await expect(dialog.locator(".project-picker-name")).toHaveText([
     "servediff",
-    "dotfiles",
     "servediff",
+    "dotfiles",
+  ]);
+  await expect(dialog.locator(".project-picker-changes")).toHaveText([
+    "6 changed files",
+    "No changes",
+    "No changes",
   ]);
   const desktopBounds = await dialog.boundingBox();
   if (!desktopBounds) throw new Error("Missing popup bounds");
@@ -585,4 +599,67 @@ test("repository popup orders checkouts by changes and shares click and keyboard
   await expect(
     dialog.getByRole("option", { name: /feature\/picker/ }),
   ).toBeVisible();
+  await dialog.getByRole("option", { name: /dotfiles/ }).click();
+  await expect(page).toHaveURL(/\/contexts\/other-repo$/);
+  await expect(dialog).toBeHidden();
+});
+
+test("picker distinguishes unknown and unavailable status and refreshes change counts", async ({
+  page,
+}) => {
+  const state = await localWorkspace(page);
+  let changedFileCount = 0;
+  const unknown: ApiContext = {
+    ...state.context,
+    id: "unknown",
+    name: "Unknown repo",
+    root: "/unknown",
+    changedFileCount: null,
+  };
+  const unavailable: ApiContext = {
+    ...state.context,
+    id: "unavailable",
+    name: "Missing repo",
+    root: "/missing",
+    availability: "unavailable",
+    changedFileCount: null,
+  };
+  await page.route("**/api/v2/contexts?*", (route) =>
+    route.fulfill({
+      json: {
+        contexts: [
+          { ...state.context, changedFileCount },
+          unknown,
+          unavailable,
+        ],
+        nextCursor: null,
+      },
+    }),
+  );
+  await page.goto("/");
+  await ready(page);
+  await page
+    .getByRole("button", { name: "Switch repository", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Switch repository" });
+  await expect(
+    dialog.getByRole("option", { name: /Local review/ }),
+  ).toContainText("No changes");
+  await expect(
+    dialog.getByRole("option", { name: /Unknown repo/ }),
+  ).toContainText("Status unknown");
+  await expect(
+    dialog.getByRole("option", { name: /Missing repo/ }),
+  ).toContainText("Unavailable");
+  const search = dialog.getByRole("combobox", { name: "Search repositories" });
+  await search.fill("Local");
+  await expect(dialog.getByRole("option")).toHaveCount(1);
+  changedFileCount = 2;
+  await expect(dialog.getByRole("option")).toContainText("2 changed files");
+  await expect(search).toBeFocused();
+  await expect(search).toHaveValue("Local");
+  await expect(search).toHaveAttribute(
+    "aria-activedescendant",
+    (await dialog.getByRole("option").getAttribute("id")) ?? "",
+  );
 });

@@ -873,6 +873,7 @@ components:
           createdAt,
           lastSubmittedAt,
           lastChangedAt,
+          changedFileCount,
           expiresAt,
           submittedFrom,
           capabilities,
@@ -910,6 +911,10 @@ components:
           type: integer
           format: int64
           description: Latest commit or working-tree change time in Unix milliseconds. Submission time for captures; zero when worktree change metadata is unknown.
+        changedFileCount:
+          type: [integer, "null"]
+          minimum: 0
+          description: Unique files with staged, unstaged, or untracked changes, independent of the selected scope. Captures use their snapshot file count. Null when change metadata is unknown.
         expiresAt:
           type: [integer, "null"]
           format: int64
