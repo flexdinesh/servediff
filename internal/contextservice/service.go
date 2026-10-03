@@ -33,6 +33,8 @@ type Context struct {
 	SubmittedFrom   *string              `json:"submittedFrom"`
 	Capabilities    session.Capabilities `json:"capabilities"`
 	Availability    string               `json:"availability"`
+	Branch          *string              `json:"branch"`
+	WorktreeName    *string              `json:"worktreeName"`
 }
 
 type Page struct {
@@ -50,6 +52,9 @@ type Service struct {
 	user            reviewstore.User
 	mu              sync.Mutex
 	availability    map[string]string
+	catalogMu       sync.Mutex
+	catalogUpdated  time.Time
+	metadata        map[string]worktreeMetadata
 	sources         map[string]*cachedSource
 	loading         map[string]*sourceLoad
 	generation      map[string]uint64
@@ -69,7 +74,8 @@ func New(store *reviewstore.Store, user reviewstore.User) *Service {
 func NewWithContext(ctx context.Context, store *reviewstore.Store, user reviewstore.User) *Service {
 	background, cancel := context.WithCancel(ctx)
 	return &Service{store: store, user: user, availability: make(map[string]string),
-		sources: make(map[string]*cachedSource), loading: make(map[string]*sourceLoad),
+		metadata: make(map[string]worktreeMetadata),
+		sources:  make(map[string]*cachedSource), loading: make(map[string]*sourceLoad),
 		generation: make(map[string]uint64), identityChanged: make(map[string]bool), parseSlots: make(chan struct{}, 2),
 		background: background, cancel: cancel}
 }
@@ -109,6 +115,9 @@ func (service *Service) Register(ctx context.Context, requestID, path string) (S
 	service.invalidateSource(binding.ContextID)
 	service.cacheSource(binding.ContextID, newWorktreeCache(source, commonDir, worktreeKey), 0)
 	service.setAvailability(binding.ContextID, "available")
+	if err := service.refreshCatalog(ctx, true); err != nil {
+		return Submission{}, err
+	}
 	item, err := service.Get(ctx, binding.ContextID)
 	if err != nil {
 		return Submission{}, err
@@ -218,6 +227,13 @@ func (service *Service) Get(ctx context.Context, id string) (Context, error) {
 	if err != nil {
 		return Context{}, requestError(err)
 	}
+	if err := service.refreshCatalog(ctx, false); err != nil {
+		return Context{}, err
+	}
+	item, err = service.store.Context(service.user.ID, id, time.Now())
+	if err != nil {
+		return Context{}, requestError(err)
+	}
 	return service.present(item), nil
 }
 
@@ -242,6 +258,9 @@ func (service *Service) List(ctx context.Context, limit int, cursor string) (Pag
 		if err != nil || json.Unmarshal(raw, &before) != nil || before.ID == "" || before.Time < 0 {
 			return Page{}, diffsource.Error(400, "Invalid context cursor")
 		}
+	}
+	if err := service.refreshCatalog(ctx, false); err != nil {
+		return Page{}, err
 	}
 	items, err := service.store.Contexts(service.user.ID, limit+1, before.Time, before.ID, time.Now())
 	if err != nil {
@@ -272,6 +291,7 @@ func (service *Service) Count(ctx context.Context) (int, int, error) {
 }
 
 func (service *Service) present(item reviewstore.ContextInfo) Context {
+	var branch, worktreeName *string
 	availability := "available"
 	name := "Piped diff · " + time.UnixMilli(item.CreatedAt).Format("2006-01-02 15:04") + " · " + item.ID[:min(8, len(item.ID))]
 	if item.Kind == "worktree" {
@@ -280,12 +300,17 @@ func (service *Service) present(item reviewstore.ContextInfo) Context {
 			name = filepath.Base(*item.Root)
 		}
 		service.mu.Lock()
+		if metadata, ok := service.metadata[item.ID]; ok {
+			name = metadata.name
+			branch = &metadata.branch
+			worktreeName = metadata.worktreeName
+		}
 		if known, ok := service.availability[item.ID]; ok {
 			availability = known
 		}
 		service.mu.Unlock()
 	}
-	return Context{ID: item.ID, Kind: item.Kind, Name: name, Root: item.Root, LocationID: item.LocationID,
+	return Context{ID: item.ID, Kind: item.Kind, Name: name, Branch: branch, WorktreeName: worktreeName, Root: item.Root, LocationID: item.LocationID,
 		RepositoryID: item.RepositoryID, CreatedAt: item.CreatedAt, LastSubmittedAt: item.LastSubmittedAt,
 		ExpiresAt: item.ExpiresAt, SubmittedFrom: item.SubmittedFrom, Capabilities: capabilities(item.Kind), Availability: availability}
 }

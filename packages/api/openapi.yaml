@@ -392,7 +392,7 @@ paths:
             type: string
       responses:
         "200":
-          description: Registered worktrees and retained captures, without scanning Git.
+          description: Worktrees discovered from registered repositories and retained captures, with cached Git metadata.
           content:
             application/json:
               schema:
@@ -876,6 +876,8 @@ components:
           submittedFrom,
           capabilities,
           availability,
+          branch,
+          worktreeName,
         ]
       properties:
         id:
@@ -885,6 +887,12 @@ components:
           enum: [worktree, capture]
         name:
           type: string
+        branch:
+          type: [string, "null"]
+          description: Checked-out branch, or detached HEAD label. Null for captures or unknown metadata.
+        worktreeName:
+          type: [string, "null"]
+          description: Linked worktree directory name. Null for the main checkout or a capture.
         root:
           type: [string, "null"]
         locationId:

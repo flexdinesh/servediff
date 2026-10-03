@@ -1,14 +1,11 @@
 import {
-  GitBranchIcon,
   MonitorIcon,
   MoonIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
   RefreshCwIcon,
-  SquareTerminalIcon,
   SunIcon,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -62,14 +59,11 @@ export function Header() {
       <a className="brand" href="/" aria-label="servediff home">
         servediff
       </a>
-      <ContextSwitcher />
       <Separator className="header-divider" orientation="vertical" />
+      <ContextSwitcher />
       <div className="header-heading">
         <div className="header-title">
-          <h1 id="changes-title">
-            {piped ? "Piped diff" : (repository?.name ?? "Local changes")}
-          </h1>
-          {!piped && <span id="repo-name">Local changes</span>}
+          <h1 id="changes-title">{piped ? "Piped diff" : "Local changes"}</h1>
         </div>
         <p
           id="repo-path"
@@ -80,16 +74,6 @@ export function Header() {
             : (repository?.root ?? "Reading your repository…")}
         </p>
       </div>
-      <Badge variant="secondary" className="branch-badge">
-        {piped ? (
-          <SquareTerminalIcon className="size-(--icon-base)!" />
-        ) : (
-          <GitBranchIcon className="size-(--icon-base)!" />
-        )}
-        <span id="branch">
-          {piped ? "Fixed snapshot" : (repository?.branch ?? "—")}
-        </span>
-      </Badge>
       <Button
         type="button"
         id="refresh"

@@ -35,6 +35,8 @@ async function localWorkspace(page: Page) {
     availability: "available",
     root: "/local-review",
     name: "Local review",
+    branch: "main",
+    worktreeName: null,
     capabilities: {
       diff: {
         scopes: { state: "enabled", values: ["all", "staged", "unstaged"] },
@@ -393,16 +395,27 @@ test("context switching isolates delayed repository responses and fixed captures
   delay = true;
   await page.getByRole("button", { name: "Refresh changes" }).click();
   await expect.poll(() => delayed !== undefined).toBe(true);
-  await page.getByRole("combobox", { name: "Review context" }).click();
-  await page.getByRole("option", { name: /Second repo/ }).click();
-  await expect(page.locator("#changes-title")).toHaveText("Second repo");
+  await page
+    .getByRole("button", { name: "Switch project", exact: true })
+    .click();
+  await page
+    .getByRole("combobox", { name: "Search projects" })
+    .fill("Second repo");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".context-switcher-name")).toHaveText(
+    "Second repo",
+  );
   await ready(page);
   if (!delayed) throw new Error("Missing delayed request");
   await delayed.fulfill({
     json: { ...state.repository("all"), name: "Stale repo" },
   });
-  await expect(page.locator("#changes-title")).toHaveText("Second repo");
-  await page.getByRole("combobox", { name: "Review context" }).click();
+  await expect(page.locator(".context-switcher-name")).toHaveText(
+    "Second repo",
+  );
+  await page
+    .getByRole("button", { name: "Switch project", exact: true })
+    .click();
   await page.getByRole("option", { name: /Captured patch/ }).click();
   await expect(page.locator("#changes-title")).toHaveText("Piped diff");
   await expect(
@@ -449,10 +462,107 @@ test("unavailable context keeps the switcher usable", async ({ page }) => {
   );
   await page.goto("/");
   await ready(page);
-  await page.getByRole("combobox", { name: "Review context" }).click();
-  await page.getByRole("option", { name: /Unavailable repo/ }).click();
+  await page
+    .getByRole("button", { name: "Switch project", exact: true })
+    .click();
+  await page
+    .getByRole("combobox", { name: "Search projects" })
+    .fill("Unavailable repo");
+  await page.keyboard.press("Enter");
   await expect(page.getByText("Repository moved")).toBeVisible();
-  await page.getByRole("combobox", { name: "Review context" }).click();
-  await page.getByRole("option", { name: /Local review/ }).click();
+  await page
+    .getByRole("button", { name: "Switch project", exact: true })
+    .click();
+  await page
+    .getByRole("combobox", { name: "Search projects" })
+    .fill("Local review");
+  await page.keyboard.press("Enter");
   await ready(page);
+});
+
+test("project popup groups checkouts and shares click and keyboard search", async ({
+  page,
+}) => {
+  const state = await localWorkspace(page);
+  const contexts: ApiContext[] = [
+    { ...state.context, name: "servediff", branch: "main" },
+    {
+      ...state.context,
+      id: "external-tree",
+      name: "servediff",
+      branch: "feature/picker",
+      worktreeName: "picker-folder",
+      root: "/elsewhere/picker-folder",
+    },
+    {
+      ...state.context,
+      id: "other-repo",
+      name: "dotfiles",
+      repositoryId: "dotfiles",
+      root: "/dotfiles",
+    },
+  ];
+  await page.route("**/api/v2/contexts?*", (route) =>
+    route.fulfill({ json: { contexts, nextCursor: null } }),
+  );
+  await page.route("**/api/v2/contexts/*", (route) => {
+    const id = new URL(route.request().url()).pathname.split("/").at(-1);
+    return route.fulfill({
+      json: contexts.find((context) => context.id === id),
+    });
+  });
+  await page.goto("/");
+  await ready(page);
+  const trigger = page.getByRole("button", {
+    name: "Switch project",
+    exact: true,
+  });
+  await expect(trigger).toHaveAttribute("aria-haspopup", "dialog");
+  await expect(trigger).toContainText("servediff");
+  await expect(trigger).toContainText("main");
+  await trigger.click();
+  const dialog = page.getByRole("dialog", { name: "Switch project" });
+  const search = dialog.getByRole("combobox", { name: "Search projects" });
+  await expect(search).toBeFocused();
+  await expect(
+    dialog.getByRole("group", { name: "servediff" }).getByRole("option"),
+  ).toHaveCount(2);
+  await expect(
+    dialog.getByRole("option", { name: /feature\/picker/ }),
+  ).toContainText("Worktree · picker-folder");
+  await search.fill("no matching repo");
+  await expect(dialog.getByRole("status")).toHaveText("No matching projects");
+  await search.fill("");
+  await page.keyboard.press("ArrowDown");
+  await expect(
+    dialog.getByRole("option", { name: /feature\/picker/ }),
+  ).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/contexts\/external-tree$/);
+  await expect(dialog).toBeHidden();
+  await expect(trigger).toBeFocused();
+  await expect(trigger).toContainText("feature/picker");
+
+  for (const shortcut of ["Control+k", "Meta+k"]) {
+    await page.keyboard.press(shortcut);
+    await expect(dialog).toBeVisible();
+    await expect(search).toBeFocused();
+    await expect(search).toHaveValue("");
+    await search.fill("servediff main");
+    await expect(dialog.getByRole("option")).toHaveCount(1);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(trigger).toBeFocused();
+  }
+  await page.setViewportSize({ width: 360, height: 640 });
+  await trigger.click();
+  const bounds = await dialog.boundingBox();
+  if (!bounds) throw new Error("Missing popup bounds");
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(360);
+  expect(bounds.y).toBeGreaterThanOrEqual(0);
+  expect(bounds.y + bounds.height).toBeLessThanOrEqual(640);
+  await expect(
+    dialog.getByRole("option", { name: /feature\/picker/ }),
+  ).toBeVisible();
 });
