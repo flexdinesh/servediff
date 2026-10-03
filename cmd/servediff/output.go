@@ -111,7 +111,7 @@ func writeServiceStatus(writer io.Writer, status controlapi.Status, asJSON bool)
 	if status.State != "running" {
 		return
 	}
-	fmt.Fprintf(writer, "  url:                %s\n", status.BrowserURL)
+	fmt.Fprintf(writer, "  url:                %s\n", status.URL)
 	fmt.Fprintf(writer, "  listen:             %s\n", net.JoinHostPort(status.Settings.Host, strconv.Itoa(status.Settings.Port)))
 	fmt.Fprintf(writer, "  version:            %s\n", status.Version)
 	fmt.Fprintf(writer, "  protocol:           %d\n", status.ProtocolVersion)
