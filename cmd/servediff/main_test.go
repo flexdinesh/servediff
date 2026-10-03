@@ -256,10 +256,34 @@ func TestStoppedServiceStatusDoesNotStartService(t *testing.T) {
 	}
 }
 
-func TestServiceOutputFormatsIPv6Listener(t *testing.T) {
-	var output bytes.Buffer
-	writeServiceStatus(&output, controlapi.Status{State: "running", Settings: controlapi.Settings{Host: "::", Port: 4000}}, false)
-	if !strings.Contains(output.String(), "[::]:4000") {
-		t.Fatalf("IPv6 listener lacks brackets: %q", output.String())
+func TestServiceOutputUsesBoundURL(t *testing.T) {
+	for _, test := range []struct {
+		host       string
+		url        string
+		browserURL string
+		listener   string
+	}{
+		{"127.0.0.1", "http://127.0.0.1:4000", "http://127.0.0.1:4000", "127.0.0.1:4000"},
+		{"0.0.0.0", "http://0.0.0.0:4000", "http://127.0.0.1:4000", "0.0.0.0:4000"},
+		{"192.0.2.1", "http://192.0.2.1:4000", "http://192.0.2.1:4000", "192.0.2.1:4000"},
+		{"localhost", "http://localhost:4000", "http://localhost:4000", "localhost:4000"},
+		{"::", "http://[::]:4000", "http://[::1]:4000", "[::]:4000"},
+		{"::1", "http://[::1]:4000", "http://[::1]:4000", "[::1]:4000"},
+	} {
+		t.Run(test.host, func(t *testing.T) {
+			var output bytes.Buffer
+			writeServiceStatus(&output, controlapi.Status{
+				State: "running", URL: test.url, BrowserURL: test.browserURL,
+				Settings: controlapi.Settings{Host: test.host, Port: 4000},
+			}, false)
+			for _, expected := range []string{
+				"  url:                " + test.url + "\n",
+				"  listen:             " + test.listener + "\n",
+			} {
+				if !strings.Contains(output.String(), expected) {
+					t.Fatalf("missing %q in %q", expected, output.String())
+				}
+			}
+		})
 	}
 }
