@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/flexdinesh/servediff/internal/collector"
 	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/review"
 	"github.com/flexdinesh/servediff/internal/reviewstore"
@@ -36,6 +37,7 @@ type Context struct {
 	Availability    string               `json:"availability"`
 	Branch          *string              `json:"branch"`
 	WorktreeName    *string              `json:"worktreeName"`
+	Generation      int64                `json:"-"`
 }
 
 type Page struct {
@@ -50,12 +52,12 @@ type Submission struct {
 
 type Service struct {
 	store           *reviewstore.Store
+	collector       *collector.Service
+	subscribers     map[chan ChangeEvent]struct{}
 	user            reviewstore.User
 	mu              sync.Mutex
 	availability    map[string]string
 	catalogMu       sync.Mutex
-	catalogUpdated  time.Time
-	metadata        map[string]worktreeMetadata
 	sources         map[string]*cachedSource
 	loading         map[string]*sourceLoad
 	generation      map[string]uint64
@@ -74,9 +76,8 @@ func New(store *reviewstore.Store, user reviewstore.User) *Service {
 
 func NewWithContext(ctx context.Context, store *reviewstore.Store, user reviewstore.User) *Service {
 	background, cancel := context.WithCancel(ctx)
-	return &Service{store: store, user: user, availability: make(map[string]string),
-		metadata: make(map[string]worktreeMetadata),
-		sources:  make(map[string]*cachedSource), loading: make(map[string]*sourceLoad),
+	return &Service{store: store, user: user, collector: collector.New(background, store), subscribers: make(map[chan ChangeEvent]struct{}), availability: make(map[string]string),
+		sources: make(map[string]*cachedSource), loading: make(map[string]*sourceLoad),
 		generation: make(map[string]uint64), identityChanged: make(map[string]bool), parseSlots: make(chan struct{}, 2),
 		background: background, cancel: cancel}
 }
@@ -87,6 +88,7 @@ func (service *Service) Close() error {
 	service.closing = true
 	service.cancel()
 	service.mu.Unlock()
+	service.collector.Close()
 	service.loaders.Wait()
 	return nil
 }
@@ -105,10 +107,7 @@ func (service *Service) Register(ctx context.Context, requestID, path string) (S
 	if err != nil {
 		return Submission{}, diffsource.Error(400, "Could not identify worktree: %v", err)
 	}
-	snapshot, err := source.Snapshot(ctx, review.DiffAll)
-	if err != nil {
-		return Submission{}, diffsource.Error(503, "source_unavailable: %v", err)
-	}
+	snapshot := review.RepositoryDiff{Root: source.Root(), Name: filepath.Base(source.Root()), Source: "local", Mode: review.DiffAll, Files: []review.ChangedFile{}}
 	binding, err := service.store.RegisterGitSubmission(service.user.ID, requestID, payloadHash("worktree", source.Root(), commonDir, worktreeKey), source.Root(), commonDir, worktreeKey)
 	if err != nil {
 		return Submission{}, requestError(err)
@@ -116,13 +115,12 @@ func (service *Service) Register(ctx context.Context, requestID, path string) (S
 	service.invalidateSource(binding.ContextID)
 	service.cacheSource(binding.ContextID, newWorktreeCache(source, commonDir, worktreeKey), 0)
 	service.setAvailability(binding.ContextID, "available")
-	if err := service.refreshCatalog(ctx, true); err != nil {
-		return Submission{}, err
-	}
+
 	item, err := service.Get(ctx, binding.ContextID)
 	if err != nil {
 		return Submission{}, err
 	}
+	service.Notify(ChangeEvent{Kind: "catalog", ContextID: item.ID, RepositoryID: item.RepositoryID})
 	return Submission{Context: item, Snapshot: bindSnapshot(snapshot, binding)}, nil
 }
 
@@ -167,6 +165,7 @@ func (service *Service) Capture(ctx context.Context, requestID, raw, submittedFr
 	if err != nil {
 		return Submission{}, err
 	}
+	service.Notify(ChangeEvent{Kind: "catalog", ContextID: item.ID})
 	return Submission{Context: item, Snapshot: bindSnapshot(snapshot, binding)}, nil
 }
 
@@ -206,11 +205,20 @@ func (service *Service) Resolve(ctx context.Context, id string) (session.Session
 	if err != nil {
 		return session.Session{}, requestError(err)
 	}
-	source, err := service.sourceFor(ctx, item)
-	if err != nil {
-		return session.Session{}, err
+	var source diffsource.Source
+	var collect func(context.Context, review.DiffMode) error
+	if item.Kind == "worktree" && item.Root != nil {
+		source = &collector.Source{Store: service.store, UserID: service.user.ID, Binding: binding, Path: *item.Root}
+		collect = func(task context.Context, mode review.DiffMode) error { return service.Refresh(task, id, mode) }
+	} else {
+		source, err = service.sourceFor(ctx, item)
+		if err != nil {
+			return session.Session{}, err
+		}
 	}
 	resolved := session.Resolve(source, session.Policies{})
+	resolved.Collect = collect
+	resolved.ReviewChanged = func() { service.Notify(ChangeEvent{Kind: "review", ContextID: id}) }
 	resolved.User = session.User{ID: service.user.ID, Name: service.user.Name}
 	resolved.ContextID = binding.ContextID
 	resolved.LocationID = binding.LocationID
@@ -228,13 +236,7 @@ func (service *Service) Get(ctx context.Context, id string) (Context, error) {
 	if err != nil {
 		return Context{}, requestError(err)
 	}
-	if err := service.refreshCatalog(ctx, false); err != nil {
-		return Context{}, err
-	}
-	item, err = service.store.Context(service.user.ID, id, time.Now())
-	if err != nil {
-		return Context{}, requestError(err)
-	}
+
 	return service.present(item), nil
 }
 
@@ -260,9 +262,7 @@ func (service *Service) List(ctx context.Context, limit int, cursor string) (Pag
 			return Page{}, diffsource.Error(400, "Invalid context cursor")
 		}
 	}
-	if err := service.refreshCatalog(ctx, false); err != nil {
-		return Page{}, err
-	}
+
 	items, err := service.store.Contexts(service.user.ID, limit+1, before.Time, before.ID, time.Now())
 	if err != nil {
 		return Page{}, err
@@ -297,24 +297,25 @@ func (service *Service) present(item reviewstore.ContextInfo) Context {
 	availability := "available"
 	name := "Piped diff · " + time.UnixMilli(item.CreatedAt).Format("2006-01-02 15:04") + " · " + item.ID[:min(8, len(item.ID))]
 	if item.Kind == "worktree" {
-		lastChangedAt = 0
+		lastChangedAt = item.LastChangedAt
+		if item.Name != "" {
+			name = item.Name
+		}
+		if item.Branch != "" {
+			branch = &item.Branch
+		}
+		worktreeName = item.WorktreeName
 		availability = "unchecked"
-		if item.Root != nil {
+		if item.Root != nil && item.Name == "" {
 			name = filepath.Base(*item.Root)
 		}
 		service.mu.Lock()
-		if metadata, ok := service.metadata[item.ID]; ok {
-			name = metadata.name
-			branch = &metadata.branch
-			worktreeName = metadata.worktreeName
-			lastChangedAt = metadata.lastChangedAt
-		}
 		if known, ok := service.availability[item.ID]; ok {
 			availability = known
 		}
 		service.mu.Unlock()
 	}
-	return Context{ID: item.ID, Kind: item.Kind, Name: name, Branch: branch, WorktreeName: worktreeName, Root: item.Root, LocationID: item.LocationID,
+	return Context{ID: item.ID, Kind: item.Kind, Name: name, Branch: branch, WorktreeName: worktreeName, Generation: item.Generation, Root: item.Root, LocationID: item.LocationID,
 		RepositoryID: item.RepositoryID, CreatedAt: item.CreatedAt, LastSubmittedAt: item.LastSubmittedAt, LastChangedAt: lastChangedAt,
 		ExpiresAt: item.ExpiresAt, SubmittedFrom: item.SubmittedFrom, Capabilities: capabilities(item.Kind), Availability: availability}
 }

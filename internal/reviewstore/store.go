@@ -18,7 +18,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 3
+const schemaVersion = 4
 const CaptureLifetime = 14 * 24 * time.Hour
 
 var ErrNotFound = errors.New("diff not found")
@@ -173,7 +173,7 @@ func (store *Store) initialize() error {
 			return err
 		}
 	}
-	if version > 0 && version != 2 && version != schemaVersion {
+	if version > 0 && version != 2 && version != 3 && version != schemaVersion {
 		return fmt.Errorf("servediff state schema %d is unsupported; existing data preserved", version)
 	}
 	statements := []string{

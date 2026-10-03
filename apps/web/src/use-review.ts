@@ -1,3 +1,4 @@
+import { subscribeChanges } from "./change-events.ts";
 import type { FileDiffMetadata, SelectedLineRange } from "@pierre/diffs";
 import { api, errorDetail } from "@servediff/api";
 import type {
@@ -94,9 +95,14 @@ export function useReview(
     );
     setPending(new Set());
     setSaveError(null);
+    let queued = false;
     async function load(force = false) {
       const request = owner.beginRead(force);
-      if (!request) return;
+      if (!request) {
+        queued = true;
+        return;
+      }
+      queued = false;
       try {
         const result = await api.GET("/api/v2/contexts/{contextId}/comments", {
           params: { path: { contextId } },
@@ -113,16 +119,21 @@ export function useReview(
         setFeedback(errorDetail(error, "Unable to load comments"));
       } finally {
         request.finish();
+        if (queued && request.isCurrent()) void load();
       }
     }
     refreshComments.current = () => void load();
     void load(true);
-    const timer = setInterval(() => {
-      if (!document.hidden) void load();
-    }, 3_000);
+    const unsubscribe = subscribeChanges((event) => {
+      if (
+        event.kind === "reconnect" ||
+        (event.kind === "review" && event.contextId === contextId)
+      )
+        void load();
+    });
     return () => {
       owner.dispose();
-      clearInterval(timer);
+      unsubscribe();
     };
   }, [contextId, enabled, key, setDraft]);
 

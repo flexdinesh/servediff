@@ -145,7 +145,10 @@ func (harness serviceHarness) status(t *testing.T) serviceStatus {
 
 func (harness serviceHarness) start(t *testing.T) serviceStatus {
 	t.Helper()
-	harness.requireRun(t, nil, "service", "start", "--state", harness.state, "--port", "0")
+	harness.requireRun(t, nil, "service", "config", "set", "state", harness.state)
+	harness.requireRun(t, nil, "service", "start", "--port", "0")
+	status := harness.status(t)
+	harness.requireRun(t, nil, "service", "config", "set", "port", fmt.Sprint(status.Settings.Port))
 	return harness.status(t)
 }
 
@@ -319,7 +322,8 @@ func TestDaemonExplicitConflictDoesNotRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	output, err := harness.run(patch, "--host", "0.0.0.0", "--no-browser")
+	harness.requireRun(t, nil, "service", "config", "set", "host", "0.0.0.0")
+	output, err := harness.run(nil, "service", "start")
 	if err == nil || !strings.Contains(string(output), "restart") {
 		t.Fatalf("conflict should suggest explicit restart: err=%v output=%s", err, output)
 	}

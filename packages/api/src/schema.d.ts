@@ -244,6 +244,54 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v2/repositories": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["listRepositories"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v2/repositories/{repositoryId}/worktrees": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["discoverWorktrees"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v2/events": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["subscribeChanges"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v2/contexts": {
     parameters: {
       query?: never;
@@ -532,6 +580,12 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    Repository: {
+      id: string;
+      name: string;
+      root: string;
+      lastSubmittedAt: number;
+    };
     ContextPage: {
       contexts: components["schemas"]["Context"][];
       nextCursor: string | null;
@@ -1257,6 +1311,75 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
+  listRepositories: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Registered repositories, read from SQLite without invoking Git. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            repositories: components["schemas"]["Repository"][];
+          };
+        };
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
+  discoverWorktrees: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        repositoryId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Discover this repository's current worktrees, persist metadata, and return stored rows. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            worktrees: components["schemas"]["Context"][];
+          };
+        };
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
+  subscribeChanges: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Targeted change/catalog/review notifications. Heartbeats do not collect data. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "text/event-stream": string;
+        };
       };
       default: components["responses"]["Problem"];
     };

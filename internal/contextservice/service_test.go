@@ -146,7 +146,7 @@ func TestWorktreeRegistrationAndUnavailableIsolation(t *testing.T) {
 	if err != nil || resolved.ContextID != item.ID {
 		t.Fatalf("missing worktree lost binding: %#v, %v", resolved, err)
 	}
-	_, err = resolved.Source.Snapshot(ctx, review.DiffAll)
+	err = service.Refresh(ctx, item.ID, review.DiffAll)
 	assertStatus(t, err, 503)
 	unavailable, err := service.Get(ctx, item.ID)
 	if err != nil || unavailable.Availability != "unavailable" {
@@ -154,6 +154,9 @@ func TestWorktreeRegistrationAndUnavailableIsolation(t *testing.T) {
 	}
 	healthy, err := service.Resolve(ctx, other.Context.ID)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Refresh(ctx, other.Context.ID, review.DiffAll); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := healthy.Source.Snapshot(ctx, review.DiffAll); err != nil {
@@ -240,6 +243,9 @@ func TestResolveReusesSourcesWhileLiveDiffsStillChange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := service.Refresh(ctx, submitted.Context.ID, review.DiffAll); err != nil {
+		t.Fatal(err)
+	}
 	current, err := resolved.Source.Snapshot(ctx, review.DiffAll)
 	if err != nil || current.Revision == submitted.Snapshot.Revision {
 		t.Fatalf("source cache froze live diff: %#v, %v", current, err)
@@ -256,13 +262,17 @@ func TestResolveReusesSourcesWhileLiveDiffsStillChange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = unavailable.Source.Snapshot(ctx, review.DiffAll)
+	_ = unavailable
+	err = service.Refresh(ctx, submitted.Context.ID, review.DiffAll)
 	assertStatus(t, err, 503)
 	if _, err := service.Register(ctx, "register-replacement", root); err != nil {
 		t.Fatal(err)
 	}
 	restored, err := service.Resolve(ctx, submitted.Context.ID)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Refresh(ctx, submitted.Context.ID, review.DiffAll); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := restored.Source.Snapshot(ctx, review.DiffAll); err != nil {
@@ -369,6 +379,9 @@ func installBlockingGit(t *testing.T) (started, released string) {
 	t.Setenv("SERVEDIFF_TEST_EXECUTABLE", executable)
 	t.Setenv("SERVEDIFF_TEST_GIT_STARTED", started)
 	t.Setenv("SERVEDIFF_TEST_GIT_RELEASED", released)
+	// The shim launches this test binary per Git command; omit the race runtime's
+	// one-second exit delay so a full collection fits the shared-load deadline.
+	t.Setenv("GORACE", os.Getenv("GORACE")+" atexit_sleep_ms=0")
 	t.Setenv("PATH", directory+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return started, released
 }
@@ -397,7 +410,7 @@ func TestCloseCancelsAndDrainsSourceLoading(t *testing.T) {
 	service.invalidateSource(submitted.Context.ID)
 	started, _ := installBlockingGit(t)
 	result := make(chan error, 1)
-	go func() { _, err := service.Resolve(ctx, submitted.Context.ID); result <- err }()
+	go func() { err := service.Refresh(ctx, submitted.Context.ID, review.DiffAll); result <- err }()
 	awaitGitStart(t, started)
 	began := time.Now()
 	if err := service.Close(); err != nil {
@@ -430,10 +443,10 @@ func TestCallerCancellationDoesNotCancelSharedSourceLoading(t *testing.T) {
 	started, released := installBlockingGit(t)
 	caller, cancel := context.WithCancel(ctx)
 	first := make(chan error, 1)
-	go func() { _, err := service.Resolve(caller, submitted.Context.ID); first <- err }()
+	go func() { err := service.Refresh(caller, submitted.Context.ID, review.DiffAll); first <- err }()
 	awaitGitStart(t, started)
 	second := make(chan error, 1)
-	go func() { _, err := service.Resolve(ctx, submitted.Context.ID); second <- err }()
+	go func() { err := service.Refresh(ctx, submitted.Context.ID, review.DiffAll); second <- err }()
 	cancel()
 	select {
 	case err := <-first:

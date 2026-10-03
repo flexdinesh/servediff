@@ -1,3 +1,4 @@
+import { subscribeChanges } from "./change-events.ts";
 import { api, errorDetail } from "@servediff/api";
 import type { ChangedFile, DiffMode, RepositoryDiff } from "@servediff/shared";
 import {
@@ -46,11 +47,16 @@ export function useReviewedFiles(
     requests.current = owner;
     setPending(new Set());
     setFailure(null);
+    let queued = false;
     async function load(force = false) {
       const current = latest.current.repository;
       if (!current || current.id !== diffId || current.mode !== mode) return;
       const request = owner.beginRead(force);
-      if (!request) return;
+      if (!request) {
+        queued = true;
+        return;
+      }
+      queued = false;
       try {
         const { data, error } = await api.GET(
           "/api/v2/contexts/{contextId}/review-marks",
@@ -77,11 +83,22 @@ export function useReviewedFiles(
           });
       } finally {
         request.finish();
+        if (queued && request.isCurrent()) void load();
       }
     }
     reload.current = (force) => void load(force);
     void load();
-    return () => owner.dispose();
+    const unsubscribe = subscribeChanges((event) => {
+      if (
+        event.kind === "reconnect" ||
+        (event.kind === "review" && event.contextId === contextId)
+      )
+        void load();
+    });
+    return () => {
+      owner.dispose();
+      unsubscribe();
+    };
   }, [contextId, diffId, key, mode]);
 
   // A new diff snapshot may invalidate marks, but keeps this scope's write owner.

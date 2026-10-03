@@ -15,15 +15,22 @@ func (store *Store) PinVersion(snapshot review.RepositoryDiff, previews map[stri
 	if snapshot.ID == "" || snapshot.VersionID == "" {
 		return errors.New("diff identity is missing")
 	}
-	manifest, err := json.Marshal(snapshot)
-	if err != nil {
-		return err
-	}
 	transaction, err := store.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer transaction.Rollback()
+	if err := pinVersion(transaction, snapshot, previews); err != nil {
+		return err
+	}
+	return transaction.Commit()
+}
+
+func pinVersion(transaction *sql.Tx, snapshot review.RepositoryDiff, previews map[string]review.FilePatch) error {
+	manifest, err := json.Marshal(snapshot)
+	if err != nil {
+		return err
+	}
 	if _, err := transaction.Exec(`INSERT INTO diff_versions(id, diff_id, revision, manifest, created_at) VALUES(?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`, snapshot.VersionID, snapshot.ID, snapshot.Revision, string(manifest), time.Now().UnixMilli()); err != nil {
 		return err
 	}
@@ -40,7 +47,7 @@ func (store *Store) PinVersion(snapshot review.RepositoryDiff, previews map[stri
 			return err
 		}
 	}
-	return transaction.Commit()
+	return nil
 }
 
 func (store *Store) VersionComplete(versionID string, fileCount int) (bool, error) {

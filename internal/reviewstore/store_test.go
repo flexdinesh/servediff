@@ -164,7 +164,7 @@ func TestStateFileVersionAndPermissions(t *testing.T) {
 	if err := db.QueryRow("SELECT id FROM users WHERE os_uid='old'").Scan(&preservedID); err != nil || preservedID != user.ID {
 		t.Fatalf("existing user changed: %s, %v", preservedID, err)
 	}
-	if _, err := db.Exec(`PRAGMA user_version = 4`); err != nil {
+	if _, err := db.Exec(`PRAGMA user_version = 5`); err != nil {
 		t.Fatal(err)
 	}
 	_ = db.Close()

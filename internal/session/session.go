@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	"crypto/rand"
 
 	"github.com/flexdinesh/servediff/internal/diffsource"
@@ -78,15 +79,17 @@ type Policies struct {
 }
 
 type Session struct {
-	ID           string
-	User         User
-	ContextID    string
-	LocationID   *string
-	RepositoryID *string
-	DiffIDs      map[review.DiffMode]string
-	VersionID    string
-	Source       diffsource.Source
-	Capabilities Capabilities
+	ID            string
+	User          User
+	ContextID     string
+	LocationID    *string
+	RepositoryID  *string
+	DiffIDs       map[review.DiffMode]string
+	VersionID     string
+	Source        diffsource.Source
+	Capabilities  Capabilities
+	Collect       func(context.Context, review.DiffMode) error
+	ReviewChanged func()
 }
 
 type User struct {

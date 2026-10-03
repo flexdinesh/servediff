@@ -83,6 +83,26 @@ func (handler *handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	var result contextservice.Submission
 	var err error
 	switch {
+	case request.URL.Path == "/control/v1/change":
+		var input contextservice.ChangeInput
+		if err := decodeJSON(response, request, &input); err != nil {
+			writeError(response, err)
+			return
+		}
+		changer, ok := handler.service.(interface {
+			Change(context.Context, contextservice.ChangeInput) (contextservice.ChangeEvent, error)
+		})
+		if !ok {
+			writeProblem(response, 503, "unavailable", "Change notifications unavailable")
+			return
+		}
+		event, err := changer.Change(request.Context(), input)
+		if err != nil {
+			writeError(response, err)
+			return
+		}
+		writeJSON(response, http.StatusAccepted, event)
+		return
 	case request.URL.Path == "/control/v1/worktrees":
 		var input struct {
 			SubmissionID string `json:"submissionId"`

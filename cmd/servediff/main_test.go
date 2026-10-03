@@ -49,7 +49,7 @@ func TestNormalizeArgumentsAllowsFlagsAfterPath(t *testing.T) {
 }
 
 func TestOptionsDefaultToLocalhostAndAutomaticPort(t *testing.T) {
-	values, err := parseOptions([]string{".", "--host", "192.0.2.1", "--port", "8123"}, io.Discard)
+	values, err := parseOptionsMode([]string{".", "--host", "192.0.2.1", "--port", "8123"}, io.Discard, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestStartupOutputSummarizesDiff(t *testing.T) {
 		directory: "/work/repository",
 		mode:      "git",
 		processed: 37 * time.Millisecond,
-		snapshot: review.RepositoryDiff{Files: []review.ChangedFile{
+		snapshot: review.RepositoryDiff{Revision: "fixture", Files: []review.ChangedFile{
 			{Additions: 3, Deletions: 1},
 			{Additions: 2, Binary: true},
 		}},
@@ -118,7 +118,7 @@ func TestOptionsTrackExplicitDefaults(t *testing.T) {
 	if omitted.hostSet || omitted.portSet || omitted.stateSet || omitted.webDirSet {
 		t.Fatalf("omitted settings marked explicit: %#v", omitted)
 	}
-	explicit, err := parseOptions([]string{".", "--host=127.0.0.1", "-p", "0", "--state=", "--web-dir="}, io.Discard)
+	explicit, err := parseOptionsMode([]string{".", "--host=127.0.0.1", "-p", "0", "--state=", "--web-dir="}, io.Discard, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func TestAcquireInputPriority(t *testing.T) {
 	}
 }
 
-func TestAcquireRepositoryInputRequiresExplicitPath(t *testing.T) {
+func TestAcquireRepositoryInputDefaultsToCurrentDirectory(t *testing.T) {
 	stdin, err := os.Open(os.DevNull)
 	if err != nil {
 		t.Fatal(err)
@@ -206,8 +206,8 @@ func TestAcquireRepositoryInputRequiresExplicitPath(t *testing.T) {
 	if piped {
 		t.Skip("null device is not a terminal-like input on this platform")
 	}
-	if _, err := acquireInput(options{directory: "."}, stdin); err == nil {
-		t.Fatal("bare invocation accepted without repository or patch")
+	if input, err := acquireInput(options{directory: "."}, stdin); err != nil || input.Kind != "worktree" || !filepath.IsAbs(input.Path) {
+		t.Fatalf("default input: %#v, %v", input, err)
 	}
 	input, err := acquireInput(options{directory: "./service", repositorySet: true}, stdin)
 	if err != nil || input.Kind != "worktree" || !filepath.IsAbs(input.Path) || filepath.Base(input.Path) != "service" {

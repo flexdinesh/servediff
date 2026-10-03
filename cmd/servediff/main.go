@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/flexdinesh/servediff/internal/browser"
+	"github.com/flexdinesh/servediff/internal/config"
 	"github.com/flexdinesh/servediff/internal/contextservice"
 	"github.com/flexdinesh/servediff/internal/controlapi"
 	"github.com/flexdinesh/servediff/internal/daemon"
@@ -26,7 +27,7 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 	command := "submit"
 	if len(arguments) > 0 {
 		switch arguments[0] {
-		case "service", "serve", "__daemon":
+		case "service", "serve", "__daemon", "change":
 			command, arguments = arguments[0], arguments[1:]
 		}
 	}
@@ -34,14 +35,18 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 	if command == "service" {
 		if len(arguments) == 0 || arguments[0] == "--help" || arguments[0] == "-h" {
 			fmt.Fprintln(stdout, "  Usage: servediff service {start|stop|restart|status} [options]")
+			fmt.Fprintln(stdout, "         servediff service config {set KEY VALUE|get KEY|remove KEY}")
 			return nil
 		}
 		action, arguments = arguments[0], arguments[1:]
+		if action == "config" {
+			return runConfig(arguments, stdout)
+		}
 		if action != "start" && action != "stop" && action != "restart" && action != "status" {
 			return fmt.Errorf("unknown service command %q", action)
 		}
 	}
-	values, err := parseOptionsMode(arguments, stderr, command == "__daemon")
+	values, err := parseOptionsMode(arguments, stderr, command == "__daemon", command == "serve")
 	if err != nil {
 		if errors.Is(err, errHelp) {
 			return nil
@@ -55,6 +60,12 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 	if command != "__daemon" && values.runtimeDir != "" {
 		return errors.New("runtime-dir is an internal option; use SERVEDIFF_RUNTIME_DIR for isolation")
 	}
+	if values.config != "" && (command != "service" || (action != "start" && action != "restart")) {
+		return errors.New("config overrides are only supported by service start/restart")
+	}
+	if command != "change" && (values.branch != "" || values.detail != "") {
+		return errors.New("branch and detail are only supported by change")
+	}
 	if values.json && (command != "service" || action != "status") {
 		return errors.New("json is only supported by service status")
 	}
@@ -67,6 +78,41 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 	settings, explicit, err := serverSettings(values)
 	if err != nil {
 		return err
+	}
+	if command == "submit" || (command == "service" && (action == "start" || action == "restart")) {
+		saved, loadErr := config.Load()
+		if loadErr != nil {
+			return loadErr
+		}
+		fields := map[string]interface{}{}
+		if values.portSet {
+			fields["port"] = values.port
+		}
+		if values.stateSet {
+			fields["state"] = settings.State
+		}
+		if values.webDirSet {
+			fields["webDir"] = settings.WebDir
+		}
+		raw, _ := json.Marshal(fields)
+		saved, err = config.Merge(saved, string(raw))
+		if err != nil {
+			return err
+		}
+		if values.config != "" {
+			saved, err = config.Merge(saved, values.config)
+			if err != nil {
+				return err
+			}
+		}
+		settings, err = saved.Settings()
+		if err != nil {
+			return err
+		}
+		if command == "service" {
+			// Restart applies saved settings rather than inheriting a previous temporary override.
+			explicit = daemon.Explicit{Host: true, Port: true, State: true, WebDir: true}
+		}
 	}
 	if command == "__daemon" {
 		if values.runtimeDir == "" {
@@ -97,6 +143,25 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 	client, err := daemon.NewClient()
 	if err != nil {
 		return err
+	}
+	if command == "change" {
+		if values.fixture != "" || values.capture != "" || values.config != "" {
+			return errors.New("change only accepts a path, branch and detail")
+		}
+		path, err := filepath.Abs(values.directory)
+		if err != nil {
+			return err
+		}
+		connection, err := client.RunningConnection(ctx)
+		if err != nil {
+			return err
+		}
+		event, err := connection.Change(ctx, contextservice.ChangeInput{Path: path, Branch: values.branch, Detail: values.detail})
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "  change accepted: %s\n", event.ContextID)
+		return nil
 	}
 	if command == "service" {
 		var status controlapi.Status

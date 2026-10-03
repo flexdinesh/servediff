@@ -129,3 +129,13 @@ func (client *Client) do(ctx context.Context, method, path string, body io.Reade
 	}
 	return nil
 }
+
+func (client *Client) Change(ctx context.Context, input contextservice.ChangeInput) (contextservice.ChangeEvent, error) {
+	raw, err := json.Marshal(input)
+	if err != nil {
+		return contextservice.ChangeEvent{}, err
+	}
+	var result contextservice.ChangeEvent
+	err = client.do(ctx, http.MethodPost, "/control/v1/change", bytes.NewReader(raw), http.Header{"Content-Type": []string{"application/json"}}, &result)
+	return result, err
+}

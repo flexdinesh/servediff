@@ -1,3 +1,4 @@
+import { installChangeEvents, notifyChange } from "./change-events.ts";
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { createApiClient, type ApiRepositoryDiff } from "@servediff/api";
 import type { ReviewComment } from "@servediff/shared";
@@ -91,6 +92,8 @@ function takeRequest(requests: Route[]) {
   if (!route) throw new Error("Missing pending request");
   return route;
 }
+
+test.beforeEach(async ({ page }) => installChangeEvents(page));
 
 test("comment submission guards keyboard and button duplicates", async ({
   page,
@@ -266,7 +269,7 @@ test("concurrent reviewed files merge successful responses in either order", asy
   ).toHaveCount(2);
 });
 
-test("a stale comment poll cannot undo successful resolution", async ({
+test("a stale event read cannot undo successful resolution", async ({
   page,
   baseURL,
 }) => {
@@ -294,7 +297,7 @@ test("a stale comment poll cannot undo successful resolution", async ({
   await expect(card).toBeVisible();
   const stale = [...comments];
   holdReads = true;
-  await page.clock.fastForward(3_000);
+  await notifyChange(page, "reconnect", "");
   await expect.poll(() => requests.length).toBe(1);
   await card.getByRole("button", { name: "Resolve", exact: true }).click();
   await expect(card).toHaveCount(0);
@@ -305,7 +308,7 @@ test("a stale comment poll cannot undo successful resolution", async ({
   await expect(card.locator(".comment-state")).toHaveText("Resolved");
 });
 
-test("slow comment polling completes instead of restarting every interval", async ({
+test("repeated events share an in-flight comment read", async ({
   page,
   baseURL,
 }) => {
@@ -322,9 +325,9 @@ test("slow comment polling completes instead of restarting every interval", asyn
   });
   await openWorkspace(page);
   holdReads = true;
-  await page.clock.fastForward(3_000);
+  await notifyChange(page, "reconnect", "");
   await expect.poll(() => requests.length).toBe(1);
-  await page.clock.fastForward(3_000);
+  await notifyChange(page, "reconnect", "");
   expect(requests).toHaveLength(1);
   await takeRequest(requests).fulfill({
     json: { comments: [commentFor(repository, "External comment")] },
@@ -413,7 +416,7 @@ test("WebMCP resolution shares comment ownership and preserves an active draft",
   await expect(page.locator("#comment-count")).toHaveText("1");
   const stale = [...comments];
   holdReads = true;
-  await page.clock.fastForward(3_000);
+  await notifyChange(page, "reconnect", "");
   await expect.poll(() => requests.length).toBe(1);
   fail = false;
   await page.evaluate(() =>

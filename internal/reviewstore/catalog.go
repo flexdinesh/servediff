@@ -27,10 +27,17 @@ type ContextInfo struct {
 	CreatedAt       int64
 	LastSubmittedAt int64
 	ExpiresAt       *int64
+	Name            string
+	Branch          string
+	WorktreeName    *string
+	LastChangedAt   int64
+	Generation      int64
 }
 
 func initializeCatalog(transaction *sql.Tx) error {
 	statements := []string{
+		`CREATE TABLE IF NOT EXISTS repository_details (repository_id TEXT PRIMARY KEY REFERENCES repositories(id) ON DELETE CASCADE, root TEXT NOT NULL, name TEXT NOT NULL, submitted_at INTEGER NOT NULL)`,
+		`INSERT INTO repository_details SELECT r.id,MIN(l.root),'',0 FROM repositories r JOIN locations l ON l.repository_id=r.id GROUP BY r.id ON CONFLICT(repository_id) DO NOTHING`,
 		`CREATE TABLE IF NOT EXISTS contexts (
 			id TEXT PRIMARY KEY,
 			owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -42,6 +49,9 @@ func initializeCatalog(transaction *sql.Tx) error {
 			submitted_from TEXT,
 			CHECK((kind='worktree' AND location_id IS NOT NULL AND location_id=id AND capture_id IS NULL) OR (kind='capture' AND capture_id IS NOT NULL AND capture_id=id AND location_id IS NULL))
 		)`,
+		`CREATE TABLE IF NOT EXISTS context_metadata (context_id TEXT PRIMARY KEY REFERENCES contexts(id) ON DELETE CASCADE, name TEXT NOT NULL DEFAULT '', branch TEXT NOT NULL DEFAULT '', worktree_name TEXT, last_changed_at INTEGER NOT NULL DEFAULT 0, generation INTEGER NOT NULL DEFAULT 0)`,
+		`CREATE TABLE IF NOT EXISTS current_versions (diff_id TEXT PRIMARY KEY REFERENCES diffs(id) ON DELETE CASCADE, version_id TEXT NOT NULL REFERENCES diff_versions(id) ON DELETE CASCADE, collected_at INTEGER NOT NULL, generation INTEGER NOT NULL)`,
+		`INSERT INTO current_versions SELECT d.id,v.id,v.created_at,0 FROM diffs d JOIN diff_versions v ON v.id=(SELECT id FROM diff_versions WHERE diff_id=d.id ORDER BY created_at DESC,id DESC LIMIT 1) WHERE d.kind != 'capture' ON CONFLICT(diff_id) DO NOTHING`,
 		`CREATE INDEX IF NOT EXISTS contexts_owner_order ON contexts(owner_id,last_submitted_at DESC,id DESC)`,
 		`CREATE TABLE IF NOT EXISTS submissions (
 			owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -105,6 +115,11 @@ func (store *Store) RegisterGitSubmission(ownerID, requestID, payloadHash, root,
 	if err := putSubmission(transaction, ownerID, requestID, "worktree", payloadHash, binding.ContextID); err != nil {
 		return Binding{}, err
 	}
+	if binding.RepositoryID != nil {
+		if _, err := transaction.Exec("INSERT INTO repository_details VALUES(?,?,?,?) ON CONFLICT(repository_id) DO UPDATE SET root=excluded.root, submitted_at=excluded.submitted_at", *binding.RepositoryID, root, "", time.Now().UnixMilli()); err != nil {
+			return Binding{}, err
+		}
+	}
 	return binding, transaction.Commit()
 }
 
@@ -156,16 +171,16 @@ func putSubmission(transaction *sql.Tx, ownerID, id, kind, hash, contextID strin
 }
 
 const contextSelect = `SELECT c.id,c.kind,l.root,c.location_id,l.repository_id,r.common_dir,l.worktree_key,c.submitted_from,
-	c.created_at,c.last_submitted_at,d.expires_at
+	c.created_at,c.last_submitted_at,d.expires_at,COALESCE(m.name,''),COALESCE(m.branch,''),m.worktree_name,COALESCE(m.last_changed_at,0),COALESCE(m.generation,0)
 	FROM contexts c LEFT JOIN locations l ON l.id=c.location_id LEFT JOIN repositories r ON r.id=l.repository_id
-	LEFT JOIN diffs d ON d.id=c.capture_id`
+	LEFT JOIN diffs d ON d.id=c.capture_id LEFT JOIN context_metadata m ON m.context_id=c.id`
 
 type scanner interface{ Scan(...any) error }
 
 func scanContext(row scanner) (ContextInfo, error) {
 	var item ContextInfo
 	err := row.Scan(&item.ID, &item.Kind, &item.Root, &item.LocationID, &item.RepositoryID, &item.CommonDir, &item.WorktreeKey,
-		&item.SubmittedFrom, &item.CreatedAt, &item.LastSubmittedAt, &item.ExpiresAt)
+		&item.SubmittedFrom, &item.CreatedAt, &item.LastSubmittedAt, &item.ExpiresAt, &item.Name, &item.Branch, &item.WorktreeName, &item.LastChangedAt, &item.Generation)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ContextInfo{}, ErrNotFound
 	}

@@ -151,6 +151,9 @@ func (multi *Multi) ServeHTTP(response http.ResponseWriter, request *http.Reques
 		_ = writeJSON(response, 200, map[string]any{"captures": captures})
 		return
 	}
+	if multi.collectionRoutes(response, request, base) {
+		return
+	}
 	if pathname == "/api/v2/contexts" {
 		if request.Method != http.MethodGet {
 			base.problem(response, diffsource.Error(405, "Method not allowed"))
@@ -240,7 +243,7 @@ func (multi *Multi) ServeHTTP(response http.ResponseWriter, request *http.Reques
 		base.problem(response, err)
 		return
 	}
-	cache := multi.cache(contextID, metadata.LastSubmittedAt)
+	cache := multi.cache(contextID, metadata.LastSubmittedAt+metadata.Generation)
 	if metadata.Availability == "unavailable" {
 		cache = newSnapshotCache(multi.background)
 	}
@@ -248,4 +251,5 @@ func (multi *Multi) ServeHTTP(response http.ResponseWriter, request *http.Reques
 	scoped := request.Clone(request.Context())
 	scoped.URL.Path = scopedPath
 	handler.ServeHTTP(response, scoped)
+
 }

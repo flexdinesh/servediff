@@ -7,8 +7,11 @@ database and serves independently addressed worktrees and piped captures.
 ## Runtime and data ownership
 
 Ordinary CLI commands ensure the daemon, submit an absolute worktree path or a
-bounded raw patch, print/open the returned context URL, and exit. The daemon
-collects live Git changes, parses captures, and writes review state. `service`
+bounded raw patch, print/open the returned context URL, and exit. One process
+contains the collector, SQLite store, and API/UI server. Registration resolves
+repository identity without collecting diffs or discovering other worktrees.
+The collector reads Git on demand; API sources read committed SQLite versions.
+The same process parses captures and writes reviews. `service`
 commands manage its lifetime; `serve` composes the same application in a
 foreground process for fixtures and supervision.
 
@@ -22,7 +25,36 @@ no automatic repository association.
 The durable catalog survives restarts; runtime sources are reconstructed lazily.
 Catalog listing does not run Git. Missing repositories fail within their own
 context. Existing location, diff, version, and review IDs are preserved by the
-additive schema-2 migration. Unsupported older schemas fail without deletion.
+additive schema-4 migration. Unsupported older schemas fail without deletion.
+
+Repository selection requests `/api/v2/repositories/{id}/worktrees`; discovery
+runs only for that repository, without comparing files. Selecting a worktree or
+scope requests its current diff. The API awaits the collector, which collects
+that scope's manifest, patches, and available full-file contents, verifies the
+revision did not change during collection, and publishes them atomically in
+SQLite. The API then queries SQLite. File/review reads never scan Git.
+Concurrent collection for one context/scope shares work; cancellation of one
+HTTP caller does not cancel shared collection. Collection has a 30-second
+deadline, a 16 MiB preview budget, and one retry for concurrent edits.
+Current/review-pinned versions survive pruning; five recent unreferenced live
+versions are retained per scope.
+
+`servediff change` uses authenticated local control to identify one registered
+repository/worktree, increment its persisted generation, and send an SSE event.
+Optional branch/detail are metadata. It performs no diff scan, starts no service,
+and registers no repository. An open browser refreshes its selected target/scope;
+drafts defer reloads. Removed worktrees keep reviews and fail on refresh.
+SQLite catalog reads, dormant worktrees, and SSE heartbeats perform no Git work.
+No filesystem watchers or periodic diff/catalog/comment polling run. Without
+hooks, navigation/manual Refresh supplies freshness. Reconnect refreshes selected
+data.
+
+`~/.config/servediff/config.json` holds host, port, state, and webDir. Defaults are
+written on first use; config set/get/remove validates settings. Startup precedence
+is defaults, saved config, legacy explicit flags, then start/restart JSON
+`--config`. Overrides are temporary; restart without them reapplies saved config.
+`SERVEDIFF_CONFIG_PATH` overrides the path for isolation; setting
+`SERVEDIFF_RUNTIME_DIR` also isolates config alongside runtime files.
 
 Every REST/MCP operation resolves an explicit context once and verifies resource
 membership. There is no daemon-wide active repository. Browser selection is
@@ -73,6 +105,9 @@ sharing happens through OpenAPI and serialized fixtures, not source imports.
 - `internal/contextservice`: durable catalog, registration, capture submissions,
   and context resolution.
 - `internal/reviewservice`: shared review operations.
+- `internal/collector`: scoped collection, coalescing, atomic publication, and
+  SQLite-backed API sources.
+- `internal/config`: saved settings and temporary override merging.
 - `internal/reviewstore`: migrations, context identities, submission
   deduplication, and review persistence.
 - `internal/httpapi`: public REST adapters and the shared context snapshot

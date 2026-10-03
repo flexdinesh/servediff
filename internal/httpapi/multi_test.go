@@ -173,7 +173,7 @@ func TestMultiWorktreesAndRetainedFiles(t *testing.T) {
 	first := targets[0]
 	firstBase := server.URL + "/api/v2/contexts/" + first.Context.ID
 	secondBase := server.URL + "/api/v2/contexts/" + targets[1].Context.ID
-	snapshot := first.Snapshot
+	snapshot := decode[review.RepositoryDiff](t, request(t, server.Client(), http.MethodGet, firstBase+"/diffs/current?scope=all", nil))
 	active, err := provider.Resolve(t.Context(), first.Context.ID)
 	if err != nil {
 		t.Fatal(err)

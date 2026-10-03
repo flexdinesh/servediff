@@ -62,11 +62,11 @@ func acquireInput(values options, stdin *os.File) (daemon.InitialInput, error) {
 		if len(raw) > diffsource.MaxInputBytes {
 			return daemon.InitialInput{}, errors.New("piped diff exceeds the 16 MiB input limit")
 		}
-		return daemon.InitialInput{Kind: "capture", Raw: raw, SubmittedFrom: cwd}, nil
+		if len(raw) > 0 || values.directory == "-" || values.fixture != "" {
+			return daemon.InitialInput{Kind: "capture", Raw: raw, SubmittedFrom: cwd}, nil
+		}
 	}
-	if !values.repositorySet {
-		return daemon.InitialInput{}, errors.New("provide a repository path, a fixture, or pipe a Git diff")
-	}
+
 	path, err := filepath.Abs(values.directory)
 	return daemon.InitialInput{Kind: "worktree", Path: path}, err
 }
