@@ -173,7 +173,12 @@ export function DiffWorkspace() {
   const contentsEnabled = capabilityEnabled(capabilities.files.contents);
   const refreshEnabled = capabilityEnabled(capabilities.diff.refresh);
   const lineMetric = useRef<HTMLSpanElement>(null);
-  const [lineHeight, setLineHeight] = useState<number>();
+  const [viewerMetrics, setViewerMetrics] = useState<{
+    lineHeight: number;
+    spacing: number;
+  }>();
+  const lineHeight = viewerMetrics?.lineHeight;
+  const fileSpacing = viewerMetrics?.spacing ?? 16;
   const [selectionFeedback, setSelectionFeedback] = useState("");
   const workerPool = useWorkerPool();
   useEffect(() => {
@@ -182,12 +187,19 @@ export function DiffWorkspace() {
       .setRenderOptions({ theme: themesFor(diffTheme), lineDiffType })
       .catch((error: unknown) => console.error(error));
   }, [workerPool, diffTheme, lineDiffType]);
-  // Virtual scroll offsets must use the same row height as our rem-based CSS.
+  // Virtual scroll offsets must use the same row height and spacing as our CSS.
   // Observe a sizing probe so browser font preferences also stay in sync.
   useLayoutEffect(() => {
     const element = lineMetric.current;
     if (!element) return;
-    const measure = () => setLineHeight(element.getBoundingClientRect().height);
+    const measure = () => {
+      const { height, width } = element.getBoundingClientRect();
+      setViewerMetrics((current) =>
+        current?.lineHeight === height && current.spacing === width
+          ? current
+          : { lineHeight: height, spacing: width },
+      );
+    };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(element);
@@ -460,9 +472,17 @@ export function DiffWorkspace() {
         ? {}
         : {
             // Keep file headers aligned with the compact navigation toolbar.
-            itemMetrics: { lineHeight, diffHeaderHeight: lineHeight + 14 },
+            itemMetrics: {
+              lineHeight,
+              // Matches the header's 2 * --space-4 + --space-1 height.
+              diffHeaderHeight: fileSpacing * 2.25,
+            },
           }),
-      layout: { paddingTop: 0, paddingBottom: 24, gap: 8 },
+      layout: {
+        paddingTop: fileSpacing,
+        paddingBottom: fileSpacing,
+        gap: fileSpacing,
+      },
       ...(commentsEnabled
         ? {
             enableGutterUtility: true,
@@ -520,6 +540,7 @@ export function DiffWorkspace() {
       layout,
       wrap,
       lineHeight,
+      fileSpacing,
       contentsEnabled,
       commentsEnabled,
     ],
@@ -572,6 +593,7 @@ export function DiffWorkspace() {
             aria-hidden="true"
           />
           <CodeView
+            className="diff-code-view"
             ref={viewer}
             items={items}
             options={options}

@@ -252,7 +252,9 @@ test("file navigation scrolls to and retriggers a destination cue", async ({
   await expect(cue).toHaveCount(0, { timeout: 1_000 });
 });
 
-test("file diffs have measured gaps and end dividers", async ({ page }) => {
+test("file frames preserve measured gutters, gaps, and virtual geometry", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1280, height: 4_000 });
   await page.goto("/");
 
@@ -283,22 +285,69 @@ test("file diffs have measured gaps and end dividers", async ({ page }) => {
   expect(collapseAlignment.every((offset) => Math.abs(offset) <= 0.5)).toBe(
     true,
   );
-  const gaps = await containers.evaluateAll((elements) =>
-    elements.slice(0, -1).map((element, index) => {
-      const next = elements[index + 1];
-      if (!next) throw new Error("Missing adjacent diff");
-      const currentBox = element.getBoundingClientRect();
-      return next.getBoundingClientRect().top - currentBox.bottom;
-    }),
-  );
-  expect(gaps).toHaveLength(11);
-  expect(gaps.every((gap) => gap === 8)).toBe(true);
+  for (const spacing of [16, 20]) {
+    await page.locator("html").evaluate((element, size) => {
+      element.style.fontSize = `${size}px`;
+    }, spacing);
+    await expect(containers.first().locator("[data-diffs-header]")).toHaveCSS(
+      "height",
+      `${spacing * 2.25}px`,
+    );
+    await expect
+      .poll(() =>
+        containers.evaluateAll((elements) =>
+          elements.slice(0, -1).map((element, index) => {
+            const next = elements[index + 1];
+            if (!next) throw new Error("Missing adjacent diff");
+            return (
+              next.getBoundingClientRect().top -
+              element.getBoundingClientRect().bottom
+            );
+          }),
+        ),
+      )
+      .toEqual(Array.from({ length: 11 }, () => spacing));
+    const gutters = await containers.first().evaluate((element) => {
+      const scroller = document.querySelector(".diff-code-view");
+      if (!scroller) throw new Error("Missing diff scroller");
+      const file = element.getBoundingClientRect();
+      const viewport = scroller.getBoundingClientRect();
+      return {
+        top: file.top - viewport.top,
+        left: file.left - viewport.left,
+        right: viewport.left + scroller.clientWidth - file.right,
+      };
+    });
+    expect(gutters).toEqual({ top: spacing, left: spacing, right: spacing });
+    await expect
+      .poll(() =>
+        containers.evaluateAll((elements, gap) => {
+          const scaffold = elements[0]?.parentElement?.parentElement;
+          if (!scaffold) throw new Error("Missing virtual scroll scaffold");
+          const measuredHeight = elements.reduce(
+            (height, element) =>
+              height + element.getBoundingClientRect().height,
+            (elements.length - 1) * gap,
+          );
+          return Math.abs(
+            scaffold.getBoundingClientRect().height - measuredHeight,
+          );
+        }, spacing),
+      )
+      .toBeLessThanOrEqual(0.5);
+  }
+  await page.locator("html").evaluate((element) => {
+    element.style.fontSize = "16px";
+  });
 
-  const divider = await containers
-    .first()
-    .evaluate((element) => getComputedStyle(element).boxShadow);
-  expect(divider).toContain("inset");
-  expect(divider).toContain("-1px");
+  await expect(containers.first()).toHaveCSS("box-shadow", "none");
+  await expect(containers.first()).toHaveCSS("border-radius", "6px");
+  await expect(containers.first()).toHaveCSS("outline-width", "1px");
+  await expect(containers.first()).toHaveCSS("outline-offset", "-1px");
+  await expect(page.locator("#viewer")).toHaveCSS(
+    "background-image",
+    /radial-gradient/,
+  );
   const headerColors = await containers.first().evaluate((element) => {
     const root = element.shadowRoot;
     const header = root?.querySelector<HTMLElement>("[data-diffs-header]");
@@ -407,6 +456,12 @@ for (const [start, end] of [
     // Worker rendering can replace the hover utility before the drag starts.
     await expect(async () => {
       if (await editor.isVisible()) return;
+      // File spacing can leave the drag endpoint below the clipped viewport.
+      const endpoint = file.locator(
+        `[data-gutter] [data-column-number="${end}"]`,
+      );
+      await endpoint.scrollIntoViewIfNeeded();
+      await expect(endpoint).toBeInViewport({ ratio: 1 });
       await file
         .locator(`[data-gutter] [data-column-number="${start}"]`)
         .hover({ timeout: 1_000 });

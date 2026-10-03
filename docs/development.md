@@ -54,6 +54,8 @@ List available tasks with `mise tasks`. Keep personal overrides in
 | Run all pre-push checks, including Go race tests           | `pnpm check:push`                |
 | Run lightweight CI checks                                  | `mise run check:ci`              |
 
+Set `SERVEDIFF_TEST_PORT` for a separate browser-test server (default 4173), e.g. `SERVEDIFF_TEST_PORT=4183 mise exec -- pnpm --filter @servediff/web test:browser`.
+
 `mise run setup` enables the Husky `pre-push` hook. Every push runs
 `mise run check:push`: all repository suites and Go race tests, then rejects
 uncommitted generated API types or embedded assets. `mise run setup` installs

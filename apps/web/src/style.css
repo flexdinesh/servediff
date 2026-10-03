@@ -453,22 +453,35 @@ main {
   overflow: hidden;
   overflow-anchor: none;
   contain: strict;
-  background: var(--bg);
+  background: var(--diff-canvas);
+  background-image: radial-gradient(
+    circle,
+    var(--diff-canvas-dot) 0.8px,
+    transparent 0.9px
+  );
+  background-size: 20px 20px;
+  background-position: 10px 10px;
   --diffs-font-family: var(--font-mono);
   --diffs-font-size: var(--text-code);
   --diffs-line-height: calc(var(--text-code) * var(--leading-code));
   --diff-gutter-divider-width: 2px;
 }
+.diff-code-view {
+  padding-inline: var(--space-4);
+}
 .diff-line-metric {
   position: absolute;
   visibility: hidden;
   pointer-events: none;
-  width: 0;
+  width: var(--space-4);
   height: var(--diffs-line-height);
 }
-diffs-container {
-  /* Pair Pierre's measured gap with a non-geometric file-end rule. */
-  box-shadow: inset 0 -1px var(--border);
+#viewer diffs-container {
+  /* Frame files without adding unmeasured height to Pierre's virtual layout. */
+  border-radius: var(--radius-md);
+  overflow: clip;
+  outline: 1px solid var(--border);
+  outline-offset: -1px;
 }
 .diff-collapse-gutter {
   display: inline-flex;
@@ -546,7 +559,6 @@ diffs-container {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: var(--bg);
   text-align: center;
   padding: var(--page-gutter);
 }
