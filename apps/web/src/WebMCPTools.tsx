@@ -4,25 +4,27 @@ import { useReviewState } from "./app-state.tsx";
 import { capabilityEnabled, useSession } from "./session-context.tsx";
 import { registerReviewTools, type ReviewToolsClient } from "./webmcp.ts";
 
-const reviewReader: Pick<ReviewToolsClient, "getComments"> = {
-  async getComments(includeResolved, signal) {
-    const { data, error } = await api.GET("/api/v1/review/comments", {
-      params: { query: { includeResolved } },
-      signal,
-    });
-    if (data === undefined)
-      throw new Error(errorDetail(error, "Unable to load review comments"));
-    return data;
-  },
-};
-
 export function WebMCPTools() {
-  const { capabilities } = useSession();
+  const { id: contextId, capabilities } = useSession();
   const { resolveComment } = useReviewState();
   const enabled = capabilityEnabled(capabilities.review.comments);
   const client = useMemo<ReviewToolsClient>(
-    () => ({ ...reviewReader, resolveComment }),
-    [resolveComment],
+    () => ({
+      async getComments(includeResolved, signal) {
+        const { data, error } = await api.GET(
+          "/api/v2/contexts/{contextId}/review/comments",
+          {
+            params: { path: { contextId }, query: { includeResolved } },
+            signal,
+          },
+        );
+        if (data === undefined)
+          throw new Error(errorDetail(error, "Unable to load review comments"));
+        return data;
+      },
+      resolveComment,
+    }),
+    [contextId, resolveComment],
   );
 
   useEffect(() => {

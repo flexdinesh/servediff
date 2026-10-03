@@ -15,12 +15,13 @@ import { createRequestOwner } from "./request-owner.ts";
 const noReviews = new Map<string, string>();
 
 export function useReviewedFiles(
+  contextId: string,
   repository: RepositoryDiff | null,
   mode: DiffMode,
   setCollapsed: Dispatch<SetStateAction<Set<string>>>,
 ) {
   const diffId = repository?.id ?? "";
-  const key = `reviewed:${diffId}`;
+  const key = `reviewed:${contextId}:${diffId}`;
   const [stored, setStored] = useState({
     key: "",
     entries: new Map<string, string>(),
@@ -51,10 +52,13 @@ export function useReviewedFiles(
       const request = owner.beginRead(force);
       if (!request) return;
       try {
-        const { data, error } = await api.GET("/api/v1/review-marks", {
-          params: { query: { scope: mode } },
-          signal: request.signal,
-        });
+        const { data, error } = await api.GET(
+          "/api/v2/contexts/{contextId}/review-marks",
+          {
+            params: { path: { contextId }, query: { scope: mode } },
+            signal: request.signal,
+          },
+        );
         if (!request.isCurrent()) return;
         if (!data)
           throw new Error(errorDetail(error, "Unable to load reviewed files"));
@@ -78,7 +82,7 @@ export function useReviewedFiles(
     reload.current = (force) => void load(force);
     void load();
     return () => owner.dispose();
-  }, [diffId, key, mode]);
+  }, [contextId, diffId, key, mode]);
 
   // A new diff snapshot may invalidate marks, but keeps this scope's write owner.
   useEffect(() => {
@@ -97,18 +101,30 @@ export function useReviewedFiles(
       setFailure(null);
       try {
         const result = marked
-          ? await api.DELETE("/api/v1/review-marks/{fileId}", {
-              params: { path: { fileId: file.id }, query: { scope: mode } },
-              signal: request.signal,
-            })
-          : await api.PUT("/api/v1/review-marks/{fileId}", {
-              params: { path: { fileId: file.id }, query: { scope: mode } },
-              body: {
-                fileVersion: file.fingerprint,
-                versionId: currentRepository.versionId,
+          ? await api.DELETE(
+              "/api/v2/contexts/{contextId}/review-marks/{fileId}",
+              {
+                params: {
+                  path: { contextId, fileId: file.id },
+                  query: { scope: mode },
+                },
+                signal: request.signal,
               },
-              signal: request.signal,
-            });
+            )
+          : await api.PUT(
+              "/api/v2/contexts/{contextId}/review-marks/{fileId}",
+              {
+                params: {
+                  path: { contextId, fileId: file.id },
+                  query: { scope: mode },
+                },
+                body: {
+                  fileVersion: file.fingerprint,
+                  versionId: currentRepository.versionId,
+                },
+                signal: request.signal,
+              },
+            );
         if (!request.isCurrent()) return;
         if (!result.response.ok)
           throw new Error(
@@ -147,7 +163,7 @@ export function useReviewedFiles(
         }
       }
     },
-    [diffId, key, mode, setCollapsed],
+    [contextId, diffId, key, mode, setCollapsed],
   );
 
   const resetReviewed = useCallback(async () => {
@@ -160,10 +176,13 @@ export function useReviewedFiles(
     try {
       await request.ready;
       if (!request.isCurrent()) return;
-      const result = await api.DELETE("/api/v1/review-marks", {
-        params: { query: { scope: mode } },
-        signal: request.signal,
-      });
+      const result = await api.DELETE(
+        "/api/v2/contexts/{contextId}/review-marks",
+        {
+          params: { path: { contextId }, query: { scope: mode } },
+          signal: request.signal,
+        },
+      );
       if (!request.isCurrent()) return;
       if (!result.response.ok)
         throw new Error(
@@ -189,7 +208,7 @@ export function useReviewedFiles(
         reload.current();
       }
     }
-  }, [key, mode, setCollapsed]);
+  }, [contextId, key, mode, setCollapsed]);
 
   const isReviewed = useCallback(
     (file: ChangedFile) => entries.get(file.id) === file.fingerprint,

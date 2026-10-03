@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+#MISE description="Select release version and export workflow outputs"
+
+set -euo pipefail
+: "${GITHUB_OUTPUT:?GITHUB_OUTPUT is required}"
+
+git fetch --tags --force
+release_version="$(go run ./tools/release-version)"
+tag_exists=false
+if tag_commit="$(git rev-list -n 1 "$release_version" 2>/dev/null)"; then
+  head_commit="$(git rev-parse HEAD)"
+  if [[ "$tag_commit" != "$head_commit" ]]; then
+    echo "$release_version points to $tag_commit, not current main $head_commit" >&2
+    exit 1
+  fi
+  tag_exists=true
+fi
+
+release_exists=false
+if gh release view "$release_version" >/dev/null 2>&1; then
+  release_exists=true
+fi
+
+{
+  echo "tag=$release_version"
+  echo "number=${release_version#v}"
+  echo "tag_exists=$tag_exists"
+  echo "release_exists=$release_exists"
+} >> "$GITHUB_OUTPUT"

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+#MISE description="Create and push the selected release tag"
+
+set -euo pipefail
+: "${RELEASE_TAG:?RELEASE_TAG is required}"
+git tag "$RELEASE_TAG"
+git push origin "$RELEASE_TAG"

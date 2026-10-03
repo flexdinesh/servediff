@@ -4,3 +4,4 @@ dist/
 !internal/webui/dist/**
 .agents/ignore/
 test-results/
+mise.local.toml

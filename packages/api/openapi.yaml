@@ -375,8 +375,429 @@ paths:
           description: Review mark deleted.
         default:
           $ref: "#/components/responses/Problem"
+  /api/v2/contexts:
+    get:
+      operationId: listContexts
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+        - name: cursor
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Registered worktrees and retained captures, without scanning Git.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContextPage"
+        default:
+          $ref: "#/components/responses/Problem"
+  /api/v2/contexts/{contextId}:
+    parameters:
+      - $ref: "#/components/parameters/ContextId"
+    get:
+      operationId: getContext
+      responses:
+        "200":
+          description: Stable review target metadata and capabilities.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Context"
+        default:
+          $ref: "#/components/responses/Problem"
+  /api/v2/metrics:
+    get:
+      operationId: getServerMetricsV2
+      responses:
+        "200":
+          description: CPU and resident memory used by the ServeDiff server process.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServerMetrics"
+        default:
+          $ref: "#/components/responses/Problem"
+  /api/v2/contexts/{contextId}/session:
+    parameters:
+      - $ref: "#/components/parameters/ContextId"
+    get:
+      operationId: getSessionV2
+      responses:
+        "200":
+          description: Active diff source and capabilities.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        default:
+          $ref: "#/components/responses/Problem"
+  /api/v2/contexts/{contextId}/diffs/current:
+    parameters:
+      - $ref: "#/components/parameters/ContextId"
+    get:
+      operationId: getCurrentDiffV2
+      parameters:
+        - $ref: "#/components/parameters/Scope"
+      responses:
+        "200":
+          description: Current diff snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepositoryDiff"
+        default:
+          $ref: "#/components/responses/Problem"
+  /api/v2/contexts/{contextId}/diffs/{diffId}/versions/{versionId}:
+    parameters:
+      - $ref: "#/components/parameters/ContextId"
+    get:
+      operationId: getDiffVersionV2
+      parameters:
+        - $ref: "#/components/parameters/DiffId"
+        - $ref: "#/components/parameters/VersionIdPath"
+      responses:
+        "200":
+          description: Retained immutable diff version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepositoryDiff"
+        default:
+          $ref: "#/components/responses/Problem"
+  /api/v2/contexts/{contextId}/diffs/{diffId}/files/{fileId}/patch:
+    parameters:
+      - $ref: "#/components/parameters/ContextId"
+    get:
+      operationId: getFilePatchV2
+      parameters:
+        - $ref: "#/components/parameters/DiffId"
+        - $ref: "#/components/parameters/FileId"
+        - $ref: "#/components/parameters/VersionId"
+        - $ref: "#/components/parameters/Scope"
+        - $ref: "#/components/parameters/FileVersion"
+      responses:
+        "200":
+          description: File patch.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FilePatch"
+        default:
+          $ref: "#/components/responses/Problem"
+  /api/v2/contexts/{contextId}/diffs/{diffId}/files/{fileId}/contents:
+    parameters:
+      - $ref: "#/components/parameters/ContextId"
+    get:
+      operationId: getFileContentsV2
+      parameters:
+        - $ref: "#/components/parameters/DiffId"
+        - $ref: "#/components/parameters/FileId"
+        - $ref: "#/components/parameters/VersionId"
+        - $ref: "#/components/parameters/Scope"
+        - $ref: "#/components/parameters/FileVersion"
+      responses:
+        "200":
+          description: Complete before and after contents.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileContents"
+        default:
+          $ref: "#/components/responses/Problem"
+  /api/v2/contexts/{contextId}/comments:
+    parameters:
+      - $ref: "#/components/parameters/ContextId"
+    get:
+      operationId: listCommentsV2
+      responses:
+        "200":
+          description: All comments for the active source.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [comments]
+                properties:
+                  comments:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ReviewComment"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      operationId: deleteCommentsV2
+      parameters:
+        - name: status
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [all, open, resolved, stale]
+      responses:
+        "200":
+          description: Remaining comments after bulk deletion.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [comments, deleted]
+                properties:
+                  comments:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ReviewComment"
+                  deleted:
+                    type: integer
+                    minimum: 0
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: createCommentV2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateComment"
+      responses:
+        "201":
+          description: Created comment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewComment"
+        default:
+          $ref: "#/components/responses/Problem"
+  /api/v2/contexts/{contextId}/comments/import:
+    parameters:
+      - $ref: "#/components/parameters/ContextId"
+    post:
+      operationId: importCommentsV2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [comments]
+              properties:
+                comments:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/ReviewComment"
+      responses:
+        "200":
+          description: Idempotently imported comments.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [comments]
+                properties:
+                  comments:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ReviewComment"
+        default:
+          $ref: "#/components/responses/Problem"
+  /api/v2/contexts/{contextId}/comments/export:
+    parameters:
+      - $ref: "#/components/parameters/ContextId"
+    get:
+      operationId: exportCommentsV2
+      parameters:
+        - name: includeResolved
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: commentId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: revision
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: scope
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/DiffMode"
+      responses:
+        "200":
+          description: Canonical agent-ready export.
+          content:
+            application/xml:
+              schema:
+                type: string
+        default:
+          $ref: "#/components/responses/Problem"
+  /api/v2/contexts/{contextId}/comments/{commentId}:
+    parameters:
+      - $ref: "#/components/parameters/ContextId"
+    patch:
+      operationId: updateCommentV2
+      parameters:
+        - $ref: "#/components/parameters/CommentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateComment"
+      responses:
+        "200":
+          description: Updated comment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewComment"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      operationId: deleteCommentV2
+      parameters:
+        - $ref: "#/components/parameters/CommentId"
+      responses:
+        "204":
+          description: Comment deleted.
+        default:
+          $ref: "#/components/responses/Problem"
+  /api/v2/contexts/{contextId}/review/comments:
+    parameters:
+      - $ref: "#/components/parameters/ContextId"
+    get:
+      operationId: listAgentReviewCommentsV2
+      parameters:
+        - name: includeResolved
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Agent-ready comments with current applicability.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [comments]
+                properties:
+                  comments:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AgentReviewComment"
+        default:
+          $ref: "#/components/responses/Problem"
+  /api/v2/contexts/{contextId}/review/comments/{commentId}/resolve:
+    parameters:
+      - $ref: "#/components/parameters/ContextId"
+    post:
+      operationId: resolveAgentReviewCommentV2
+      parameters:
+        - $ref: "#/components/parameters/CommentId"
+      responses:
+        "200":
+          description: Idempotently resolved comment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResolveReviewComment"
+        default:
+          $ref: "#/components/responses/Problem"
+  /api/v2/contexts/{contextId}/review-marks:
+    parameters:
+      - $ref: "#/components/parameters/ContextId"
+    get:
+      operationId: listReviewMarksV2
+      parameters:
+        - $ref: "#/components/parameters/Scope"
+      responses:
+        "200":
+          description: Reviewed file versions.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [marks]
+                properties:
+                  marks:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ReviewMark"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      operationId: clearReviewMarksV2
+      parameters:
+        - $ref: "#/components/parameters/Scope"
+      responses:
+        "204":
+          description: Scope review marks cleared.
+        default:
+          $ref: "#/components/responses/Problem"
+  /api/v2/contexts/{contextId}/review-marks/{fileId}:
+    parameters:
+      - $ref: "#/components/parameters/ContextId"
+    put:
+      operationId: putReviewMarkV2
+      parameters:
+        - $ref: "#/components/parameters/FileId"
+        - $ref: "#/components/parameters/Scope"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fileVersion, versionId]
+              properties:
+                fileVersion:
+                  type: string
+                versionId:
+                  type: string
+      responses:
+        "200":
+          description: Stored review mark.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewMark"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      operationId: deleteReviewMarkV2
+      parameters:
+        - $ref: "#/components/parameters/FileId"
+        - $ref: "#/components/parameters/Scope"
+      responses:
+        "204":
+          description: Review mark deleted.
+        default:
+          $ref: "#/components/responses/Problem"
 components:
   parameters:
+    ContextId:
+      name: contextId
+      in: path
+      required: true
+      schema:
+        type: string
     Scope:
       name: scope
       in: query
@@ -427,6 +848,65 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
   schemas:
+    ContextPage:
+      type: object
+      additionalProperties: false
+      required: [contexts, nextCursor]
+      properties:
+        contexts:
+          type: array
+          items:
+            $ref: "#/components/schemas/Context"
+        nextCursor:
+          type: [string, "null"]
+    Context:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          kind,
+          name,
+          root,
+          locationId,
+          repositoryId,
+          createdAt,
+          lastSubmittedAt,
+          expiresAt,
+          submittedFrom,
+          capabilities,
+          availability,
+        ]
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [worktree, capture]
+        name:
+          type: string
+        root:
+          type: [string, "null"]
+        locationId:
+          type: [string, "null"]
+        repositoryId:
+          type: [string, "null"]
+        createdAt:
+          type: integer
+          format: int64
+        lastSubmittedAt:
+          type: integer
+          format: int64
+        expiresAt:
+          type: [integer, "null"]
+          format: int64
+        submittedFrom:
+          type: [string, "null"]
+        availability:
+          type: string
+          enum: [unchecked, available, unavailable]
+        capabilities:
+          $ref: "#/components/schemas/Session/properties/capabilities"
     ServerMetrics:
       type: object
       additionalProperties: false

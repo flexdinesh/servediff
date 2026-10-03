@@ -1,9 +1,11 @@
 package reviewstore
 
 import (
+	"database/sql"
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -138,7 +140,7 @@ func TestStateFileVersionAndPermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 	stat, err := os.Stat(path)
-	if err != nil || stat.Mode().Perm() != 0o600 {
+	if err != nil || !stat.Mode().IsRegular() || (runtime.GOOS != "windows" && stat.Mode().Perm() != 0o600) {
 		t.Fatalf("state permissions = %v, %v", stat, err)
 	}
 	store, err = Open(path)
@@ -150,21 +152,26 @@ func TestStateFileVersionAndPermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = store.Close()
-	store, err = Open(path)
+	if _, err := Open(path); err == nil {
+		t.Fatal("unsupported older schema was opened")
+	}
+	// Failure must release the ownership lock and preserve existing rows.
+	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	newUser := testUser(t, store, "old")
-	if newUser.ID == user.ID {
-		t.Fatal("older schema data survived reset")
+	var preservedID string
+	if err := db.QueryRow("SELECT id FROM users WHERE os_uid='old'").Scan(&preservedID); err != nil || preservedID != user.ID {
+		t.Fatalf("existing user changed: %s, %v", preservedID, err)
 	}
-	if _, err := store.db.Exec(`PRAGMA user_version = 3`); err != nil {
+	if _, err := db.Exec(`PRAGMA user_version = 4`); err != nil {
 		t.Fatal(err)
 	}
-	_ = store.Close()
+	_ = db.Close()
 	if _, err := Open(path); err == nil {
 		t.Fatal("newer schema was silently reset")
 	}
+
 }
 
 func TestLegacyReviewFilesAreDiscarded(t *testing.T) {

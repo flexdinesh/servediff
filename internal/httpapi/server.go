@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -27,23 +28,36 @@ type cachedSnapshot struct {
 	at       time.Time
 	snapshot review.RepositoryDiff
 	err      error
+	bytes    int64
+}
+
+type snapshotCache struct {
+	background context.Context
+	mu         sync.Mutex
+	snapshots  map[review.DiffMode]cachedSnapshot
+	flights    map[review.DiffMode]chan struct{}
+	bytes      int64
+	onUpdate   func()
+}
+
+func newSnapshotCache(background context.Context) *snapshotCache {
+	return &snapshotCache{background: background, snapshots: make(map[review.DiffMode]cachedSnapshot), flights: make(map[review.DiffMode]chan struct{})}
 }
 
 type Handler struct {
-	session   session.Session
-	store     *reviewstore.Store
-	review    *reviewservice.Service
-	assets    fs.FS
-	metrics   *processmetrics.Collector
-	mu        sync.Mutex
-	snapshots map[review.DiffMode]cachedSnapshot
+	session       session.Session
+	store         *reviewstore.Store
+	review        *reviewservice.Service
+	assets        fs.FS
+	metrics       *processmetrics.Collector
+	cache         *snapshotCache
+	strictContext bool
 }
 
 func New(active session.Session, store *reviewstore.Store, service *reviewservice.Service, assets fs.FS) *Handler {
 	return &Handler{
 		session: active, store: store, review: service, assets: assets,
-		metrics:   processmetrics.New(),
-		snapshots: make(map[review.DiffMode]cachedSnapshot),
+		metrics: processmetrics.New(), cache: newSnapshotCache(context.Background()),
 	}
 }
 
@@ -58,29 +72,63 @@ func randomID() (string, error) {
 func (handler *Handler) SessionID() string { return handler.session.ID }
 
 func (handler *Handler) snapshot(request *http.Request, mode review.DiffMode, fresh bool) (review.RepositoryDiff, error) {
-	if !fresh {
-		handler.mu.Lock()
-		cached, ok := handler.snapshots[mode]
-		handler.mu.Unlock()
-		if ok && time.Since(cached.at) < 500*time.Millisecond {
-			return cached.snapshot, cached.err
+	cache := handler.cache
+	cache.mu.Lock()
+	if cached, ok := cache.snapshots[mode]; !fresh && ok && time.Since(cached.at) < 500*time.Millisecond {
+		cache.mu.Unlock()
+		return cached.snapshot, cached.err
+	}
+	flight, running := cache.flights[mode]
+	if !running {
+		flight = make(chan struct{})
+		cache.flights[mode] = flight
+		// Computation belongs to the shared cache; one cancelled caller cannot cancel others.
+		go func() {
+			ctx, cancel := context.WithTimeout(cache.background, 30*time.Second)
+			defer cancel()
+			snapshot, err := handler.session.Source.Snapshot(ctx, mode)
+			if err == nil {
+				snapshot.ID = handler.session.DiffIDs[mode]
+				snapshot.LocationID = handler.session.LocationID
+				snapshot.RepositoryID = handler.session.RepositoryID
+				if handler.session.VersionID != "" {
+					snapshot.VersionID = handler.session.VersionID
+				} else {
+					snapshot.VersionID = reviewstore.VersionID(snapshot.ID, snapshot.Revision)
+				}
+			}
+			encoded, _ := json.Marshal(snapshot)
+			size := int64(len(encoded))
+			cache.mu.Lock()
+			cache.bytes += size - cache.snapshots[mode].bytes
+			cache.snapshots[mode] = cachedSnapshot{at: time.Now(), snapshot: snapshot, err: err, bytes: size}
+			delete(cache.flights, mode)
+			close(flight)
+			cache.mu.Unlock()
+			if cache.onUpdate != nil {
+				cache.onUpdate()
+			}
+		}()
+	}
+	cache.mu.Unlock()
+	select {
+	case <-request.Context().Done():
+		return review.RepositoryDiff{}, request.Context().Err()
+	case <-flight:
+		cache.mu.Lock()
+		result := cache.snapshots[mode]
+		cache.mu.Unlock()
+		return result.snapshot, result.err
+	}
+}
+
+func (handler *Handler) ownsDiff(diffID string) bool {
+	for _, id := range handler.session.DiffIDs {
+		if id == diffID {
+			return true
 		}
 	}
-	snapshot, err := handler.session.Source.Snapshot(request.Context(), mode)
-	if err == nil {
-		snapshot.ID = handler.session.DiffIDs[mode]
-		snapshot.LocationID = handler.session.LocationID
-		snapshot.RepositoryID = handler.session.RepositoryID
-		if handler.session.VersionID != "" {
-			snapshot.VersionID = handler.session.VersionID
-		} else {
-			snapshot.VersionID = reviewstore.VersionID(snapshot.ID, snapshot.Revision)
-		}
-	}
-	handler.mu.Lock()
-	handler.snapshots[mode] = cachedSnapshot{at: time.Now(), snapshot: snapshot, err: err}
-	handler.mu.Unlock()
-	return snapshot, err
+	return false
 }
 
 func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
@@ -174,6 +222,9 @@ func (handler *Handler) api(response http.ResponseWriter, request *http.Request)
 		return true, writeResult(response, snapshot, err)
 	}
 	if diffID, versionID, ok := parseVersionRoute(pathname); ok && request.Method == http.MethodGet {
+		if handler.strictContext && !handler.ownsDiff(diffID) {
+			return true, diffsource.Error(404, "Diff version not found")
+		}
 		snapshot, err := handler.store.StoredVersion(handler.session.User.ID, diffID, versionID, time.Now())
 		if errors.Is(err, reviewstore.ErrNotFound) {
 			err = diffsource.Error(404, "Diff version not found")
@@ -387,6 +438,9 @@ func (handler *Handler) currentFile(request *http.Request, mode review.DiffMode,
 }
 
 func (handler *Handler) getFile(response http.ResponseWriter, request *http.Request, route fileRoute) error {
+	if handler.strictContext && !handler.ownsDiff(route.diffID) {
+		return diffsource.Error(404, "File preview not found")
+	}
 	if route.resource == "contents" && !handler.session.Capabilities.Files.Contents.Enabled() {
 		return session.NotEnabled(session.FilesContents)
 	}
@@ -400,13 +454,13 @@ func (handler *Handler) getFile(response http.ResponseWriter, request *http.Requ
 	}
 	fileVersion := request.URL.Query().Get("fileVersion")
 	if route.diffID == handler.session.DiffIDs[mode] {
-		current, err := handler.snapshot(request, mode, false)
-		if err != nil {
-			return err
-		}
-		if current.VersionID != versionID {
+		current, currentError := handler.snapshot(request, mode, false)
+		if currentError != nil || current.VersionID != versionID {
 			stored, err := handler.store.StoredVersion(handler.session.User.ID, route.diffID, versionID, time.Now())
 			if errors.Is(err, reviewstore.ErrNotFound) {
+				if currentError != nil {
+					return currentError
+				}
 				return diffsource.Error(409, "Diff changed. Refresh to load the latest version.")
 			}
 			if err != nil {
@@ -658,12 +712,54 @@ func (handler *Handler) importComments(response http.ResponseWriter, request *ht
 		if !comment.Valid() {
 			return diffsource.Error(400, "Invalid comment import")
 		}
+		if handler.strictContext {
+			if comment.DiffID != "" && comment.DiffID != handler.session.DiffIDs[comment.Scope] {
+				return diffsource.Error(404, "Comment diff not found")
+			}
+			if err := handler.validateReference(request, comment.DiffID, comment.VersionID); err != nil {
+				return err
+			}
+			if comment.Origin != nil {
+				if err := handler.validateReference(request, comment.Origin.DiffID, comment.Origin.VersionID); err != nil {
+					return err
+				}
+			}
+		}
 	}
 	comments, err := handler.store.ImportComments(handler.session.ContextID, *body.Comments)
 	if err != nil {
 		return err
 	}
 	return writeJSON(response, 200, map[string]any{"comments": comments})
+}
+
+func (handler *Handler) validateReference(request *http.Request, diffID, versionID string) error {
+	if diffID == "" && versionID == "" {
+		return nil
+	}
+	if !handler.ownsDiff(diffID) {
+		return diffsource.Error(404, "Comment diff not found")
+	}
+	if versionID == "" {
+		return nil
+	}
+	_, err := handler.store.StoredVersion(handler.session.User.ID, diffID, versionID, time.Now())
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, reviewstore.ErrNotFound) {
+		return err
+	}
+	for mode, id := range handler.session.DiffIDs {
+		if id != diffID {
+			continue
+		}
+		current, err := handler.snapshot(request, mode, false)
+		if err == nil && current.VersionID == versionID {
+			return handler.pinSnapshot(request, current)
+		}
+	}
+	return diffsource.Error(404, "Comment version not found")
 }
 
 func (handler *Handler) exportComments(response http.ResponseWriter, request *http.Request) error {
@@ -854,6 +950,9 @@ func (handler *Handler) problem(response http.ResponseWriter, err error) {
 	var requestError *diffsource.RequestError
 	if errors.As(err, &requestError) {
 		status = requestError.Status
+		if status == http.StatusServiceUnavailable && strings.HasPrefix(requestError.Detail, "source_unavailable:") {
+			body["code"] = "source_unavailable"
+		}
 	}
 	var capabilityError *session.CapabilityError
 	if errors.As(err, &capabilityError) {

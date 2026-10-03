@@ -244,10 +244,317 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v2/contexts": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["listContexts"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v2/contexts/{contextId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+      };
+      cookie?: never;
+    };
+    get: operations["getContext"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v2/metrics": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["getServerMetricsV2"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v2/contexts/{contextId}/session": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+      };
+      cookie?: never;
+    };
+    get: operations["getSessionV2"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v2/contexts/{contextId}/diffs/current": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+      };
+      cookie?: never;
+    };
+    get: operations["getCurrentDiffV2"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v2/contexts/{contextId}/diffs/{diffId}/versions/{versionId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+      };
+      cookie?: never;
+    };
+    get: operations["getDiffVersionV2"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v2/contexts/{contextId}/diffs/{diffId}/files/{fileId}/patch": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+      };
+      cookie?: never;
+    };
+    get: operations["getFilePatchV2"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v2/contexts/{contextId}/diffs/{diffId}/files/{fileId}/contents": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+      };
+      cookie?: never;
+    };
+    get: operations["getFileContentsV2"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v2/contexts/{contextId}/comments": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+      };
+      cookie?: never;
+    };
+    get: operations["listCommentsV2"];
+    put?: never;
+    post: operations["createCommentV2"];
+    delete: operations["deleteCommentsV2"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v2/contexts/{contextId}/comments/import": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["importCommentsV2"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v2/contexts/{contextId}/comments/export": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+      };
+      cookie?: never;
+    };
+    get: operations["exportCommentsV2"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v2/contexts/{contextId}/comments/{commentId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete: operations["deleteCommentV2"];
+    options?: never;
+    head?: never;
+    patch: operations["updateCommentV2"];
+    trace?: never;
+  };
+  "/api/v2/contexts/{contextId}/review/comments": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+      };
+      cookie?: never;
+    };
+    get: operations["listAgentReviewCommentsV2"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v2/contexts/{contextId}/review/comments/{commentId}/resolve": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["resolveAgentReviewCommentV2"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v2/contexts/{contextId}/review-marks": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+      };
+      cookie?: never;
+    };
+    get: operations["listReviewMarksV2"];
+    put?: never;
+    post?: never;
+    delete: operations["clearReviewMarksV2"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v2/contexts/{contextId}/review-marks/{fileId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put: operations["putReviewMarkV2"];
+    post?: never;
+    delete: operations["deleteReviewMarkV2"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    ContextPage: {
+      contexts: components["schemas"]["Context"][];
+      nextCursor: string | null;
+    };
+    Context: {
+      id: string;
+      /** @enum {string} */
+      kind: "worktree" | "capture";
+      name: string;
+      root: string | null;
+      locationId: string | null;
+      repositoryId: string | null;
+      /** Format: int64 */
+      createdAt: number;
+      /** Format: int64 */
+      lastSubmittedAt: number;
+      /** Format: int64 */
+      expiresAt: number | null;
+      submittedFrom: string | null;
+      /** @enum {string} */
+      availability: "unchecked" | "available" | "unavailable";
+      capabilities: components["schemas"]["Session"]["capabilities"];
+    };
     ServerMetrics: {
       rssBytes: number;
       cpuUsage: number;
@@ -436,6 +743,7 @@ export interface components {
     };
   };
   parameters: {
+    ContextId: string;
     Scope: components["schemas"]["DiffMode"];
     DiffId: string;
     VersionId: string;
@@ -928,6 +1236,552 @@ export interface operations {
       };
       header?: never;
       path: {
+        fileId: components["parameters"]["FileId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Review mark deleted. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
+  listContexts: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Registered worktrees and retained captures, without scanning Git. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ContextPage"];
+        };
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
+  getContext: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Stable review target metadata and capabilities. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Context"];
+        };
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
+  getServerMetricsV2: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description CPU and resident memory used by the ServeDiff server process. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ServerMetrics"];
+        };
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
+  getSessionV2: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Active diff source and capabilities. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Session"];
+        };
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
+  getCurrentDiffV2: {
+    parameters: {
+      query: {
+        scope: components["parameters"]["Scope"];
+      };
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Current diff snapshot. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RepositoryDiff"];
+        };
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
+  getDiffVersionV2: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+        diffId: components["parameters"]["DiffId"];
+        versionId: components["parameters"]["VersionIdPath"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Retained immutable diff version. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RepositoryDiff"];
+        };
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
+  getFilePatchV2: {
+    parameters: {
+      query: {
+        versionId: components["parameters"]["VersionId"];
+        scope: components["parameters"]["Scope"];
+        fileVersion: components["parameters"]["FileVersion"];
+      };
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+        diffId: components["parameters"]["DiffId"];
+        fileId: components["parameters"]["FileId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description File patch. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["FilePatch"];
+        };
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
+  getFileContentsV2: {
+    parameters: {
+      query: {
+        versionId: components["parameters"]["VersionId"];
+        scope: components["parameters"]["Scope"];
+        fileVersion: components["parameters"]["FileVersion"];
+      };
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+        diffId: components["parameters"]["DiffId"];
+        fileId: components["parameters"]["FileId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Complete before and after contents. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["FileContents"];
+        };
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
+  listCommentsV2: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description All comments for the active source. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            comments: components["schemas"]["ReviewComment"][];
+          };
+        };
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
+  createCommentV2: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateComment"];
+      };
+    };
+    responses: {
+      /** @description Created comment. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ReviewComment"];
+        };
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
+  deleteCommentsV2: {
+    parameters: {
+      query: {
+        status: "all" | "open" | "resolved" | "stale";
+      };
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Remaining comments after bulk deletion. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            comments: components["schemas"]["ReviewComment"][];
+            deleted: number;
+          };
+        };
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
+  importCommentsV2: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          comments: components["schemas"]["ReviewComment"][];
+        };
+      };
+    };
+    responses: {
+      /** @description Idempotently imported comments. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            comments: components["schemas"]["ReviewComment"][];
+          };
+        };
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
+  exportCommentsV2: {
+    parameters: {
+      query?: {
+        includeResolved?: boolean;
+        commentId?: string;
+        revision?: string;
+        scope?: components["schemas"]["DiffMode"];
+      };
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Canonical agent-ready export. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/xml": string;
+        };
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
+  deleteCommentV2: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+        commentId: components["parameters"]["CommentId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Comment deleted. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
+  updateCommentV2: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+        commentId: components["parameters"]["CommentId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateComment"];
+      };
+    };
+    responses: {
+      /** @description Updated comment. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ReviewComment"];
+        };
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
+  listAgentReviewCommentsV2: {
+    parameters: {
+      query?: {
+        includeResolved?: boolean;
+      };
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Agent-ready comments with current applicability. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            comments: components["schemas"]["AgentReviewComment"][];
+          };
+        };
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
+  resolveAgentReviewCommentV2: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+        commentId: components["parameters"]["CommentId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Idempotently resolved comment. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ResolveReviewComment"];
+        };
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
+  listReviewMarksV2: {
+    parameters: {
+      query: {
+        scope: components["parameters"]["Scope"];
+      };
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Reviewed file versions. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            marks: components["schemas"]["ReviewMark"][];
+          };
+        };
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
+  clearReviewMarksV2: {
+    parameters: {
+      query: {
+        scope: components["parameters"]["Scope"];
+      };
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Scope review marks cleared. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
+  putReviewMarkV2: {
+    parameters: {
+      query: {
+        scope: components["parameters"]["Scope"];
+      };
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+        fileId: components["parameters"]["FileId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          fileVersion: string;
+          versionId: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Stored review mark. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ReviewMark"];
+        };
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
+  deleteReviewMarkV2: {
+    parameters: {
+      query: {
+        scope: components["parameters"]["Scope"];
+      };
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
         fileId: components["parameters"]["FileId"];
       };
       cookie?: never;

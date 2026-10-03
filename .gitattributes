@@ -1,1 +1,5 @@
+*.go text eol=lf
+*.diff text eol=lf
+.husky/* text eol=lf
+.mise/tasks/** text eol=lf
 internal/webui/dist/** linguist-generated=true -whitespace

@@ -7,6 +7,12 @@ Releases. It checks out the latest `main` when the run starts and marks the
 release as GitHub's latest stable release. Dispatches from other branches are
 skipped.
 
+Full test suites run locally through the pre-push hook. Release verification
+runs static checks, rebuilds generated files, rejects drift, and smoke-tests the
+distribution before publishing, using the same `mise run check:ci` task as PR CI.
+Release steps run through `release:*` mise tasks and pnpm scripts; GoReleaser
+is installed only by `mise run release:publish`.
+
 Install the latest stable release or a specific version:
 
 ```sh
@@ -31,6 +37,13 @@ Each release contains checksums plus Linux and macOS archives for amd64 and
 arm64. Windows archives are also published. Archives include the native binary,
 README, and license. The embedded web application needs no installed Node.js
 runtime.
+
+For daemon upgrades, stop the current service before replacing the executable,
+then start it with the new binary. Stop older foreground servers separately:
+they do not honor daemon/database ownership locks. The schema-2 migration
+preserves existing review IDs and data; unsupported older/newer schemas fail
+without modification. Persistent contexts survive restart; in-memory state does
+not. Listener settings are not saved across a stopped service.
 
 The tap branch is deterministic per version, such as `servediff-v0.1.0`.
 Rerunning a release whose tag still points to current `main` reuses the existing
@@ -74,5 +87,5 @@ complete binary. CI rebuilds these assets and rejects drift. Frontend changes
 must include the regenerated assets:
 
 ```sh
-task web:stage
+mise run web:stage
 ```

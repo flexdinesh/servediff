@@ -2,93 +2,100 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/flexdinesh/servediff/internal/contextservice"
+	"github.com/flexdinesh/servediff/internal/daemon"
 	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/review"
 )
 
 type loadedInput struct {
-	source    diffsource.Source
-	raw       string
 	directory string
 	mode      string
 	snapshot  review.RepositoryDiff
 	processed time.Duration
 	captureID string
+	contextID string
+	mcpURL    string
+	submitted bool
 }
 
-func loadInput(ctx context.Context, values options, stdin *os.File) (loadedInput, error) {
-	started := time.Now()
-	absolute, err := filepath.Abs(".")
-	if err != nil {
-		return loadedInput{}, err
+func acquireInput(values options, stdin *os.File) (daemon.InitialInput, error) {
+	if values.capture != "" {
+		return daemon.InitialInput{Kind: "reopen", CaptureID: values.capture}, nil
 	}
-	var source diffsource.Source
-	var rawPatch string
+	cwd, err := filepath.Abs(".")
+	if err != nil {
+		return daemon.InitialInput{}, err
+	}
+	var input io.Reader
 	if values.fixture != "" {
-		raw, readError := os.ReadFile(values.fixture)
-		if readError != nil {
-			return loadedInput{}, readError
+		file, err := os.Open(values.fixture)
+		if err != nil {
+			return daemon.InitialInput{}, err
 		}
-		rawPatch = string(raw)
-		source, err = diffsource.OpenPatch(rawPatch)
+		defer file.Close()
+		input = file
 	} else {
-		piped, statError := redirected(stdin)
-		if statError != nil {
-			return loadedInput{}, statError
+		if stdin == nil {
+			return daemon.InitialInput{}, errors.New("stdin unavailable")
+		}
+		piped, err := redirected(stdin)
+		if err != nil {
+			return daemon.InitialInput{}, err
 		}
 		if values.directory == "-" || piped {
-			raw, readError := io.ReadAll(io.LimitReader(stdin, diffsource.MaxInputBytes+1))
-			if readError != nil {
-				return loadedInput{}, readError
-			}
-			if len(raw) > diffsource.MaxInputBytes {
-				return loadedInput{}, errors.New("piped diff exceeds the 16 MiB input limit")
-			}
-			rawPatch = string(raw)
-			source, err = diffsource.OpenPatch(rawPatch)
-		} else {
-			if !values.repositorySet {
-				return loadedInput{}, errors.New("provide a repository path, a fixture, or pipe a Git diff")
-			}
-			source, err = diffsource.OpenRepository(ctx, values.directory)
+			input = stdin
 		}
 	}
-	if err != nil {
-		return loadedInput{}, err
+	if input != nil {
+		raw, err := io.ReadAll(io.LimitReader(input, diffsource.MaxInputBytes+1))
+		if err != nil {
+			return daemon.InitialInput{}, err
+		}
+		if len(raw) > diffsource.MaxInputBytes {
+			return daemon.InitialInput{}, errors.New("piped diff exceeds the 16 MiB input limit")
+		}
+		return daemon.InitialInput{Kind: "capture", Raw: raw, SubmittedFrom: cwd}, nil
 	}
-	mode := "pipe"
-	if source.Kind() == "local" {
-		mode = "git"
-		absolute = source.Root()
+	if !values.repositorySet {
+		return daemon.InitialInput{}, errors.New("provide a repository path, a fixture, or pipe a Git diff")
 	}
-	snapshot, err := source.Snapshot(ctx, review.DiffAll)
-	if err != nil {
-		return loadedInput{}, err
-	}
-	return loadedInput{source: source, raw: rawPatch, directory: absolute, mode: mode, snapshot: snapshot, processed: time.Since(started)}, nil
+	path, err := filepath.Abs(values.directory)
+	return daemon.InitialInput{Kind: "worktree", Path: path}, err
 }
 
-func loadCapturedInput(ctx context.Context, raw string) (loadedInput, error) {
-	started := time.Now()
-	directory, err := filepath.Abs(".")
-	if err != nil {
-		return loadedInput{}, err
+func newSubmissionID() string { return rand.Text() }
+
+func submitInput(ctx context.Context, client *daemon.Connection, id string, input daemon.InitialInput) (contextservice.Submission, error) {
+	switch input.Kind {
+	case "worktree":
+		return client.Register(ctx, id, input.Path)
+	case "capture":
+		return client.Capture(ctx, id, input.Raw, input.SubmittedFrom)
+	case "reopen":
+		return client.OpenCapture(ctx, input.CaptureID)
+	default:
+		return contextservice.Submission{}, errors.New("unknown diff input")
 	}
-	source, err := diffsource.OpenPatch(raw)
-	if err != nil {
-		return loadedInput{}, err
+}
+
+func submissionInput(value contextservice.Submission, elapsed time.Duration) loadedInput {
+	input := loadedInput{snapshot: value.Snapshot, processed: elapsed, mode: "git"}
+	if value.Context.Root != nil {
+		input.directory = *value.Context.Root
 	}
-	snapshot, err := source.Snapshot(ctx, review.DiffAll)
-	if err != nil {
-		return loadedInput{}, err
+	if value.Context.Kind == "capture" {
+		input.mode = "pipe"
+		input.captureID = value.Context.ID
 	}
-	return loadedInput{source: source, raw: raw, directory: directory, mode: "pipe", snapshot: snapshot, processed: time.Since(started)}, nil
+	return input
 }
 
 func redirected(stdin *os.File) (bool, error) {

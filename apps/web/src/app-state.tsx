@@ -10,9 +10,8 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
-import { AppearanceProvider } from "./appearance-context.tsx";
 import { capabilityEnabled, useSession } from "./session-context.tsx";
-import { SidebarProvider, useSidebarState } from "./sidebar-context.tsx";
+import { useSidebarState } from "./sidebar-context.tsx";
 import { useDiff } from "./use-diff.ts";
 import { useFileNavigation } from "./use-file-navigation.ts";
 import { useReview } from "./use-review.ts";
@@ -50,17 +49,23 @@ const CollapseContext = createContext<{
 } | null>(null);
 
 function WorkspaceProvider({ children }: { children: ReactNode }) {
-  const { capabilities } = useSession();
+  const { id: contextId, capabilities } = useSession();
   const refreshEnabled = capabilityEnabled(capabilities.diff.refresh);
   const commentsEnabled = capabilityEnabled(capabilities.review.comments);
   const scopes = capabilities.diff.scopes.values;
   const [mode, setMode] = useState<DiffMode>("all");
   const [draft, setDraft] = useState<ReviewComment | null>(null);
   const [collapsed, setCollapsed] = useState(new Set<string>());
-  const diff = useDiff(mode, draft !== null, refreshEnabled);
+  const diff = useDiff(contextId, mode, draft !== null, refreshEnabled);
   const repository = diff.repository;
-  const review = useReview(repository, draft, setDraft, commentsEnabled);
-  const reviewed = useReviewedFiles(repository, mode, setCollapsed);
+  const review = useReview(
+    contextId,
+    repository,
+    draft,
+    setDraft,
+    commentsEnabled,
+  );
+  const reviewed = useReviewedFiles(contextId, repository, mode, setCollapsed);
   const { show: showSidebar, closeMobile } = useSidebarState();
   const changeMode = useCallback(
     (value: DiffMode) => {
@@ -108,15 +113,10 @@ function WorkspaceProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// Providers remain mounted across scopes, snapshots, and drawer/layout changes.
+// Transient workspace ownership ends when the selected context changes.
 export function AppProvider({ children }: { children: ReactNode }) {
-  return (
-    <SidebarProvider>
-      <AppearanceProvider>
-        <WorkspaceProvider>{children}</WorkspaceProvider>
-      </AppearanceProvider>
-    </SidebarProvider>
-  );
+  const { id } = useSession();
+  return <WorkspaceProvider key={id}>{children}</WorkspaceProvider>;
 }
 
 export function useDiffSource() {

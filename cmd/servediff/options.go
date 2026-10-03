@@ -13,6 +13,7 @@ var errHelp = errors.New("help requested")
 
 type options struct {
 	host          string
+	hostSet       bool
 	port          int
 	portSet       bool
 	directory     string
@@ -20,12 +21,20 @@ type options struct {
 	fixture       string
 	capture       string
 	state         string
+	stateSet      bool
 	webDir        string
+	webDirSet     bool
+	runtimeDir    string
+	json          bool
 	noBrowser     bool
 	version       bool
 }
 
 func parseOptions(arguments []string, stderr io.Writer) (options, error) {
+	return parseOptionsMode(arguments, stderr, false)
+}
+
+func parseOptionsMode(arguments []string, stderr io.Writer, internal bool) (options, error) {
 	flags := flag.NewFlagSet("servediff", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	values := options{host: "127.0.0.1", directory: "."}
@@ -36,10 +45,16 @@ func parseOptions(arguments []string, stderr io.Writer) (options, error) {
 	flags.StringVar(&values.capture, "capture", "", "reopen a retained capture by ID")
 	flags.StringVar(&values.state, "state", "", "state database path; memory disables persistence")
 	flags.StringVar(&values.webDir, "web-dir", "", "serve web assets from a directory")
+	if internal {
+		flags.StringVar(&values.runtimeDir, "runtime-dir", "", "internal daemon runtime directory")
+	}
+	flags.BoolVar(&values.json, "json", false, "print service status as JSON")
 	flags.BoolVar(&values.noBrowser, "no-browser", false, "do not open a browser")
 	flags.BoolVar(&values.version, "version", false, "print version and exit")
 	flags.Usage = func() {
 		fmt.Fprintln(stderr, "  Usage: servediff [directory | - | --capture ID] [options]")
+		fmt.Fprintln(stderr, "         servediff service {start|stop|restart|status} [options]")
+		fmt.Fprintln(stderr, "         servediff serve [directory | - | --fixture FILE] [options]")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(normalizeArguments(arguments)); err != nil {
@@ -48,7 +63,11 @@ func parseOptions(arguments []string, stderr io.Writer) (options, error) {
 		}
 		return options{}, err
 	}
-	if values.port < 0 || values.port > 65535 {
+	minimumPort := 0
+	if internal {
+		minimumPort = -1
+	}
+	if values.port < minimumPort || values.port > 65535 {
 		return options{}, errors.New("port must be between 0 and 65535")
 	}
 	host := net.ParseIP(values.host)
@@ -67,6 +86,15 @@ func parseOptions(arguments []string, stderr io.Writer) (options, error) {
 		return options{}, errors.New("capture cannot be combined with a directory or fixture")
 	}
 	flags.Visit(func(value *flag.Flag) {
+		if value.Name == "host" {
+			values.hostSet = true
+		}
+		if value.Name == "state" {
+			values.stateSet = true
+		}
+		if value.Name == "web-dir" {
+			values.webDirSet = true
+		}
 		if value.Name == "port" || value.Name == "p" {
 			values.portSet = true
 		}
@@ -77,12 +105,13 @@ func parseOptions(arguments []string, stderr io.Writer) (options, error) {
 func normalizeArguments(arguments []string) []string {
 	valueOptions := map[string]bool{
 		"-p": true, "--port": true, "--host": true, "--fixture": true,
-		"--state": true, "--web-dir": true, "--capture": true,
+		"--state": true, "--web-dir": true, "--capture": true, "--runtime-dir": true,
 	}
 	options, positionals := make([]string, 0, len(arguments)), make([]string, 0, 1)
 	for index := 0; index < len(arguments); index++ {
 		argument := arguments[index]
 		if argument == "--" {
+			options = append(options, "--")
 			positionals = append(positionals, arguments[index+1:]...)
 			break
 		}

@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+#MISE description="Download artifacts for an existing release"
+
+set -euo pipefail
+: "${RELEASE_TAG:?RELEASE_TAG is required}"
+rm -rf dist
+mkdir -p dist
+gh release download "$RELEASE_TAG" --dir dist

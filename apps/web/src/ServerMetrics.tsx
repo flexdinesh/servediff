@@ -13,7 +13,7 @@ export function ServerMetrics() {
       controller.abort();
       controller = new AbortController();
       try {
-        const { data } = await api.GET("/api/v1/metrics", {
+        const { data } = await api.GET("/api/v2/metrics", {
           signal: controller.signal,
         });
         if (!disposed && data) setMetrics(data);

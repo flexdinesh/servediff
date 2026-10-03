@@ -2,30 +2,46 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"os/signal"
-	osuser "os/user"
 	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/flexdinesh/servediff/internal/browser"
-	"github.com/flexdinesh/servediff/internal/diffsource"
-	"github.com/flexdinesh/servediff/internal/httpapi"
-	"github.com/flexdinesh/servediff/internal/mcpapi"
-	"github.com/flexdinesh/servediff/internal/reviewservice"
+	"github.com/flexdinesh/servediff/internal/contextservice"
+	"github.com/flexdinesh/servediff/internal/controlapi"
+	"github.com/flexdinesh/servediff/internal/daemon"
 	"github.com/flexdinesh/servediff/internal/reviewstore"
-	"github.com/flexdinesh/servediff/internal/session"
 	buildversion "github.com/flexdinesh/servediff/internal/version"
-	"github.com/flexdinesh/servediff/internal/webui"
 )
 
+var errServiceStopped = errors.New("service is stopped")
+
 func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr io.Writer) error {
-	values, err := parseOptions(arguments, stderr)
+	command := "submit"
+	if len(arguments) > 0 {
+		switch arguments[0] {
+		case "service", "serve", "__daemon":
+			command, arguments = arguments[0], arguments[1:]
+		}
+	}
+	action := ""
+	if command == "service" {
+		if len(arguments) == 0 || arguments[0] == "--help" || arguments[0] == "-h" {
+			fmt.Fprintln(stdout, "  Usage: servediff service {start|stop|restart|status} [options]")
+			return nil
+		}
+		action, arguments = arguments[0], arguments[1:]
+		if action != "start" && action != "stop" && action != "restart" && action != "status" {
+			return fmt.Errorf("unknown service command %q", action)
+		}
+	}
+	values, err := parseOptionsMode(arguments, stderr, command == "__daemon")
 	if err != nil {
 		if errors.Is(err, errHelp) {
 			return nil
@@ -36,149 +52,184 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 		fmt.Fprintln(stdout, buildversion.String())
 		return nil
 	}
-	statePath := values.state
-	if statePath == "" {
-		statePath, err = reviewstore.DefaultPath()
+	if command != "__daemon" && values.runtimeDir != "" {
+		return errors.New("runtime-dir is an internal option; use SERVEDIFF_RUNTIME_DIR for isolation")
+	}
+	if values.json && (command != "service" || action != "status") {
+		return errors.New("json is only supported by service status")
+	}
+	if command == "service" && (values.repositorySet || values.fixture != "" || values.capture != "") {
+		return errors.New("service commands do not accept diff input")
+	}
+	if command == "service" && (action == "stop" || action == "status") && (values.hostSet || values.portSet || values.stateSet || values.webDirSet) {
+		return errors.New("stop and status do not accept server settings")
+	}
+	settings, explicit, err := serverSettings(values)
+	if err != nil {
+		return err
+	}
+	if command == "__daemon" {
+		if values.runtimeDir == "" {
+			return errors.New("daemon runtime directory is required")
+		}
+		return daemon.Run(ctx, settings, values.runtimeDir, nil, nil)
+	}
+	if command == "serve" {
+		input, err := acquireInput(values, stdin)
 		if err != nil {
 			return err
 		}
+		if os.Getenv("SERVEDIFF_EXIT_ON_STDIN_CLOSE") == "1" {
+			child, cancel := context.WithCancel(ctx)
+			defer cancel()
+			ctx = child
+			go func() { _, _ = io.Copy(io.Discard, stdin); cancel() }()
+		}
+		started := time.Now()
+		return daemon.Run(ctx, settings, "", &input, func(status controlapi.Status, submitted *contextservice.Submission) {
+			if submitted == nil {
+				return
+			}
+			writeStartup(stdout, submissionInput(*submitted, time.Since(started)), status.BrowserURL)
+			openBrowser(values, status.BrowserURL, stderr)
+		})
 	}
-	store, err := reviewstore.Open(mapStatePath(statePath))
+	client, err := daemon.NewClient()
 	if err != nil {
 		return err
 	}
-	defer store.Close()
-	if values.state == "" {
-		if err := reviewstore.RemoveLegacyReviews(statePath); err != nil {
+	if command == "service" {
+		var status controlapi.Status
+		switch action {
+		case "stop":
+			if err := client.Stop(ctx); err != nil {
+				return err
+			}
+			fmt.Fprintln(stdout, "  servediff service stopped")
+			return nil
+		case "start":
+			status, err = client.Start(ctx, settings, explicit)
+		case "restart":
+			status, err = client.Restart(ctx, settings, explicit)
+		case "status":
+			status, err = client.Status(ctx)
+		}
+		if err != nil {
+			if values.json {
+				_ = json.NewEncoder(stdout).Encode(status)
+			}
 			return err
 		}
+		writeServiceStatus(stdout, status, values.json)
+		if status.State != "running" {
+			return errServiceStopped
+		}
+		return nil
 	}
-	processUser, err := osuser.Current()
-	if err != nil {
-		return fmt.Errorf("resolve process user: %w", err)
-	}
-	currentUser, err := store.User(processUser.Uid, processUser.Username)
+	input, err := acquireInput(values, stdin)
 	if err != nil {
 		return err
 	}
-	if err := store.PruneExpired(time.Now()); err != nil {
+	started := time.Now()
+	operationCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	connection, err := client.EnsureConnection(operationCtx, settings, explicit)
+	if err != nil {
 		return err
 	}
-	var input loadedInput
-	var binding reviewstore.Binding
-	if values.capture != "" {
-		var raw string
-		raw, binding, err = store.ReopenCapture(currentUser.ID, values.capture, time.Now())
+	requestID := newSubmissionID()
+	var submitted contextservice.Submission
+	var firstFailure error
+	uncertain := false
+	for attempt := 0; attempt < 2; attempt++ {
+		submitted, err = submitInput(operationCtx, connection, requestID, input)
 		if err == nil {
-			input, err = loadCapturedInput(ctx, raw)
+			break
 		}
-	} else {
-		input, err = loadInput(ctx, values, stdin)
-		if err == nil {
-			if input.source.Kind() == "local" {
-				var commonDir, worktreeDir string
-				commonDir, worktreeDir, err = diffsource.RepositoryIdentity(ctx, input.source.Root())
-				if err == nil {
-					binding, err = store.RegisterGit(currentUser.ID, input.source.Root(), commonDir, worktreeDir)
-				}
-			} else {
-				binding, err = store.Capture(currentUser.ID, input.raw, input.snapshot)
-			}
+		retry, ambiguous := retryableSubmission(err)
+		uncertain = uncertain || ambiguous
+		if !retry || operationCtx.Err() != nil || attempt == 1 {
+			return submissionFailure(input, connection.Status(), requestID, uncertain, errors.Join(firstFailure, err))
 		}
-	}
-	if err != nil {
-		return err
-	}
-	if input.source.Kind() == "stdin" && statePath != "memory" {
-		input.captureID = binding.ContextID
-	}
-	active := session.Resolve(input.source, session.Policies{})
-	active.User = session.User{ID: currentUser.ID, Name: currentUser.Name}
-	active.ContextID = binding.ContextID
-	active.LocationID = binding.LocationID
-	active.RepositoryID = binding.RepositoryID
-	active.DiffIDs = binding.DiffIDs
-	active.VersionID = binding.VersionID
-	if os.Getenv("SERVEDIFF_EXIT_ON_STDIN_CLOSE") == "1" {
-		childContext, cancel := context.WithCancel(ctx)
-		defer cancel()
-		ctx = childContext
-		go func() {
-			_, _ = io.Copy(io.Discard, stdin)
-			cancel()
-		}()
-	}
-	assets := webui.Assets()
-	if values.webDir != "" {
-		absolute, pathError := filepath.Abs(values.webDir)
-		if pathError != nil {
-			return pathError
+		firstFailure = err
+		recovered, recoveryError := client.RecoverConnection(operationCtx, connection)
+		if recoveryError != nil {
+			cause := fmt.Errorf("%w; recovery failed: %w", err, recoveryError)
+			return submissionFailure(input, connection.Status(), requestID, uncertain, cause)
 		}
-		assets = os.DirFS(absolute)
+		connection = recovered
 	}
-	reviews := reviewservice.New(active, store)
-	rest := httpapi.New(active, store, reviews, assets)
-	mcpHandler := mcpapi.New(reviews, active.Capabilities.Review.Comments.Enabled(), buildversion.String())
-	mux := http.NewServeMux()
-	mux.Handle("/mcp", mcpHandler)
-	mux.Handle("/", rest)
-	handler := identifyProcess(mux)
-	bound, err := bind(values, stdin, stdout)
-	if err != nil {
-		if errors.Is(err, errStartupCancelled) {
-			return nil
-		}
-		return err
-	}
-	defer bound.listener.Close()
-	writeStartup(stdout, input, bound.url)
-	if !values.noBrowser {
-		if browserError := browser.Open(bound.browserURL); browserError != nil {
-			fmt.Fprintf(stderr, "  servediff: %v\n", browserError)
-		}
-	}
-	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}
-	serverErrors := make(chan error, 1)
-	go func() { serverErrors <- server.Serve(bound.listener) }()
-	go func() {
-		ticker := time.NewTicker(24 * time.Hour)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if err := store.PruneExpired(time.Now()); err != nil {
-					fmt.Fprintf(stderr, "  servediff: prune captures: %v\n", err)
-				}
-			}
-		}
-	}()
-	select {
-	case <-ctx.Done():
-		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		return server.Shutdown(shutdownContext)
-	case serverError := <-serverErrors:
-		if errors.Is(serverError, http.ErrServerClosed) {
-			return nil
-		}
-		return serverError
-	}
+	status := connection.Status()
+	url := status.BrowserURL + "/contexts/" + submitted.Context.ID
+	writeSubmission(stdout, submitted, time.Since(started), url, status.BrowserURL+"/mcp/contexts/"+submitted.Context.ID)
+	openBrowser(values, url, stderr)
+	return nil
 }
 
-func mapStatePath(value string) string {
-	if value == "memory" {
-		return ""
+// Only transport failures and explicit pre-submission lifecycle rejections can
+// be replayed. A transport failure leaves the database commit outcome unknown.
+func retryableSubmission(err error) (bool, bool) {
+	var problem *controlapi.Problem
+	if errors.As(err, &problem) {
+		return (problem.Status == 401 && problem.Code == "unauthorized") ||
+			(problem.Status == 503 && problem.Code == "service_draining"), false
 	}
-	return value
+	return true, true
+}
+
+func submissionFailure(input daemon.InitialInput, status controlapi.Status, id string, uncertain bool, cause error) error {
+	if !uncertain || input.Kind == "reopen" {
+		return cause
+	}
+	return fmt.Errorf("submission %s may have been saved in %q; inspect its contexts before resubmitting: %w", id, status.Settings.State, cause)
+}
+
+func serverSettings(values options) (daemon.Settings, daemon.Explicit, error) {
+	settings := daemon.DefaultSettings()
+	settings.Host, settings.Port = values.host, -1
+	if values.portSet {
+		settings.Port = values.port
+	}
+	settings.State = values.state
+	if settings.State == "" {
+		path, err := reviewstore.DefaultPath()
+		if err != nil {
+			return settings, daemon.Explicit{}, err
+		}
+		settings.State = path
+	}
+	if settings.State != "memory" {
+		path, err := filepath.Abs(settings.State)
+		if err != nil {
+			return settings, daemon.Explicit{}, err
+		}
+		settings.State = filepath.Clean(path)
+	}
+	if values.webDir != "" {
+		path, err := filepath.Abs(values.webDir)
+		if err != nil {
+			return settings, daemon.Explicit{}, err
+		}
+		settings.WebDir = filepath.Clean(path)
+	}
+	return settings, daemon.Explicit{Host: values.hostSet, Port: values.portSet, State: values.stateSet, WebDir: values.webDirSet}, nil
+}
+
+func openBrowser(values options, url string, stderr io.Writer) {
+	if !values.noBrowser {
+		if err := browser.Open(url); err != nil {
+			fmt.Fprintf(stderr, "  servediff: %v\n", err)
+		}
+	}
 }
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := run(ctx, os.Args[1:], os.Stdin, os.Stdout, os.Stderr); err != nil {
-		fmt.Fprintf(os.Stderr, "  servediff: %v\n", err)
+		if !errors.Is(err, errServiceStopped) {
+			fmt.Fprintf(os.Stderr, "  servediff: %v\n", err)
+		}
 		os.Exit(1)
 	}
 }

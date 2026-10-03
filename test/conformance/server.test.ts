@@ -47,6 +47,7 @@ test("Go distribution implements the API contract", async (t) => {
   const server = spawn(
     binary,
     [
+      "serve",
       "--fixture",
       fixture,
       "--state",
@@ -62,7 +63,16 @@ test("Go distribution implements the API contract", async (t) => {
   await waitForServer(url);
   const client = createApiClient({ baseUrl: url });
 
-  const comments = await client.GET("/api/v1/comments");
+  const catalog = await client.GET("/api/v2/contexts");
+  assert.equal(catalog.data?.contexts.length, 1);
+  const context = catalog.data?.contexts[0];
+  assert.ok(context);
+  assert.equal(context.kind, "capture");
+  const contextId = context.id;
+
+  const comments = await client.GET("/api/v2/contexts/{contextId}/comments", {
+    params: { path: { contextId } },
+  });
   assert.deepEqual(comments.data, { comments: [] });
 
   const session = await client.GET("/api/v1/session");
@@ -78,8 +88,8 @@ test("Go distribution implements the API contract", async (t) => {
     review: { comments: { state: "enabled" } },
   });
 
-  const diff = await client.GET("/api/v1/diffs/current", {
-    params: { query: { scope: apiValues.allScope } },
+  const diff = await client.GET("/api/v2/contexts/{contextId}/diffs/current", {
+    params: { path: { contextId }, query: { scope: apiValues.allScope } },
   });
   assert.ok(diff.data);
   assert.equal(diff.data.files.length, 12);
@@ -89,10 +99,10 @@ test("Go distribution implements the API contract", async (t) => {
   assert.ok(file);
 
   const preview = await client.GET(
-    "/api/v1/diffs/{diffId}/files/{fileId}/patch",
+    "/api/v2/contexts/{contextId}/diffs/{diffId}/files/{fileId}/patch",
     {
       params: {
-        path: { diffId: diff.data.id, fileId: file.id },
+        path: { contextId, diffId: diff.data.id, fileId: file.id },
         query: {
           scope: apiValues.allScope,
           versionId: diff.data.versionId,
@@ -103,7 +113,8 @@ test("Go distribution implements the API contract", async (t) => {
   );
   assert.match(preview.data?.patch ?? "", /export const value = 2/);
 
-  const created = await client.POST("/api/v1/comments", {
+  const created = await client.POST("/api/v2/contexts/{contextId}/comments", {
+    params: { path: { contextId } },
     body: {
       diffId: diff.data.id,
       versionId: diff.data.versionId,
@@ -119,4 +130,10 @@ test("Go distribution implements the API contract", async (t) => {
   assert.equal(created.data?.path, file.path);
   assert.equal(created.data?.code, "+ export const value = 2;");
   assert.equal(created.data?.body, "Keep the new value.");
+
+  const legacy = await client.GET("/api/v1/diffs/current", {
+    params: { query: { scope: apiValues.allScope } },
+  });
+  assert.equal(legacy.data?.id, diff.data.id);
+  assert.equal(legacy.data?.versionId, diff.data.versionId);
 });
