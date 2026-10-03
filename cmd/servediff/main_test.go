@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -14,9 +16,29 @@ import (
 
 	"github.com/flexdinesh/servediff/internal/contextservice"
 	"github.com/flexdinesh/servediff/internal/controlapi"
+	"github.com/flexdinesh/servediff/internal/daemon"
 	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/review"
 )
+
+func TestSubmissionFailurePreservesUnknownCommitAndCancellation(t *testing.T) {
+	transportError := errors.New("acknowledgement lost")
+	cause := fmt.Errorf("%w; recovery failed: %w", transportError, context.Canceled)
+	status := controlapi.Status{Settings: controlapi.Settings{State: "/review/custom.db"}}
+	for _, kind := range []string{"worktree", "capture", "reopen"} {
+		failure := submissionFailure(daemon.InitialInput{Kind: kind}, status, "retry-id", true, cause)
+		if !errors.Is(failure, transportError) || !errors.Is(failure, context.Canceled) {
+			t.Fatalf("%s lost failure causes: %v", kind, failure)
+		}
+		unknown := strings.Contains(failure.Error(), "may have been saved")
+		if unknown != (kind != "reopen") {
+			t.Fatalf("%s misreported commit outcome: %v", kind, failure)
+		}
+		if unknown && (!strings.Contains(failure.Error(), status.Settings.State) || !strings.Contains(failure.Error(), "retry-id")) {
+			t.Fatalf("missing recovery provenance: %v", failure)
+		}
+	}
+}
 
 func TestNormalizeArgumentsAllowsFlagsAfterPath(t *testing.T) {
 	actual := normalizeArguments([]string{".", "--port", "4000", "--no-browser"})

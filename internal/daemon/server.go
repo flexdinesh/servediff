@@ -136,7 +136,7 @@ func runServer(ctx context.Context, cancel context.CancelFunc, settings Settings
 			browserHost = "::1"
 		}
 	}
-	status := Status{State: "running", InstanceID: instanceID, PID: os.Getpid(), Version: buildversion.Number(), ProtocolVersion: controlapi.ProtocolVersion,
+	status := Status{State: "running", StateID: user.ID, InstanceID: instanceID, PID: os.Getpid(), Version: buildversion.Number(), ProtocolVersion: controlapi.ProtocolVersion,
 		URL:        "http://" + net.JoinHostPort(settings.Host, strconv.Itoa(settings.Port)),
 		BrowserURL: "http://" + net.JoinHostPort(browserHost, strconv.Itoa(settings.Port)), Settings: settings}
 	statusFunc := func() (Status, error) {
@@ -204,8 +204,12 @@ func runServer(ctx context.Context, cancel context.CancelFunc, settings Settings
 	defer stop()
 	for _, server := range servers {
 		if err := server.Shutdown(shutdownCtx); err != nil {
-			_ = server.Close()
-			result = errors.Join(result, err)
+			// Expiring the grace period requires forced close, not a failed stop.
+			closeError := server.Close()
+			if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+				result = errors.Join(result, err)
+			}
+			result = errors.Join(result, closeError)
 		}
 	}
 	<-pruneDone

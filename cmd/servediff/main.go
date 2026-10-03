@@ -131,37 +131,57 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 		return err
 	}
 	started := time.Now()
-	status, err := client.Ensure(ctx, settings, explicit)
+	operationCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	connection, err := client.EnsureConnection(operationCtx, settings, explicit)
 	if err != nil {
 		return err
 	}
 	requestID := newSubmissionID()
 	var submitted contextservice.Submission
+	var firstFailure error
+	uncertain := false
 	for attempt := 0; attempt < 2; attempt++ {
-		connection, connectError := client.Connection(ctx)
-		if connectError != nil {
-			err = connectError
-		} else {
-			submitted, err = submitInput(ctx, connection, requestID, input)
-		}
+		submitted, err = submitInput(operationCtx, connection, requestID, input)
 		if err == nil {
 			break
 		}
-		var requestError *controlapi.Problem
-		if errors.As(err, &requestError) || ctx.Err() != nil || attempt == 1 {
-			return err
+		retry, ambiguous := retryableSubmission(err)
+		uncertain = uncertain || ambiguous
+		if !retry || operationCtx.Err() != nil || attempt == 1 {
+			return submissionFailure(input, connection.Status(), requestID, uncertain, errors.Join(firstFailure, err))
 		}
-		// Retry against the accepted service's database and listener, including
-		// settings omitted by this invocation. Its deduplication record lives there.
-		status, err = client.Ensure(ctx, status.Settings, daemon.Explicit{Host: true, Port: true, State: true, WebDir: true})
-		if err != nil {
-			return err
+		firstFailure = err
+		recovered, recoveryError := client.RecoverConnection(operationCtx, connection)
+		if recoveryError != nil {
+			cause := fmt.Errorf("%w; recovery failed: %w", err, recoveryError)
+			return submissionFailure(input, connection.Status(), requestID, uncertain, cause)
 		}
+		connection = recovered
 	}
+	status := connection.Status()
 	url := status.BrowserURL + "/contexts/" + submitted.Context.ID
 	writeSubmission(stdout, submitted, time.Since(started), url, status.BrowserURL+"/mcp/contexts/"+submitted.Context.ID)
 	openBrowser(values, url, stderr)
 	return nil
+}
+
+// Only transport failures and explicit pre-submission lifecycle rejections can
+// be replayed. A transport failure leaves the database commit outcome unknown.
+func retryableSubmission(err error) (bool, bool) {
+	var problem *controlapi.Problem
+	if errors.As(err, &problem) {
+		return (problem.Status == 401 && problem.Code == "unauthorized") ||
+			(problem.Status == 503 && problem.Code == "service_draining"), false
+	}
+	return true, true
+}
+
+func submissionFailure(input daemon.InitialInput, status controlapi.Status, id string, uncertain bool, cause error) error {
+	if !uncertain || input.Kind == "reopen" {
+		return cause
+	}
+	return fmt.Errorf("submission %s may have been saved in %q; inspect its contexts before resubmitting: %w", id, status.Settings.State, cause)
 }
 
 func serverSettings(values options) (daemon.Settings, daemon.Explicit, error) {

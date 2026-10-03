@@ -3,7 +3,7 @@ package controlapi
 
 import "github.com/flexdinesh/servediff/internal/diffsource"
 
-const ProtocolVersion = 1
+const ProtocolVersion = 2
 const MaxPatchBytes = diffsource.MaxInputBytes
 
 const submissionHeader = "X-Servediff-Submission"
@@ -19,6 +19,7 @@ type Settings struct {
 type Status struct {
 	State           string   `json:"state"`
 	InstanceID      string   `json:"instanceId"`
+	StateID         string   `json:"stateId"`
 	PID             int      `json:"pid"`
 	Version         string   `json:"version"`
 	ProtocolVersion int      `json:"protocolVersion"`

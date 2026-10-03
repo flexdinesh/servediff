@@ -2,18 +2,22 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/flexdinesh/servediff/internal/contextservice"
 	"github.com/flexdinesh/servediff/internal/controlapi"
 	"github.com/flexdinesh/servediff/internal/processlock"
 )
@@ -58,7 +62,11 @@ func helperDaemon(args []string) error {
 	if settings.Port <= 0 {
 		settings.Port = listener.Addr().(*net.TCPAddr).Port
 	}
-	status := Status{State: "running", InstanceID: fmt.Sprint(os.Getpid()), PID: os.Getpid(), Version: "test", ProtocolVersion: controlapi.ProtocolVersion, Settings: settings, URL: "http://127.0.0.1:7981"}
+	stateID := "state:" + settings.State
+	if settings.State == "memory" {
+		stateID = fmt.Sprint(os.Getpid())
+	}
+	status := Status{State: "running", InstanceID: fmt.Sprint(os.Getpid()), StateID: stateID, PID: os.Getpid(), Version: "test", ProtocolVersion: controlapi.ProtocolVersion, Settings: settings, URL: "http://127.0.0.1:7981"}
 	d := Descriptor{Endpoint: "http://" + listener.Addr().String(), Token: strings.Repeat("x", 64), Status: status}
 	done := make(chan struct{})
 	server := &http.Server{Handler: controlapi.New(d.Token, nil, func() (Status, error) { return status, nil }, func() { close(done) })}
@@ -269,5 +277,179 @@ func TestLogsRemainBounded(t *testing.T) {
 		if info.Size() > logLimit {
 			t.Fatalf("unbounded log: %d", info.Size())
 		}
+	}
+}
+
+func publishTestEndpoint(t *testing.T, client *Client, status Status, afterStatus func(), captures *atomic.Int32) {
+	t.Helper()
+	token := strings.Repeat("t", 64)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer "+token {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		switch r.URL.Path {
+		case "/control/v1/status":
+			if afterStatus != nil {
+				afterStatus()
+			}
+			_ = json.NewEncoder(w).Encode(status)
+		case "/control/v1/captures":
+			if captures != nil {
+				captures.Add(1)
+			}
+			_ = json.NewEncoder(w).Encode(contextservice.Submission{Context: contextservice.Context{ID: status.StateID}})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(server.Close)
+	if err := PublishDescriptor(client.RuntimeDirectory, Descriptor{Endpoint: server.URL, Token: token, Status: status}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEnsureConnectionKeepsAuthenticatedEndpointDuringDescriptorSwap(t *testing.T) {
+	client := &Client{RuntimeDirectory: t.TempDir(), Executable: "must-not-run"}
+	settings := Settings{Host: "127.0.0.1", Port: 7981, State: "A"}
+	initial := Status{State: "running", InstanceID: "instance-A", StateID: "database-A", ProtocolVersion: controlapi.ProtocolVersion, Settings: settings, URL: "http://127.0.0.1:7981"}
+	replacement := initial
+	replacement.InstanceID, replacement.StateID, replacement.Settings.State = "instance-B", "database-B", "B"
+	var initialCaptures, replacementCaptures atomic.Int32
+	// Replace discovery while the original authenticated status is in flight.
+	publishTestEndpoint(t, client, initial, func() {
+		publishTestEndpoint(t, client, replacement, nil, &replacementCaptures)
+	}, &initialCaptures)
+	connection, err := client.EnsureConnection(t.Context(), settings, Explicit{State: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	submission, err := connection.Capture(t.Context(), "submission", []byte("patch"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if connection.Status().InstanceID != initial.InstanceID || submission.Context.ID != initial.StateID || initialCaptures.Load() != 1 || replacementCaptures.Load() != 0 {
+		t.Fatalf("submission redirected: status=%+v submission=%+v writes=%d/%d", connection.Status(), submission, initialCaptures.Load(), replacementCaptures.Load())
+	}
+}
+
+func TestRecoveryRejectsForeignStateAndSettings(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		change func(*Status)
+		want   error
+	}{
+		{"settings", func(status *Status) { status.Settings.State = "other.db" }, ErrSettingsChanged},
+		{"port", func(status *Status) { status.Settings.Port++ }, ErrSettingsChanged},
+		{"replaced same path", func(status *Status) { status.StateID = "new-database" }, ErrStateChanged},
+		{"memory restart", func(status *Status) { status.InstanceID = "new-instance" }, ErrMemoryRestarted},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			client := &Client{RuntimeDirectory: t.TempDir(), Executable: "must-not-run"}
+			initial := Status{State: "running", InstanceID: "initial", StateID: "database", ProtocolVersion: controlapi.ProtocolVersion, Settings: Settings{Host: "127.0.0.1", Port: 7981, State: "state.db"}}
+			if test.name == "memory restart" {
+				initial.Settings.State = "memory"
+			}
+			publishTestEndpoint(t, client, initial, nil, nil)
+			connection, err := client.EnsureConnection(t.Context(), initial.Settings, Explicit{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			replacement := initial
+			test.change(&replacement)
+			var captures atomic.Int32
+			publishTestEndpoint(t, client, replacement, nil, &captures)
+			if _, err := client.RecoverConnection(t.Context(), connection); !errors.Is(err, test.want) {
+				t.Fatalf("recovery = %v, want %v", err, test.want)
+			}
+			if captures.Load() != 0 {
+				t.Fatal("rejected replacement received payload")
+			}
+		})
+	}
+}
+
+func TestRecoveryRestoresAcceptedPersistentSettings(t *testing.T) {
+	client := testClient(t)
+	settings := DefaultSettings()
+	settings.State = filepath.Join(t.TempDir(), "custom.db")
+	connection, err := client.EnsureConnection(t.Context(), settings, Explicit{State: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Stop(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := client.RecoverConnection(t.Context(), connection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered.Status().Settings != connection.Status().Settings || recovered.Status().StateID != connection.Status().StateID || recovered.Status().InstanceID == connection.Status().InstanceID {
+		t.Fatalf("recovery changed accepted state: %+v => %+v", connection.Status(), recovered.Status())
+	}
+}
+
+func TestRecoveryNeverRecreatesStoppedMemoryStore(t *testing.T) {
+	client := testClient(t)
+	settings := DefaultSettings()
+	settings.State = "memory"
+	connection, err := client.EnsureConnection(t.Context(), settings, Explicit{State: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Stop(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.RecoverConnection(t.Context(), connection); !errors.Is(err, ErrMemoryRestarted) {
+		t.Fatalf("memory recovery = %v", err)
+	}
+	status, err := client.Status(t.Context())
+	if err != nil || status.State != "stopped" {
+		t.Fatalf("memory restarted: %+v %v", status, err)
+	}
+}
+
+func TestRecoveryWaitHonorsDeadlineAndCancellation(t *testing.T) {
+	for _, path := range []func(string) string{OwnershipPath, LifecyclePath} {
+		t.Run(filepath.Base(path("")), func(t *testing.T) {
+			client := &Client{RuntimeDirectory: t.TempDir(), Executable: "must-not-run"}
+			lock, err := processlock.Acquire(path(client.RuntimeDirectory))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer lock.Close()
+			ctx, cancel := context.WithTimeout(t.Context(), 150*time.Millisecond)
+			defer cancel()
+			previous := &Connection{status: Status{StateID: "database", Settings: Settings{State: "state.db"}}}
+			if _, err := client.RecoverConnection(ctx, previous); !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("waiting deadline = %v", err)
+			}
+			ctx, stop := context.WithCancel(t.Context())
+			stop()
+			if _, err := client.RecoverConnection(ctx, previous); !errors.Is(err, context.Canceled) {
+				t.Fatalf("waiting cancellation = %v", err)
+			}
+		})
+	}
+}
+
+func TestBoundConnectionRequiresDatabaseIdentity(t *testing.T) {
+	client := &Client{RuntimeDirectory: t.TempDir(), Executable: "must-not-run"}
+	status := Status{State: "running", InstanceID: "instance", ProtocolVersion: controlapi.ProtocolVersion, Settings: DefaultSettings()}
+	publishTestEndpoint(t, client, status, nil, nil)
+	if _, err := client.EnsureConnection(t.Context(), status.Settings, Explicit{}); !errors.Is(err, ErrIncompatible) {
+		t.Fatalf("missing state identity = %v", err)
+	}
+}
+
+func TestCancelledStartupDoesNotLaunchDaemon(t *testing.T) {
+	client := &Client{RuntimeDirectory: t.TempDir(), Executable: "must-not-run"}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := client.spawnConnection(ctx, DefaultSettings()); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled startup = %v", err)
+	}
+	if _, err := os.Stat(LogPath(client.RuntimeDirectory)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("cancelled startup created log: %v", err)
 	}
 }

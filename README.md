@@ -70,6 +70,10 @@ settings require `service restart`. Restart inherits the running settings unless
 overridden. Settings are not saved: starting a stopped service uses defaults
 unless flags are supplied. `--host` selects the web listener, not a remote daemon.
 
+If acknowledgement is lost, the CLI retries once against the same state and
+settings. It refuses to replay into a changed database or restarted memory
+store. When recovery fails, the error identifies where data may have been saved.
+
 Passing `--host 0.0.0.0` exposes every registered context through the
 unauthenticated web server on every network interface and accepts any HTTP host
 name. Use it only on a trusted network.

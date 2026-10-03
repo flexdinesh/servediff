@@ -37,6 +37,21 @@ Lifecycle and lifetime locks prevent competing starts. Database ownership also
 protects foreground processes using the same state file. Old binaries must be
 stopped before migration because they do not honor these locks.
 
+Service discovery returns authenticated status and its control connection
+together. Submissions stay bound to that instance; output uses its URLs. A lost
+acknowledgement permits one replay with the original submission ID, only after
+verifying the accepted settings and durable state identity (the existing user
+ID). Recovery cannot redirect input to a replaced database or restarted memory
+store. The complete operation has a two-minute deadline; discovery and recovery
+each have a 30-second bound. Ambiguous failures retain the original error and
+identify the database where submission may have committed.
+
+Git admission limits running and queued commands. Each command has a 20-second
+deadline including queue time, plus at most one second for pipe draining.
+Platform adapters own subprocess cleanup: process groups on Linux/macOS and
+jobs assigned during process creation on Windows. Cancellation reaps the Git
+process, cleans up its owned children, and releases admission.
+
 The public REST/MCP trust model remains unauthenticated. Non-loopback binding
 exposes all registered contexts. Control authentication does not authenticate
 the web listener. No idle service shutdown or automatic conflicting-setting

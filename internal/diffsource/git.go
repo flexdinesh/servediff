@@ -29,21 +29,23 @@ var patchFormat = []string{
 }
 
 type limitedBuffer struct {
-	bytes.Buffer
+	buffer   bytes.Buffer
 	maximum  int
 	exceeded bool
 }
 
+func (buffer *limitedBuffer) String() string { return buffer.buffer.String() }
+
 func (buffer *limitedBuffer) Write(value []byte) (int, error) {
-	remaining := buffer.maximum - buffer.Len()
+	remaining := buffer.maximum - buffer.buffer.Len()
 	if remaining < len(value) {
 		if remaining > 0 {
-			_, _ = buffer.Buffer.Write(value[:remaining])
+			_, _ = buffer.buffer.Write(value[:remaining])
 		}
 		buffer.exceeded = true
 		return len(value), errOutputLimit
 	}
-	return buffer.Buffer.Write(value)
+	return buffer.buffer.Write(value)
 }
 
 type gitFailure struct {
@@ -70,20 +72,51 @@ func runGit(ctx context.Context, root string, maximum int, arguments ...string) 
 	errorOutput := &limitedBuffer{maximum: 64 * 1024}
 	command.Stdout = output
 	command.Stderr = errorOutput
-	err = command.Run()
-	if output.exceeded {
-		return output.String(), errOutputLimit
+	err = runGitCommand(commandContext, command)
+	exceeded := output.exceeded || errorOutput.exceeded
+	if exceeded {
+		err = errors.Join(errOutputLimit, err)
 	}
 	if commandContext.Err() != nil {
-		return output.String(), commandContext.Err()
+		return output.String(), errors.Join(commandContext.Err(), err)
+	}
+	if exceeded {
+		return output.String(), err
 	}
 	if err != nil {
+		// Only an ordinary Git exit can mean an absent revision or file.
+		// Pipe, launch, or cleanup failures must not trigger those fallbacks.
+		if !isGitExitFailure(err) {
+			return output.String(), err
+		}
 		if detail := strings.TrimSpace(errorOutput.String()); detail != "" {
 			err = fmt.Errorf("%w: %s", err, detail)
 		}
 		return output.String(), &gitFailure{err: err, stdout: output.String()}
 	}
 	return output.String(), nil
+}
+
+func isGitExitFailure(err error) bool {
+	switch failure := err.(type) {
+	case *exec.ExitError:
+		return true
+	case interface{ Unwrap() []error }:
+		causes := failure.Unwrap()
+		if len(causes) == 0 {
+			return false
+		}
+		for _, cause := range causes {
+			if !isGitExitFailure(cause) {
+				return false
+			}
+		}
+		return true
+	case interface{ Unwrap() error }:
+		return isGitExitFailure(failure.Unwrap())
+	default:
+		return false
+	}
 }
 
 func gitDiffArgs(mode review.DiffMode, base string) []string {

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/flexdinesh/servediff/internal/contextservice"
-	"github.com/flexdinesh/servediff/internal/controlapi"
 	"github.com/flexdinesh/servediff/internal/daemon"
 	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/review"
@@ -74,9 +73,7 @@ func acquireInput(values options, stdin *os.File) (daemon.InitialInput, error) {
 
 func newSubmissionID() string { return rand.Text() }
 
-func submitInput(ctx context.Context, client *controlapi.Client, id string, input daemon.InitialInput) (contextservice.Submission, error) {
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
+func submitInput(ctx context.Context, client *daemon.Connection, id string, input daemon.InitialInput) (contextservice.Submission, error) {
 	switch input.Kind {
 	case "worktree":
 		return client.Register(ctx, id, input.Path)
