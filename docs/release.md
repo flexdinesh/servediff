@@ -9,7 +9,9 @@ skipped.
 
 Full test suites run locally through the pre-push hook. Release verification
 runs static checks, rebuilds generated files, rejects drift, and smoke-tests the
-distribution before publishing.
+distribution before publishing, using the same `mise run check:ci` task as PR CI.
+Release steps run through `release:*` mise tasks and pnpm scripts; GoReleaser
+is installed only by `mise run release:publish`.
 
 Install the latest stable release or a specific version:
 
@@ -85,5 +87,5 @@ complete binary. CI rebuilds these assets and rejects drift. Frontend changes
 must include the regenerated assets:
 
 ```sh
-task web:stage
+mise run web:stage
 ```

@@ -7,9 +7,7 @@ release:
 before:
   hooks:
     - pnpm install --frozen-lockfile
-    - pnpm generate:api
-    - pnpm --filter @servediff/web build
-    - go run ./tools/stage-web apps/web/dist internal/webui/dist
+    - mise run web:stage
 
 builds:
   - id: servediff

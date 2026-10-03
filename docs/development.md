@@ -13,55 +13,66 @@ go install github.com/flexdinesh/servediff/cmd/servediff@main
 
 ## Requirements
 
-- Go 1.25
+- [mise](https://mise.jdx.dev) 2026.8.6 or later
 - C compiler for Go race tests
 - Git
-- Node 26
-- pnpm 11
-- [Task](https://taskfile.dev)
+- Bash (included with Git for Windows)
 
-Install JavaScript dependencies after cloning:
+Mise manages Go 1.25, Node from `.node-version`, and pnpm from `package.json`.
+After cloning, trust the project config, install tools, then install dependencies,
+hooks, and Playwright Chromium:
 
 ```sh
-pnpm install --frozen-lockfile
+mise trust
+mise install
+mise run setup
 ```
+
+`mise run` activates project tools without shell activation. For direct pnpm
+commands, activate mise in your shell or use `mise exec -- pnpm <script>`.
+List available tasks with `mise tasks`. Keep personal overrides in
+`mise.local.toml`, which is ignored by Git.
 
 ## Commands
 
-| Purpose                                                    | Command                      |
-| ---------------------------------------------------------- | ---------------------------- |
-| Start Vite HMR with a managed Go fixture server            | `task dev` or `pnpm dev:web` |
-| Start a standalone Go fixture server with built web assets | `task dev:server`            |
-| Generate the TypeScript API types                          | `task generate`              |
-| Build the web application                                  | `task web:build`             |
-| Build the dependency-free CLI at `dist/servediff`          | `task build`                 |
-| Build and locally install the CLI                          | `task install`               |
-| Install Playwright Chromium                                | `pnpm test:browser:install`  |
-| Run web unit and browser tests                             | `pnpm test:web`              |
-| Run Go tests                                               | `task test:go`               |
-| Run distribution API conformance tests                     | `task test:conformance`      |
-| Run TypeScript checks                                      | `pnpm typecheck`             |
-| Run JavaScript linting                                     | `pnpm lint`                  |
-| Format supported files                                     | `pnpm format`                |
-| Run every repository check                                 | `task check`                 |
-| Run all pre-push checks, including Go race tests           | `pnpm check:push`            |
+| Purpose                                                    | Command                          |
+| ---------------------------------------------------------- | -------------------------------- |
+| Start Vite HMR with a managed Go fixture server            | `mise run dev` or `pnpm dev:web` |
+| Start a standalone Go fixture server with built web assets | `mise run dev:server`            |
+| Generate the TypeScript API types                          | `mise run generate`              |
+| Build the web application                                  | `mise run web:build`             |
+| Build the dependency-free CLI at `dist/servediff`          | `mise run build`                 |
+| Build and locally install the CLI                          | `mise run install`               |
+| Install Playwright Chromium                                | `pnpm test:browser:install`      |
+| Run web unit and browser tests                             | `pnpm test:web`                  |
+| Run Go tests                                               | `mise run test:go`               |
+| Run distribution API conformance tests                     | `mise run test:conformance`      |
+| Run TypeScript checks                                      | `pnpm typecheck`                 |
+| Run JavaScript linting                                     | `pnpm lint`                      |
+| Format supported files                                     | `pnpm format`                    |
+| Run every repository check                                 | `mise run check`                 |
+| Run all pre-push checks, including Go race tests           | `pnpm check:push`                |
+| Run lightweight CI checks                                  | `mise run check:ci`              |
 
-Dependency installation enables the Husky `pre-push` hook. Every push runs
-`task check` and Go race tests, then rejects uncommitted generated API types or
-embedded assets. Install Playwright Chromium once with `pnpm test:browser:install`.
-The hook needs the tools listed above on `PATH`; it runs on your local platform.
+`mise run setup` enables the Husky `pre-push` hook. Every push runs
+`mise run check:push`: all repository suites and Go race tests, then rejects
+uncommitted generated API types or embedded assets. `mise run setup` installs
+Playwright Chromium; reinstall it after upgrading Playwright.
+The hook needs mise on `PATH`; mise activates project tools. Checks run on your
+local platform.
 
-CI runs static checks, builds the web app and CLI, verifies generated files,
-and runs the distribution API smoke test. Unit, browser, release-tool, and Go
+Both CI and release verification run `mise run check:ci`: static checks, web and
+CLI builds, generated-file consistency, and the distribution API smoke test.
+Unit, browser, release-tool, and Go
 race suites run locally before pushing. CI does not run a native OS test matrix.
 
-`task install` embeds the current web build and installs `servediff` into
+`mise run install` embeds the current web build and installs `servediff` into
 `$GOBIN`, or `$GOPATH/bin` when `GOBIN` is unset. Ensure that directory is on
 `PATH`. The task also removes obsolete pnpm-global Node shims created by older
 versions of the repository.
 
 The production web build is committed under `internal/webui/dist` so installs
-from tags and `main` contain the complete application. Run `task web:stage` and
+from tags and `main` contain the complete application. Run `mise run web:stage` and
 commit asset changes after modifying the frontend.
 
 ## Development data
@@ -70,13 +81,10 @@ Development uses `test/fixtures/sample.diff` with in-memory review state. The
 Vite server starts and stops its own Go fixture process, so frontend development
 does not need a real repository or persisted data.
 
-The Go binary also supports explicit fixture use:
+Start the fixture server with built web assets:
 
 ```sh
-go run ./cmd/servediff serve \
-  --fixture test/fixtures/sample.diff \
-  --state memory \
-  --no-browser
+mise run dev:server -- --no-browser
 ```
 
 `serve` stays in the foreground and does not use the personal daemon. Ordinary
@@ -101,7 +109,7 @@ The OpenAPI contract in `packages/api/openapi.yaml` is the frontend/server
 boundary. After changing it, run:
 
 ```sh
-task generate
+mise run generate
 ```
 
 ## Frontend conventions

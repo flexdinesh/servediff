@@ -21,8 +21,9 @@
     "generate:homebrew": "node tools/generate-homebrew-formula.ts",
     "check:static": "pnpm typecheck && pnpm lint && pnpm format:check",
     "check:js": "pnpm check:static && pnpm build && pnpm test && pnpm test:release",
-    "check:push": "task check:push",
-    "check": "pnpm check:js && pnpm test:go"
+    "check:ci": "mise run check:ci",
+    "check:push": "mise run check:push",
+    "check": "mise run check"
   },
   "devDependencies": {
     "@types/node": "catalog:",
