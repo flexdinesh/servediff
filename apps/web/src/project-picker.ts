@@ -41,8 +41,8 @@ export function pickerResults(contexts: ApiContext[], query: string) {
     .filter(({ matches }) => matches.every((score) => score > 0))
     .sort(
       (left, right) =>
+        right.context.lastChangedAt - left.context.lastChangedAt ||
         right.score - left.score ||
-        right.context.lastSubmittedAt - left.context.lastSubmittedAt ||
         left.context.name.localeCompare(right.context.name) ||
         contextDetail(left.context).localeCompare(
           contextDetail(right.context),

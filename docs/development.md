@@ -126,8 +126,11 @@ across scopes and pauses diff polling. Context selection uses the top-bar
 popup picker (also Cmd/Ctrl+K) and scopes every request. Registering a repository
 discovers its Git worktrees at any path. Catalog reads reuse metadata for
 10 seconds without loading diffs; registration refreshes discovery immediately.
-Discovery preserves existing review identities and submission order. Switching
-disposes the previous workspace's request ownership and resets transient state.
+Discovery preserves existing review identities and submission order.
+The picker orders checkouts by latest commit or working-tree change, including
+search results.
+Switching disposes the previous workspace's request ownership and resets transient
+state.
 `DiffWorkspace.tsx` owns Pierre rendering,
 versions, worker options, and measured geometry. `use-review.ts` and
 `use-reviewed-files.ts` own their REST requests and recovery; reads cannot settle

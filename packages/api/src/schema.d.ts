@@ -552,6 +552,11 @@ export interface components {
       createdAt: number;
       /** Format: int64 */
       lastSubmittedAt: number;
+      /**
+       * Format: int64
+       * @description Latest commit or working-tree change time in Unix milliseconds. Submission time for captures; zero when worktree change metadata is unknown.
+       */
+      lastChangedAt: number;
       /** Format: int64 */
       expiresAt: number | null;
       submittedFrom: string | null;

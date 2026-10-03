@@ -14,6 +14,7 @@ const main: ApiContext = {
   locationId: "main",
   createdAt: 1,
   lastSubmittedAt: 1,
+  lastChangedAt: 1,
   expiresAt: null,
   submittedFrom: null,
   availability: "available",
@@ -34,6 +35,7 @@ const worktree: ApiContext = {
   worktreeName: "picker-folder",
   root: "/external/team/picker-folder",
   lastSubmittedAt: 2,
+  lastChangedAt: 2,
 };
 const clone: ApiContext = {
   ...main,
@@ -43,7 +45,7 @@ const clone: ApiContext = {
 };
 
 test("lists individual checkouts by recency without repository grouping", () => {
-  const recentClone = { ...clone, lastSubmittedAt: 3 };
+  const recentClone = { ...clone, lastSubmittedAt: 0, lastChangedAt: 3 };
   assert.deepEqual(
     pickerResults([worktree, recentClone, main], "").map(
       (context) => context.id,
@@ -77,12 +79,19 @@ test("search matches repo, branch, worktree, and external paths with all query w
   assert.deepEqual(pickerResults([main, worktree], "nonexistent"), []);
 });
 
-test("exact matches precede fuzzy matches and captures stay selectable", () => {
+test("search lists newest changes before stronger matches", () => {
   const exact = { ...clone, name: "picker", branch: "other" };
-  assert.equal(
-    pickerResults([main, worktree, exact], "picker")[0]?.id,
-    "clone",
+  assert.deepEqual(
+    pickerResults([main, exact, worktree], "picker").map(
+      (context) => context.id,
+    ),
+    ["picker", "clone"],
   );
+  const tied = { ...exact, lastChangedAt: worktree.lastChangedAt };
+  assert.equal(pickerResults([worktree, tied], "picker")[0]?.id, tied.id);
+});
+
+test("captures stay selectable", () => {
   const capture: ApiContext = {
     ...main,
     id: "capture",

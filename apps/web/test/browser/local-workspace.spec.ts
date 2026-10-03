@@ -30,6 +30,7 @@ async function localWorkspace(page: Page) {
     kind: "worktree",
     createdAt: 1,
     lastSubmittedAt: 1,
+    lastChangedAt: 1,
     expiresAt: null,
     submittedFrom: null,
     availability: "available",
@@ -480,7 +481,7 @@ test("unavailable context keeps the switcher usable", async ({ page }) => {
   await ready(page);
 });
 
-test("repository popup lists ungrouped checkouts and shares click and keyboard search", async ({
+test("repository popup orders checkouts by changes and shares click and keyboard search", async ({
   page,
 }) => {
   const state = await localWorkspace(page);
@@ -493,6 +494,7 @@ test("repository popup lists ungrouped checkouts and shares click and keyboard s
       branch: "feature/picker",
       worktreeName: "picker-folder",
       root: "/elsewhere/picker-folder",
+      lastChangedAt: 3,
     },
     {
       ...state.context,
@@ -500,6 +502,7 @@ test("repository popup lists ungrouped checkouts and shares click and keyboard s
       name: "dotfiles",
       repositoryId: "dotfiles",
       root: "/dotfiles",
+      lastChangedAt: 2,
     },
   ];
   await page.route("**/api/v2/contexts?*", (route) =>
@@ -527,8 +530,8 @@ test("repository popup lists ungrouped checkouts and shares click and keyboard s
   await expect(dialog.getByRole("group")).toHaveCount(0);
   await expect(dialog.getByRole("option")).toHaveCount(3);
   await expect(dialog.locator(".project-picker-name")).toHaveText([
-    "dotfiles",
     "servediff",
+    "dotfiles",
     "servediff",
   ]);
   const desktopBounds = await dialog.boundingBox();
@@ -536,6 +539,10 @@ test("repository popup lists ungrouped checkouts and shares click and keyboard s
   expect(desktopBounds.y).toBeLessThan(120);
   await search.fill("servediff");
   await expect(dialog.getByRole("option")).toHaveCount(2);
+  await expect(dialog.locator(".project-picker-branch")).toHaveText([
+    "feature/picker",
+    "main",
+  ]);
   await search.fill("");
   await expect(
     dialog.getByRole("option", { name: /feature\/picker/ }),
@@ -545,6 +552,7 @@ test("repository popup lists ungrouped checkouts and shares click and keyboard s
     "No matching repositories",
   );
   await search.fill("");
+  await page.keyboard.press("ArrowUp");
   await page.keyboard.press("ArrowUp");
   await expect(
     dialog.getByRole("option", { name: /feature\/picker/ }),
