@@ -14,6 +14,7 @@ go install github.com/flexdinesh/servediff/cmd/servediff@main
 ## Requirements
 
 - Go 1.25
+- C compiler for Go race tests
 - Git
 - Node 26
 - pnpm 11
@@ -43,6 +44,16 @@ pnpm install --frozen-lockfile
 | Run JavaScript linting                                     | `pnpm lint`                  |
 | Format supported files                                     | `pnpm format`                |
 | Run every repository check                                 | `task check`                 |
+| Run all pre-push checks, including Go race tests           | `pnpm check:push`            |
+
+Dependency installation enables the Husky `pre-push` hook. Every push runs
+`task check` and Go race tests, then rejects uncommitted generated API types or
+embedded assets. Install Playwright Chromium once with `pnpm test:browser:install`.
+The hook needs the tools listed above on `PATH`; it runs on your local platform.
+
+CI runs static checks, builds the web app and CLI, verifies generated files,
+and runs the distribution API smoke test. Unit, browser, release-tool, and Go
+race suites run locally before pushing. CI does not run a native OS test matrix.
 
 `task install` embeds the current web build and installs `servediff` into
 `$GOBIN`, or `$GOPATH/bin` when `GOBIN` is unset. Ensure that directory is on

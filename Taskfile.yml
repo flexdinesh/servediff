@@ -68,3 +68,15 @@ tasks:
       - task: check:js
       - task: check:go
       - task: test:conformance
+
+  check:push:
+    cmds:
+      - task: check
+      - go test -race ./...
+      - |
+        generated_changes=$(git status --porcelain --untracked-files=all -- packages/api/src/schema.d.ts internal/webui/dist)
+        if [ -n "$generated_changes" ]; then
+          printf '%s\n' "$generated_changes"
+          echo 'Commit generated API types and embedded web assets before pushing.' >&2
+          exit 1
+        fi

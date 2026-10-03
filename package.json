@@ -4,6 +4,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
+    "prepare": "husky",
     "build": "pnpm generate:api && pnpm --filter @servediff/web build",
     "dev:web": "pnpm --filter @servediff/web dev",
     "generate:api": "pnpm --filter @servediff/api generate",
@@ -18,11 +19,14 @@
     "format:check": "oxfmt --check .",
     "lint": "oxlint .",
     "generate:homebrew": "node tools/generate-homebrew-formula.ts",
-    "check:js": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm build && pnpm test && pnpm test:release",
+    "check:static": "pnpm typecheck && pnpm lint && pnpm format:check",
+    "check:js": "pnpm check:static && pnpm build && pnpm test && pnpm test:release",
+    "check:push": "task check:push",
     "check": "pnpm check:js && pnpm test:go"
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "husky": "catalog:",
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
     "typescript": "catalog:"
