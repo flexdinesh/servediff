@@ -39,7 +39,7 @@ export function ProjectPickerTrigger({
     <Button
       ref={triggerRef}
       type="button"
-      variant="outline"
+      variant="ghost"
       className="context-switcher"
       aria-label="Switch repository"
       aria-haspopup="dialog"

@@ -102,6 +102,7 @@ kbd {
   gap: var(--space-3);
   align-items: center;
   border-bottom: 1px solid var(--border);
+  background: var(--panel);
   padding: 0 var(--page-gutter);
 }
 .brand {
@@ -109,7 +110,7 @@ kbd {
   align-items: center;
   font-size: var(--text-md);
   font-weight: var(--weight-semibold);
-  color: var(--fg);
+  color: var(--text-secondary);
   text-decoration: none;
   letter-spacing: var(--tracking-heading);
   white-space: nowrap;
@@ -122,24 +123,25 @@ kbd {
   flex-shrink: 0;
 }
 .header-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
   flex: 1;
   min-width: 0;
-}
-.header-title {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-3);
+  margin-left: var(--space-2);
 }
 .header-heading h1 {
+  flex-shrink: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   margin: 0;
-  font-size: var(--text-md);
-  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-normal);
   white-space: nowrap;
 }
 #repo-path {
-  margin: var(--space-1) 0 0;
+  margin: 0;
   color: var(--muted);
   font: var(--text-xs) var(--font-mono);
   overflow: hidden;
@@ -171,6 +173,17 @@ kbd {
 }
 .topbar [data-slot="button"] svg {
   stroke-width: 1.7;
+}
+.topbar [data-variant="ghost"]:hover,
+.topbar [data-variant="ghost"][aria-expanded="true"] {
+  background: var(--hover);
+}
+.header-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: var(--space-1);
+  margin-left: auto;
 }
 .workspace {
   height: calc(100dvh - var(--topbar-height));
@@ -357,7 +370,7 @@ main {
   display: flex;
   flex-direction: column;
 }
-.topbar > button,
+.topbar > button:not(.context-switcher),
 .topbar > .brand {
   flex-shrink: 0;
 }
@@ -734,8 +747,9 @@ h2 {
   max-width: min(45vw, var(--reading-width));
   min-width: 0;
   flex-shrink: 1;
-  border-color: var(--border-muted);
-  background: var(--panel);
+  justify-content: flex-start;
+  border-color: transparent;
+  background: transparent;
   color: var(--fg);
 }
 .context-switcher-name,
@@ -744,6 +758,9 @@ h2 {
   text-overflow: ellipsis;
 }
 .context-switcher-name {
+  min-width: 0;
+  flex-shrink: 0;
+  max-width: 50%;
   font-weight: var(--weight-semibold);
 }
 .context-switcher-branch {
@@ -757,7 +774,12 @@ h2 {
 }
 .context-switcher-shortcut {
   margin-left: var(--space-1);
-  background: var(--bg);
+  background: transparent;
+}
+@media (min-width: 768px) and (max-width: 1011px) {
+  .header-heading #repo-path {
+    display: none;
+  }
 }
 .project-picker {
   width: min(35rem, calc(100% - 2 * var(--page-gutter)));

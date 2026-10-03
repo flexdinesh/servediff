@@ -177,6 +177,10 @@ such detail into a token. New layout spacing must use the scale.
   The diff receives all width remaining after navigation.
 - Header: `--topbar-height` (56 desktop, 48 narrow). Toolbar and sidebar tabs: `--toolbar-height`
   (44) as the desktop baseline; allow toolbar height to grow when controls wrap.
+- Header uses `--panel`, a quiet brand, and the repository trigger as its primary
+  context. Keep the secondary scope heading and muted monospace path inline;
+  hide the path at 768–1011px and both below 768px. Group ghost Refresh/theme
+  actions at the trailing edge; share `--hover` feedback with the trigger.
 - Status bar: `--statusbar-height` (28), with shortcuts shed before server metrics.
 - Desktop sidebar: `--sidebar-width` defaults to 330px. `use-sidebar.ts` owns
   the user's pixel width, bounded to 200–520px and available viewport space.
@@ -293,8 +297,9 @@ such detail into a token. New layout spacing must use the scale.
 
 ### Overlays
 
-- Project navigation uses a compact inline popup action after the brand divider,
-  with a semibold repository name, quieter branch, and repository/capture icon.
+- Project navigation uses a compact borderless ghost action after the brand
+  divider, with a semibold repository name, quieter branch, and repository/capture
+  icon. Give the repository name priority when long context labels truncate.
   Use a search icon and shortcut hint, never a dropdown chevron. Click and
   Cmd/Ctrl+K open the same searchable “Switch repository” dialog. Position it at
   `--topbar-height` plus `--space-6` on desktop (80px default), `--space-4` on
