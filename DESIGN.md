@@ -298,17 +298,22 @@ such detail into a token. New layout spacing must use the scale.
   Use a search icon and shortcut hint, never a dropdown chevron. Click and
   Cmd/Ctrl+K open the same searchable “Switch repository” dialog. Position it at
   `--topbar-height` plus `--space-6` on desktop (80px default), `--space-4` on
-  mobile (16px default). The picker owns focus and stays available during context
-  errors.
-- Search is one integrated field with the focus ring around its entire boundary.
+  mobile (16px default). Bound picker width to 35rem and viewport gutters. The
+  picker owns focus and stays available during context errors.
+- Search leads the picker; keep “Switch repository” as its screen-reader title.
+  Use one integrated field (36px input) with close at its right edge and the
+  focus ring around its entire boundary.
   Use a flat, scrollable result list ordered by recency; search ranks matches
-  before recency. Repository name leads, branch follows, muted monospace path
-  supports. Mark linked paths with “Worktree”; captures show “Snapshot” in the
-  same list. Distinguish the current checkout with a check and label, and retain
-  explicit “Unavailable” feedback.
+  before recency. Compact rows (about 48px) put repository name and branch on
+  one line, with a muted monospace path below; truncate long text to single lines.
+  Mark linked paths with “Worktree”; captures show “Snapshot” in the same list.
+  Distinguish the current checkout with a check and accessible “Current repository”
+  text; retain explicit “Unavailable” feedback. Keep the footer to a short result
+  count and keyboard hints.
 
-- Use the controlled shadcn `Dialog` built on Base UI, with a visible accessible
-  title. Keep focus inside while open, support Escape, and restore focus on close.
+- Use the controlled shadcn `Dialog` built on Base UI. General dialogs retain a
+  visible accessible title; the repository picker uses the screen-reader title
+  above. Keep focus inside while open, support Escape, and restore focus on close.
 - Use `--surface-raised`, `--radius-lg`, `--shadow-overlay`, and `--backdrop`.
   Shadows communicate actual elevation only; no resting button/card shadows.
 - Bound width by `--reading-width` and viewport gutters; bound height by the

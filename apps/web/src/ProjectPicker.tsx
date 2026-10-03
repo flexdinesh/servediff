@@ -5,11 +5,13 @@ import {
   GitBranchIcon,
   SearchIcon,
   SquareTerminalIcon,
+  XIcon,
 } from "lucide-react";
 import { useEffect, useId, useRef, useState, type RefObject } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogTitle,
@@ -151,10 +153,9 @@ export function ProjectPicker({
         className="project-picker"
         initialFocus={searchRef}
         finalFocus={triggerRef}
+        showCloseButton={false}
       >
-        <DialogTitle className="project-picker-title">
-          Switch repository
-        </DialogTitle>
+        <DialogTitle className="sr-only">Switch repository</DialogTitle>
         <DialogDescription className="sr-only">
           Search repositories, branches, worktrees, and paths. Use arrow keys to
           navigate and Enter to switch.
@@ -199,6 +200,10 @@ export function ProjectPicker({
               }
             }}
           />
+          <DialogClose render={<Button variant="ghost" size="icon-sm" />}>
+            <XIcon aria-hidden="true" />
+            <span className="sr-only">Close</span>
+          </DialogClose>
         </div>
         <div
           id={listId}
@@ -230,9 +235,11 @@ export function ProjectPicker({
                         aria-hidden="true"
                       />
                     )}
-                    {context.kind === "capture"
-                      ? "Snapshot"
-                      : contextDetail(context)}
+                    <span>
+                      {context.kind === "capture"
+                        ? "Snapshot"
+                        : contextDetail(context)}
+                    </span>
                   </span>
                 </span>
                 <span className="project-picker-path">
@@ -253,7 +260,7 @@ export function ProjectPicker({
                     className="size-(--icon-base)"
                     aria-hidden="true"
                   />
-                  <span>
+                  <span className="sr-only">
                     Current<span className="sr-only"> repository</span>
                   </span>
                 </span>
@@ -270,7 +277,7 @@ export function ProjectPicker({
         <div className="project-picker-footer">
           <p className="project-picker-status" role="status">
             {results.length
-              ? `${results.length} ${results.length === 1 ? "checkout or snapshot" : "checkouts and snapshots"}`
+              ? `${results.length} ${results.length === 1 ? "result" : "results"}`
               : "No matching repositories"}
           </p>
           <div className="project-picker-shortcuts">
