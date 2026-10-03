@@ -29,16 +29,23 @@ jobs:
       - run: pnpm check:js
 
   go:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
-      - run: test -z "$(gofmt -l cmd internal packages/api tools)"
+      - run: test -z "$(gofmt -l cmd internal packages/api tools test/conformance)"
+        shell: bash
       - run: go vet ./...
       - run: go test ./...
+      - run: go test -race ./...
+        if: runner.os == 'Linux'
 
   distribution:
     needs: [javascript, go]

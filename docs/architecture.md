@@ -1,7 +1,46 @@
 # Architecture
 
-servediff is a polyglot monorepo with a Go server and a React web application.
-Node is a frontend build and test dependency only.
+servediff is a polyglot monorepo with a Go daemon and a React web application.
+Node is a frontend build and test dependency only. One daemon per user owns the
+database and serves independently addressed worktrees and piped captures.
+
+## Runtime and data ownership
+
+Ordinary CLI commands ensure the daemon, submit an absolute worktree path or a
+bounded raw patch, print/open the returned context URL, and exit. The daemon
+collects live Git changes, parses captures, and writes review state. `service`
+commands manage its lifetime; `serve` composes the same application in a
+foreground process for fixtures and supervision.
+
+A context is a selectable review target. Worktree contexts produce updated
+all/staged/unstaged diffs; capture contexts contain one immutable patch/version.
+Both support editable reviews. Linked worktrees share repository grouping but
+have separate contexts. Repeated registration reuses a worktree; independent
+pipe invocations create independent captures with 14-day expiry. Captures have
+no automatic repository association.
+
+The durable catalog survives restarts; runtime sources are reconstructed lazily.
+Catalog listing does not run Git. Missing repositories fail within their own
+context. Existing location, diff, version, and review IDs are preserved by the
+additive schema-2 migration. Unsupported older schemas fail without deletion.
+
+Every REST/MCP operation resolves an explicit context once and verifies resource
+membership. There is no daemon-wide active repository. Browser selection is
+client state, represented by `/contexts/{id}`. Scoped REST routes live under
+`/api/v2/contexts/{id}`; scoped MCP uses `/mcp/contexts/{id}`. Legacy unscoped
+routes fail with an ambiguity error when daemon mode has multiple contexts.
+
+Private lifecycle/registration traffic uses an authenticated loopback control
+listener, separate from the web listener. A private runtime descriptor carries
+discovery credentials and effective settings; it is not saved configuration.
+Lifecycle and lifetime locks prevent competing starts. Database ownership also
+protects foreground processes using the same state file. Old binaries must be
+stopped before migration because they do not honor these locks.
+
+The public REST/MCP trust model remains unauthenticated. Non-loopback binding
+exposes all registered contexts. Control authentication does not authenticate
+the web listener. No idle service shutdown or automatic conflicting-setting
+restart is performed.
 
 ## Project boundaries
 
@@ -12,11 +51,23 @@ Node is a frontend build and test dependency only.
 - `packages/shared`: TypeScript-only review and UI behavior; not a cross-language model package.
 - `test/fixtures`: serialized inputs shared across implementations.
 
-Go HTTP and CLI code compose domain, source, and store packages. A future MCP
-transport should compose those same packages; extract shared application
-services once a second transport establishes the reusable behavior. Transports
-must not call each other. Cross-language sharing happens through OpenAPI and
-serialized fixtures, not source imports.
+Go CLI, control HTTP, REST, and MCP compose shared application services over
+source and store packages. Transports must not call each other. Cross-language
+sharing happens through OpenAPI and serialized fixtures, not source imports.
+
+- `internal/contextservice`: durable catalog, registration, capture submissions,
+  and context resolution.
+- `internal/reviewservice`: shared review operations.
+- `internal/reviewstore`: migrations, context identities, submission
+  deduplication, and review persistence.
+- `internal/httpapi`: public REST adapters and the shared context snapshot
+  manager, including coalescing and cache ownership.
+- `internal/daemon`: lifecycle coordination, discovery, detachment, and server
+  composition.
+- `internal/controlapi`: authenticated local control protocol and its client.
+- `internal/processlock`: platform locks for lifecycle and database ownership.
+- `internal/session`, `internal/diffsource`: runtime capability resolution and
+  Git/patch source behavior.
 
 ## Production builds
 

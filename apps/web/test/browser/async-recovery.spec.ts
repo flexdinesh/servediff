@@ -56,7 +56,7 @@ function commentFor(
 }
 
 async function openWorkspace(page: Page) {
-  await page.route("**/api/v1/review-marks?*", (route) =>
+  await page.route("**/api/v2/contexts/*/review-marks?*", (route) =>
     route.fulfill({ json: { marks: [] } }),
   );
   await page.setViewportSize({ width: 1280, height: 844 });
@@ -99,7 +99,7 @@ test("comment submission guards keyboard and button duplicates", async ({
   const repository = await fixture(baseURL);
   const requests: Route[] = [];
   let comments: ReviewComment[] = [];
-  await page.route("**/api/v1/comments", (route) => {
+  await page.route("**/api/v2/contexts/*/comments", (route) => {
     if (route.request().method() === "POST") {
       requests.push(route);
       return;
@@ -127,14 +127,14 @@ test("late save preserves newer text and retries it against the saved ID", async
   const repository = await fixture(baseURL);
   const requests: Route[] = [];
   let comments: ReviewComment[] = [];
-  await page.route("**/api/v1/comments", (route) => {
+  await page.route("**/api/v2/contexts/*/comments", (route) => {
     if (route.request().method() === "POST") {
       requests.push(route);
       return;
     }
     return route.fulfill({ json: { comments } });
   });
-  await page.route("**/api/v1/comments/saved-comment", (route) => {
+  await page.route("**/api/v2/contexts/*/comments/saved-comment", (route) => {
     requests.push(route);
   });
   await openWorkspace(page);
@@ -166,7 +166,7 @@ test("late save cannot clear a replacement draft", async ({
   const repository = await fixture(baseURL);
   const requests: Route[] = [];
   let comments: ReviewComment[] = [];
-  await page.route("**/api/v1/comments", (route) => {
+  await page.route("**/api/v2/contexts/*/comments", (route) => {
     if (route.request().method() === "POST") {
       requests.push(route);
       return;
@@ -194,7 +194,7 @@ test("save failure stays visible on Changes and retains the draft for retry", as
   const repository = await fixture(baseURL);
   let fail = true;
   let comments: ReviewComment[] = [];
-  await page.route("**/api/v1/comments", (route) => {
+  await page.route("**/api/v2/contexts/*/comments", (route) => {
     if (route.request().method() !== "POST")
       return route.fulfill({ json: { comments } });
     if (fail)
@@ -221,11 +221,11 @@ test("concurrent reviewed files merge successful responses in either order", asy
 }) => {
   const requests: Route[] = [];
   const marks = new Map<string, string>();
-  await page.route("**/api/v1/comments", (route) =>
+  await page.route("**/api/v2/contexts/*/comments", (route) =>
     route.fulfill({ json: { comments: [] } }),
   );
   await openWorkspace(page);
-  await page.route("**/api/v1/review-marks?*", (route) =>
+  await page.route("**/api/v2/contexts/*/review-marks?*", (route) =>
     route.fulfill({
       json: {
         marks: [...marks].map(([fileId, fileVersion]) => ({
@@ -236,7 +236,7 @@ test("concurrent reviewed files merge successful responses in either order", asy
       },
     }),
   );
-  await page.route("**/api/v1/review-marks/*?*", (route) => {
+  await page.route("**/api/v2/contexts/*/review-marks/*?*", (route) => {
     requests.push(route);
   });
   const buttons = page.locator("#viewer .review-button");
@@ -275,14 +275,14 @@ test("a stale comment poll cannot undo successful resolution", async ({
   let holdReads = false;
   const requests: Route[] = [];
   await page.clock.install();
-  await page.route("**/api/v1/comments", (route) => {
+  await page.route("**/api/v2/contexts/*/comments", (route) => {
     if (holdReads) {
       requests.push(route);
       return;
     }
     return route.fulfill({ json: { comments } });
   });
-  await page.route("**/api/v1/comments/saved-comment", (route) => {
+  await page.route("**/api/v2/contexts/*/comments/saved-comment", (route) => {
     comments = comments.map((comment) => ({ ...comment, status: "resolved" }));
     return route.fulfill({ json: comments[0] });
   });
@@ -313,7 +313,7 @@ test("slow comment polling completes instead of restarting every interval", asyn
   let holdReads = false;
   const requests: Route[] = [];
   await page.clock.install();
-  await page.route("**/api/v1/comments", (route) => {
+  await page.route("**/api/v2/contexts/*/comments", (route) => {
     if (holdReads) {
       requests.push(route);
       return;
@@ -371,7 +371,7 @@ test("WebMCP resolution shares comment ownership and preserves an active draft",
   let holdReads = false;
   const requests: Route[] = [];
   await page.clock.install();
-  await page.route("**/api/v1/comments", (route) => {
+  await page.route("**/api/v2/contexts/*/comments", (route) => {
     if (holdReads) {
       requests.push(route);
       return;
@@ -379,7 +379,7 @@ test("WebMCP resolution shares comment ownership and preserves an active draft",
     return route.fulfill({ json: { comments } });
   });
   await page.route(
-    "**/api/v1/review/comments/saved-comment/resolve",
+    "**/api/v2/contexts/*/review/comments/saved-comment/resolve",
     (route) => {
       if (fail)
         return route.fulfill({
@@ -437,7 +437,7 @@ test("WebMCP resolution shares comment ownership and preserves an active draft",
 
 test("session failure retries without reloading the page", async ({ page }) => {
   let fail = true;
-  await page.route("**/api/v1/session", (route) =>
+  await page.route("**/api/v2/contexts/*", (route) =>
     fail
       ? route.fulfill({ status: 503, json: { detail: "Session unavailable" } })
       : route.continue(),
@@ -463,11 +463,11 @@ test("reset waits for pending marks and clears their collapse state", async ({
   ];
   const updates: Route[] = [];
   let resets = 0;
-  await page.route("**/api/v1/comments", (route) =>
+  await page.route("**/api/v2/contexts/*/comments", (route) =>
     route.fulfill({ json: { comments: [] } }),
   );
   await openWorkspace(page);
-  await page.route("**/api/v1/review-marks?*", (route) => {
+  await page.route("**/api/v2/contexts/*/review-marks?*", (route) => {
     if (route.request().method() === "DELETE") {
       resets++;
       marks = [];
@@ -477,7 +477,7 @@ test("reset waits for pending marks and clears their collapse state", async ({
   // Reload initializes the owner from the server mark, not browser storage.
   await page.reload();
   await expect(page.locator("#review-count")).toHaveText("1 of 12 reviewed");
-  await page.route("**/api/v1/review-marks/*?*", (route) => {
+  await page.route("**/api/v2/contexts/*/review-marks/*?*", (route) => {
     updates.push(route);
   });
   const mark = page
@@ -507,10 +507,11 @@ test("reviewed-file failure remains visible with comments disabled and retries",
     "/api/v1/session",
   );
   if (!session) throw new Error("Missing fixture session");
-  await page.route("**/api/v1/session", (route) =>
+  await page.route("**/api/v2/contexts/*", (route) =>
     route.fulfill({
       json: {
         ...session,
+        id: new URL(route.request().url()).pathname.split("/").at(-1),
         capabilities: {
           ...session.capabilities,
           review: { comments: { state: "disabled" } },
@@ -520,10 +521,10 @@ test("reviewed-file failure remains visible with comments disabled and retries",
   );
   await openWorkspace(page);
   let marks: { fileId: string; fileVersion: string; scope: string }[] = [];
-  await page.route("**/api/v1/review-marks?*", (route) =>
+  await page.route("**/api/v2/contexts/*/review-marks?*", (route) =>
     route.fulfill({ json: { marks } }),
   );
-  await page.route("**/api/v1/review-marks/*?*", (route) =>
+  await page.route("**/api/v2/contexts/*/review-marks/*?*", (route) =>
     route.fulfill({ status: 500, json: { detail: "Mark rejected" } }),
   );
   await page.locator("#viewer .review-button").first().click();
@@ -532,7 +533,7 @@ test("reviewed-file failure remains visible with comments disabled and retries",
   await expect(page.locator("#review-count")).toHaveText("0 of 12 reviewed");
   await page.getByRole("button", { name: "Retry reviewed files" }).click();
   await expect(page.locator(".reviewed-error")).toHaveCount(0);
-  await page.route("**/api/v1/review-marks/*?*", async (route) => {
+  await page.route("**/api/v2/contexts/*/review-marks/*?*", async (route) => {
     const id = new URL(route.request().url()).pathname.split("/").at(-1);
     const payload: unknown = route.request().postDataJSON();
     if (

@@ -21,7 +21,11 @@ import { Separator } from "@/components/ui/separator";
 import { useDiffSource } from "./app-state.tsx";
 import { useAppearance } from "./appearance-context.tsx";
 import { useSidebarState } from "./sidebar-context.tsx";
-import { capabilityEnabled, useSession } from "./session-context.tsx";
+import {
+  ContextSwitcher,
+  capabilityEnabled,
+  useSession,
+} from "./session-context.tsx";
 import { readThemePreference, type ThemePreference } from "./theme.ts";
 
 function themeLabel(theme: ThemePreference) {
@@ -58,6 +62,7 @@ export function Header() {
       <a className="brand" href="/" aria-label="servediff home">
         servediff
       </a>
+      <ContextSwitcher />
       <Separator className="header-divider" orientation="vertical" />
       <div className="header-heading">
         <div className="header-title">

@@ -1,19 +1,20 @@
 # MCP
 
-servediff exposes review comments to coding agents through MCP at `/mcp`. The
-endpoint uses stateless Streamable HTTP and supports MCP protocol `2026-07-28`
-only. Clients that use an older `initialize` flow cannot connect.
+servediff exposes review comments to coding agents through MCP at
+`/mcp/contexts/{id}`. Each endpoint is bound to one worktree or piped capture.
+It uses stateless Streamable HTTP and supports MCP protocol `2026-07-28` only.
+Clients that use an older `initialize` flow cannot connect.
 
 The MCP transport and the browser UI use the same server-side comment store.
 The browser does not need to remain open while an MCP client works.
 
 ## Connect
 
-Start servediff, then use the printed web URL with `/mcp` appended. For example,
-if servediff opens `http://127.0.0.1:7981`, the endpoint is:
+Run servediff for the target worktree or capture and use its printed MCP URL.
+For example:
 
 ```text
-http://127.0.0.1:7981/mcp
+http://127.0.0.1:7981/mcp/contexts/CONTEXT_ID
 ```
 
 The client must support remote Streamable HTTP and MCP `2026-07-28`. For
@@ -26,7 +27,7 @@ example, current OpenCode can be configured in `opencode.jsonc`:
     "servers": {
       "servediff": {
         "type": "remote",
-        "url": "http://127.0.0.1:7981/mcp",
+        "url": "http://127.0.0.1:7981/mcp/contexts/CONTEXT_ID",
         "protocol": "2026-07-28",
         "oauth": false,
       },
@@ -38,7 +39,13 @@ example, current OpenCode can be configured in `opencode.jsonc`:
 Use the equivalent remote MCP configuration in Codex, Claude Code, or another
 harness only when that version supports protocol `2026-07-28`. Supplying the
 servediff web-page URL alone is not enough; a coding harness connects to the
-`/mcp` endpoint as an MCP client.
+scoped MCP endpoint as an MCP client. The daemon keeps running after the CLI
+exits. Context IDs remain stable across persistent-service restarts.
+
+Legacy `/mcp` is bound to the initial input in foreground `serve` mode. In
+daemon mode it requires exactly one context; multiple contexts return an
+ambiguity error. There is no global MCP discovery tool suite. Select a context
+through the CLI or REST catalog, then configure its scoped endpoint.
 
 ## Tools
 
@@ -46,7 +53,8 @@ The server exposes two tools when the session supports review comments.
 
 ### `get_review_comments`
 
-Returns open comments across every review-enabled diff scope. Pass
+Returns open comments across every review-enabled diff scope of the bound
+context. Pass
 `include_resolved: true` to include resolved comments as well.
 
 ```json
@@ -79,7 +87,8 @@ Marks a comment resolved by stable ID:
 ```
 
 Resolution is idempotent. Resolving an already resolved comment succeeds, and
-stale comments may be resolved. An unknown ID returns a tool error. The tool
+stale comments may be resolved. An unknown ID or an ID belonging to another
+context returns a tool error. The tool
 does not reopen comments and does not require a revision or version token.
 
 ## Agent workflow
@@ -103,9 +112,9 @@ read and resolve its comments. Keep the default loopback binding, or expose the
 server only on a trusted network. Browser origin checks do not authenticate MCP
 clients.
 
-The current MCP server represents the one active servediff session. Session
-IDs, stable hosted URLs, authentication, and routing one MCP server across
-multiple sessions are deferred until the session domain supports them.
+Each scoped endpoint represents one context, regardless of browser selection
+or subsequent CLI submissions. Changing the browser's selected repository does
+not redirect an agent's MCP operations. Authentication remains deferred.
 
 Protocol details: [MCP `2026-07-28` transport
 specification](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports)

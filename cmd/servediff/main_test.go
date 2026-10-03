@@ -2,24 +2,21 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
-	"net"
-	"net/http"
-	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/flexdinesh/servediff/internal/contextservice"
+	"github.com/flexdinesh/servediff/internal/controlapi"
+	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/review"
 )
-
-type testListener struct{ address net.Addr }
-
-func (listener testListener) Accept() (net.Conn, error) { return nil, errors.New("closed") }
-func (listener testListener) Close() error              { return nil }
-func (listener testListener) Addr() net.Addr            { return listener.address }
 
 func TestNormalizeArgumentsAllowsFlagsAfterPath(t *testing.T) {
 	actual := normalizeArguments([]string{".", "--port", "4000", "--no-browser"})
@@ -53,25 +50,6 @@ func TestVersionExitsWithoutLoadingInput(t *testing.T) {
 	}
 	if got, want := stdout.String(), "servediff dev\n"; got != want {
 		t.Fatalf("version output = %q, want %q", got, want)
-	}
-}
-
-func TestListenRangeAdvancesPastBusyPort(t *testing.T) {
-	var output bytes.Buffer
-	listener, err := listenRangeWith("127.0.0.1", 7981, 7982, &output, func(_ string, address string) (net.Listener, error) {
-		if strings.HasSuffix(address, ":7981") {
-			return nil, errors.New("busy")
-		}
-		return testListener{address: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 7982}}, nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if listener.Addr().(*net.TCPAddr).Port != 7982 {
-		t.Fatalf("unexpected listener: %s", listener.Addr())
-	}
-	if output.String() != "  port 7981 is busy; trying 7982\n" {
-		t.Fatalf("unexpected output: %q", output.String())
 	}
 }
 
@@ -110,19 +88,156 @@ func TestStartupOutputSummarizesDiff(t *testing.T) {
 	}
 }
 
-func TestProcessIdentityHeader(t *testing.T) {
-	handler := processHandler{pid: 42, next: http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
-		response.WriteHeader(http.StatusNoContent)
-	})}
-	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, httptest.NewRequest(http.MethodHead, "/", nil))
-	if response.Header().Get(processHeader) != "42" {
-		t.Fatalf("unexpected process header: %q", response.Header().Get(processHeader))
+func TestOptionsTrackExplicitDefaults(t *testing.T) {
+	omitted, err := parseOptions([]string{"."}, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if omitted.hostSet || omitted.portSet || omitted.stateSet || omitted.webDirSet {
+		t.Fatalf("omitted settings marked explicit: %#v", omitted)
+	}
+	explicit, err := parseOptions([]string{".", "--host=127.0.0.1", "-p", "0", "--state=", "--web-dir="}, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !explicit.hostSet || !explicit.portSet || !explicit.stateSet || !explicit.webDirSet || explicit.port != 0 {
+		t.Fatalf("explicit defaults lost: %#v", explicit)
 	}
 }
 
-func TestConfirmationAnswers(t *testing.T) {
-	if !isYes("YES\n") || isYes("no") || isYes("") {
-		t.Fatal("unexpected confirmation parsing")
+func testInputFile(t *testing.T, raw []byte) *os.File {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "input.diff")
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = file.Close() })
+	return file
+}
+
+func TestAcquireInputBoundsFixtureAndStdin(t *testing.T) {
+	for _, source := range []string{"stdin", "fixture"} {
+		for _, size := range []int{diffsource.MaxInputBytes, diffsource.MaxInputBytes + 1} {
+			name := source + "/within-limit"
+			if size > diffsource.MaxInputBytes {
+				name = source + "/over-limit"
+			}
+			t.Run(name, func(t *testing.T) {
+				file := testInputFile(t, bytes.Repeat([]byte("x"), size))
+				values := options{directory: ".", repositorySet: true}
+				if source == "fixture" {
+					values.fixture = file.Name()
+				}
+				input, err := acquireInput(values, file)
+				if size > diffsource.MaxInputBytes {
+					if err == nil || !strings.Contains(err.Error(), "16 MiB") {
+						t.Fatalf("oversized input accepted: %v", err)
+					}
+					return
+				}
+				if err != nil || input.Kind != "capture" || len(input.Raw) != size {
+					t.Fatalf("bounded input: kind=%q bytes=%d err=%v", input.Kind, len(input.Raw), err)
+				}
+				if !filepath.IsAbs(input.SubmittedFrom) {
+					t.Fatalf("capture provenance not absolute: %q", input.SubmittedFrom)
+				}
+			})
+		}
+	}
+}
+
+func TestAcquireInputPriority(t *testing.T) {
+	stdin := testInputFile(t, []byte("stdin patch"))
+	input, err := acquireInput(options{capture: "saved-capture"}, stdin)
+	if err != nil || input.Kind != "reopen" || input.CaptureID != "saved-capture" {
+		t.Fatalf("capture reopening: %#v %v", input, err)
+	}
+	position, err := stdin.Seek(0, io.SeekCurrent)
+	if err != nil || position != 0 {
+		t.Fatalf("reopening consumed stdin: position=%d err=%v", position, err)
+	}
+	fixture := testInputFile(t, []byte("fixture patch"))
+	input, err = acquireInput(options{fixture: fixture.Name(), directory: ".", repositorySet: true}, stdin)
+	if err != nil || string(input.Raw) != "fixture patch" || input.Kind != "capture" {
+		t.Fatalf("fixture priority: %#v %v", input, err)
+	}
+	input, err = acquireInput(options{directory: ".", repositorySet: true}, stdin)
+	if err != nil || string(input.Raw) != "stdin patch" || input.Kind != "capture" {
+		t.Fatalf("stdin priority over repository: %#v %v", input, err)
+	}
+}
+
+func TestAcquireRepositoryInputRequiresExplicitPath(t *testing.T) {
+	stdin, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stdin.Close()
+	piped, err := redirected(stdin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if piped {
+		t.Skip("null device is not a terminal-like input on this platform")
+	}
+	if _, err := acquireInput(options{directory: "."}, stdin); err == nil {
+		t.Fatal("bare invocation accepted without repository or patch")
+	}
+	input, err := acquireInput(options{directory: "./service", repositorySet: true}, stdin)
+	if err != nil || input.Kind != "worktree" || !filepath.IsAbs(input.Path) || filepath.Base(input.Path) != "service" {
+		t.Fatalf("explicit directory input: %#v %v", input, err)
+	}
+}
+
+func TestCaptureOptionsRejectConflictingInput(t *testing.T) {
+	for _, arguments := range [][]string{
+		{"--capture", "saved", "."},
+		{"--capture", "saved", "--fixture", "patch.diff"},
+	} {
+		if _, err := parseOptions(arguments, io.Discard); err == nil {
+			t.Fatalf("conflicting capture arguments accepted: %v", arguments)
+		}
+	}
+}
+
+func TestSubmissionOutputExplainsDaemonLifetime(t *testing.T) {
+	var output bytes.Buffer
+	writeSubmission(&output, contextservice.Submission{Context: contextservice.Context{ID: "capture-1", Kind: "capture"}}, time.Millisecond,
+		"http://127.0.0.1:7981/contexts/capture-1", "http://127.0.0.1:7981/mcp/contexts/capture-1")
+	value := output.String()
+	for _, expected := range []string{"context ID:         capture-1", "capture ID:         capture-1", "/contexts/capture-1", "/mcp/contexts/capture-1", "servediff service stop"} {
+		if !strings.Contains(value, expected) {
+			t.Fatalf("missing %q in %q", expected, value)
+		}
+	}
+	if strings.Contains(value, "ctrl-c") {
+		t.Fatal("submission output incorrectly suggests foreground server lifetime")
+	}
+}
+
+func TestStoppedServiceStatusDoesNotStartService(t *testing.T) {
+	t.Setenv("SERVEDIFF_RUNTIME_DIR", t.TempDir())
+	var output bytes.Buffer
+	if err := run(t.Context(), []string{"service", "status", "--json"}, nil, &output, io.Discard); !errors.Is(err, errServiceStopped) {
+		t.Fatalf("stopped status: %v", err)
+	}
+	var status controlapi.Status
+	if err := json.Unmarshal(output.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.State != "stopped" || status.PID != 0 {
+		t.Fatalf("status started a service: %#v", status)
+	}
+}
+
+func TestServiceOutputFormatsIPv6Listener(t *testing.T) {
+	var output bytes.Buffer
+	writeServiceStatus(&output, controlapi.Status{State: "running", Settings: controlapi.Settings{Host: "::", Port: 4000}}, false)
+	if !strings.Contains(output.String(), "[::]:4000") {
+		t.Fatalf("IPv6 listener lacks brackets: %q", output.String())
 	}
 }

@@ -50,12 +50,12 @@ function fileBlock(content: string) {
 }
 
 export function useReview(
+  contextId: string,
   repository: RepositoryDiff | null,
   draft: ReviewComment | null,
   setDraft: Dispatch<SetStateAction<ReviewComment | null>>,
   enabled: boolean,
 ) {
-  const contextId = repository?.locationId ?? repository?.id ?? "";
   const [stored, setStored] = useState<{
     key: string;
     comments: ReviewComment[];
@@ -98,7 +98,8 @@ export function useReview(
       const request = owner.beginRead(force);
       if (!request) return;
       try {
-        const result = await api.GET("/api/v1/comments", {
+        const result = await api.GET("/api/v2/contexts/{contextId}/comments", {
+          params: { path: { contextId } },
           signal: request.signal,
         });
         if (!request.isCurrent()) return;
@@ -123,7 +124,7 @@ export function useReview(
       owner.dispose();
       clearInterval(timer);
     };
-  }, [enabled, key, setDraft]);
+  }, [contextId, enabled, key, setDraft]);
 
   const startMutation = useCallback(
     (id: string) => {
@@ -251,13 +252,14 @@ export function useReview(
           entry.path === draft.path && entry.fingerprint === draft.fingerprint,
       );
       const result = existing
-        ? await api.PATCH("/api/v1/comments/{commentId}", {
-            params: { path: { commentId: draft.id } },
+        ? await api.PATCH("/api/v2/contexts/{contextId}/comments/{commentId}", {
+            params: { path: { contextId, commentId: draft.id } },
             body: { body: draft.body.trim() },
             signal: request.signal,
           })
         : file
-          ? await api.POST("/api/v1/comments", {
+          ? await api.POST("/api/v2/contexts/{contextId}/comments", {
+              params: { path: { contextId } },
               body: {
                 diffId: repository.id,
                 versionId: repository.versionId,
@@ -295,7 +297,7 @@ export function useReview(
     } finally {
       finishMutation(draft.id, request);
     }
-  }, [startMutation, finishMutation, replace, setDraft]);
+  }, [contextId, startMutation, finishMutation, replace, setDraft]);
 
   const cancel = useCallback(() => {
     setDraft(null);
@@ -325,9 +327,9 @@ export function useReview(
       try {
         const status = comment.status === "open" ? "resolved" : "open";
         const { data, error } = await api.PATCH(
-          "/api/v1/comments/{commentId}",
+          "/api/v2/contexts/{contextId}/comments/{commentId}",
           {
-            params: { path: { commentId: comment.id } },
+            params: { path: { contextId, commentId: comment.id } },
             body: { status },
             signal: request.signal,
           },
@@ -345,7 +347,7 @@ export function useReview(
         finishMutation(comment.id, request);
       }
     },
-    [startMutation, finishMutation, replace],
+    [contextId, startMutation, finishMutation, replace],
   );
 
   const remove = useCallback(
@@ -354,9 +356,9 @@ export function useReview(
       if (!request) return;
       try {
         const { response, error } = await api.DELETE(
-          "/api/v1/comments/{commentId}",
+          "/api/v2/contexts/{contextId}/comments/{commentId}",
           {
-            params: { path: { commentId: comment.id } },
+            params: { path: { contextId, commentId: comment.id } },
             signal: request.signal,
           },
         );
@@ -377,7 +379,7 @@ export function useReview(
         finishMutation(comment.id, request);
       }
     },
-    [key, startMutation, finishMutation, setDraft],
+    [contextId, key, startMutation, finishMutation, setDraft],
   );
 
   const removeComments = useCallback(
@@ -388,10 +390,13 @@ export function useReview(
         await request.ready;
         if (!request.isCurrent()) return;
         const previousComments = latest.current.comments;
-        const { data, error } = await api.DELETE("/api/v1/comments", {
-          params: { query: { status } },
-          signal: request.signal,
-        });
+        const { data, error } = await api.DELETE(
+          "/api/v2/contexts/{contextId}/comments",
+          {
+            params: { path: { contextId }, query: { status } },
+            signal: request.signal,
+          },
+        );
         if (!request.isCurrent()) return;
         if (!data) {
           setFeedback(errorDetail(error, "Unable to delete comments"));
@@ -415,7 +420,7 @@ export function useReview(
         finishMutation("*", request);
       }
     },
-    [key, startMutation, finishMutation, setDraft],
+    [contextId, key, startMutation, finishMutation, setDraft],
   );
 
   const resolveComment = useCallback(
@@ -424,9 +429,9 @@ export function useReview(
       if (!request) throw new Error("Comment update already pending");
       try {
         const { data, error } = await api.POST(
-          "/api/v1/review/comments/{commentId}/resolve",
+          "/api/v2/contexts/{contextId}/review/comments/{commentId}/resolve",
           {
-            params: { path: { commentId } },
+            params: { path: { contextId, commentId } },
             signal: AbortSignal.any([signal, request.signal]),
           },
         );
@@ -442,7 +447,7 @@ export function useReview(
         finishMutation(commentId, request);
       }
     },
-    [startMutation, finishMutation, markResolved],
+    [contextId, startMutation, finishMutation, markResolved],
   );
 
   const writeClipboard = useCallback(
@@ -470,15 +475,19 @@ export function useReview(
       options: CopyOptions = {},
     ) => {
       try {
-        const { data, error } = await api.GET("/api/v1/comments/export", {
-          params: {
-            query: {
-              includeResolved,
-              ...(commentId ? { commentId } : {}),
+        const { data, error } = await api.GET(
+          "/api/v2/contexts/{contextId}/comments/export",
+          {
+            params: {
+              path: { contextId },
+              query: {
+                includeResolved,
+                ...(commentId ? { commentId } : {}),
+              },
             },
+            parseAs: "text",
           },
-          parseAs: "text",
-        });
+        );
         if (data === undefined) {
           setFeedback(errorDetail(error, "Unable to export comments"));
           return;
@@ -504,7 +513,7 @@ export function useReview(
         setFeedback(errorDetail(error, "Unable to export comments"));
       }
     },
-    [writeClipboard],
+    [contextId, writeClipboard],
   );
 
   return useMemo(

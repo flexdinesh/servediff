@@ -22,7 +22,7 @@ go install github.com/flexdinesh/servediff/cmd/servediff@main
 Install JavaScript dependencies after cloning:
 
 ```sh
-pnpm install
+pnpm install --frozen-lockfile
 ```
 
 ## Commands
@@ -62,11 +62,22 @@ does not need a real repository or persisted data.
 The Go binary also supports explicit fixture use:
 
 ```sh
-go run ./cmd/servediff \
+go run ./cmd/servediff serve \
   --fixture test/fixtures/sample.diff \
   --state memory \
   --no-browser
 ```
+
+`serve` stays in the foreground and does not use the personal daemon. Ordinary
+repo/pipe commands submit to the background service and exit. Use isolated
+runtime directories (`SERVEDIFF_RUNTIME_DIR`) and in-memory state for lifecycle tests; fixture processes
+must not register inputs in the personal service. `SERVEDIFF_EXIT_ON_STDIN_CLOSE`
+is a foreground development-process lifecycle hook.
+
+Before replacing a running binary, stop the service with `servediff service
+stop`. Stop older foreground binaries separately; they do not honor the new
+database ownership lock. Restart uses the invoking binary and restores retained
+contexts from persistent state. Memory state lasts only for one process.
 
 ## Build pipeline
 
@@ -92,7 +103,9 @@ geometry, and Pierre's measured rendering boundary.
 `App.tsx` composes page sections. `AppProvider` composes appearance, sidebar,
 and workspace owners. Consumers subscribe through domain hooks for diff source,
 navigation, draft, review, reviewed files, and collapse state. One draft persists
-across scopes and pauses diff polling. `DiffWorkspace.tsx` owns Pierre rendering,
+across scopes and pauses diff polling. Context selection uses the top-bar
+switcher and scopes every request; switching disposes the previous workspace's
+request ownership and resets transient state. `DiffWorkspace.tsx` owns Pierre rendering,
 versions, worker options, and measured geometry. `use-review.ts` and
 `use-reviewed-files.ts` own their REST requests and recovery; reads cannot settle
 across writes or owner disposal. Keep section-only state within its component.

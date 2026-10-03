@@ -38,7 +38,7 @@ tasks:
   dev:server:
     deps: [web:build]
     cmds:
-      - go run ./cmd/servediff --fixture test/fixtures/sample.diff --state memory --web-dir apps/web/dist
+      - go run ./cmd/servediff serve --fixture test/fixtures/sample.diff --state memory --web-dir apps/web/dist
 
   dev:
     cmds:
@@ -55,7 +55,7 @@ tasks:
 
   check:go:
     cmds:
-      - test -z "$(gofmt -l cmd internal packages/api tools)"
+      - test -z "$(gofmt -l cmd internal packages/api tools test/conformance)"
       - go vet ./...
       - go test ./...
 

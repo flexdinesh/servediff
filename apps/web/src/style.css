@@ -131,6 +131,8 @@ kbd {
   gap: var(--space-3);
 }
 .header-heading h1 {
+  overflow: hidden;
+  text-overflow: ellipsis;
   margin: 0;
   font-size: var(--text-md);
   font-weight: var(--weight-semibold);
@@ -745,4 +747,20 @@ h2 {
   [role="button"]:not(:disabled) {
     cursor: pointer;
   }
+}
+
+.context-switcher {
+  max-width: min(30vw, 18rem);
+  min-width: 0;
+}
+.context-option {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.context-option-detail {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

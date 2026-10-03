@@ -32,6 +32,13 @@ arm64. Windows archives are also published. Archives include the native binary,
 README, and license. The embedded web application needs no installed Node.js
 runtime.
 
+For daemon upgrades, stop the current service before replacing the executable,
+then start it with the new binary. Stop older foreground servers separately:
+they do not honor daemon/database ownership locks. The schema-2 migration
+preserves existing review IDs and data; unsupported older/newer schemas fail
+without modification. Persistent contexts survive restart; in-memory state does
+not. Listener settings are not saved across a stopped service.
+
 The tap branch is deterministic per version, such as `servediff-v0.1.0`.
 Rerunning a release whose tag still points to current `main` reuses the existing
 GitHub artifacts and updates the same tap pull request. Published artifacts are

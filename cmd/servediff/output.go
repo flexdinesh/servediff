@@ -1,12 +1,16 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"os"
-	"strings"
+	"strconv"
 	"time"
 
+	"github.com/flexdinesh/servediff/internal/contextservice"
+	"github.com/flexdinesh/servediff/internal/controlapi"
 	buildversion "github.com/flexdinesh/servediff/internal/version"
 )
 
@@ -61,11 +65,19 @@ func writeStartup(writer io.Writer, input loadedInput, url string) {
 		}
 	}
 	fmt.Fprintf(writer, "  %s\n", color.paint(color.bold+color.cyan, "servediff "+displayVersion()))
-	fmt.Fprintf(writer, "  %s  %s\n", color.paint(color.dim, "serving directory:"), input.directory)
+	if input.directory != "" {
+		fmt.Fprintf(writer, "  %s  %s\n", color.paint(color.dim, "serving directory:"), input.directory)
+	}
 	fmt.Fprintf(writer, "  %s               %s\n", color.paint(color.dim, "mode:"), input.mode)
 	fmt.Fprintf(writer, "  %s                %s\n", color.paint(color.dim, "url:"), color.paint(color.green, url))
 	if input.captureID != "" {
 		fmt.Fprintf(writer, "  %s         %s\n", color.paint(color.dim, "capture ID:"), input.captureID)
+	}
+	if input.contextID != "" {
+		fmt.Fprintf(writer, "  context ID:         %s\n", input.contextID)
+	}
+	if input.mcpURL != "" {
+		fmt.Fprintf(writer, "  MCP:                %s\n", input.mcpURL)
 	}
 	fmt.Fprintln(writer, "  ")
 	elapsed := max(input.processed.Round(time.Millisecond).Milliseconds(), 1)
@@ -77,13 +89,35 @@ func writeStartup(writer io.Writer, input loadedInput, url string) {
 		fmt.Fprintf(writer, "    %s\n", plural(binaries, "binary file", "binary files"))
 	}
 	fmt.Fprintln(writer, "  ")
-	fmt.Fprintf(writer, "  %s\n", color.paint(color.dim, "ctrl-c to stop."))
+	guidance := "ctrl-c to stop."
+	if input.submitted {
+		guidance = "servediff service stop to stop the daemon."
+	}
+	fmt.Fprintf(writer, "  %s\n", color.paint(color.dim, guidance))
 }
 
-func writePortBusy(writer io.Writer, port, next int) {
-	color := terminalColors(writer)
-	message := fmt.Sprintf("port %d is busy; trying %d", port, next)
-	fmt.Fprintf(writer, "  %s\n", color.paint(color.yellow, message))
+func writeSubmission(writer io.Writer, submission contextservice.Submission, elapsed time.Duration, url, mcpURL string) {
+	input := submissionInput(submission, elapsed)
+	input.contextID, input.mcpURL, input.submitted = submission.Context.ID, mcpURL, true
+	writeStartup(writer, input, url)
+}
+
+func writeServiceStatus(writer io.Writer, status controlapi.Status, asJSON bool) {
+	if asJSON {
+		_ = json.NewEncoder(writer).Encode(status)
+		return
+	}
+	fmt.Fprintf(writer, "  servediff service %s\n", status.State)
+	if status.State != "running" {
+		return
+	}
+	fmt.Fprintf(writer, "  url:                %s\n", status.BrowserURL)
+	fmt.Fprintf(writer, "  listen:             %s\n", net.JoinHostPort(status.Settings.Host, strconv.Itoa(status.Settings.Port)))
+	fmt.Fprintf(writer, "  version:            %s\n", status.Version)
+	fmt.Fprintf(writer, "  protocol:           %d\n", status.ProtocolVersion)
+	fmt.Fprintf(writer, "  PID:                %d\n", status.PID)
+	fmt.Fprintf(writer, "  state:              %s\n", status.Settings.State)
+	fmt.Fprintf(writer, "  contexts:           %d worktrees, %d captures\n", status.Worktrees, status.Captures)
 }
 
 func plural(count int, singular, plural string) string {
@@ -92,13 +126,4 @@ func plural(count int, singular, plural string) string {
 		label = singular
 	}
 	return fmt.Sprintf("%d %s", count, label)
-}
-
-func isYes(value string) bool {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "y", "yes":
-		return true
-	default:
-		return false
-	}
 }

@@ -13,11 +13,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/flexdinesh/servediff/internal/processlock"
 	"github.com/flexdinesh/servediff/internal/review"
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 2
+const schemaVersion = 3
 const CaptureLifetime = 14 * 24 * time.Hour
 
 var ErrNotFound = errors.New("diff not found")
@@ -42,7 +43,10 @@ type CaptureInfo struct {
 	ExpiresAt int64  `json:"expiresAt"`
 }
 
-type Store struct{ db *sql.DB }
+type Store struct {
+	db   *sql.DB
+	lock *processlock.Lock
+}
 
 func DefaultPath() (string, error) {
 	state := os.Getenv("XDG_STATE_HOME")
@@ -65,23 +69,50 @@ func newID() (string, error) {
 }
 
 func Open(path string) (*Store, error) {
-	name := path
-	if name == "" {
-		name = ":memory:"
-	} else {
-		if err := os.MkdirAll(filepath.Dir(name), 0o700); err != nil {
+	name := ":memory:"
+	var lock *processlock.Lock
+	if path != "" && path != ":memory:" {
+		absolute, err := filepath.Abs(path)
+		if err != nil {
 			return nil, err
 		}
-		if err := discardLegacyFile(name); err != nil {
+		if err := os.MkdirAll(filepath.Dir(absolute), 0o700); err != nil {
+			return nil, err
+		}
+		// Canonicalize aliases before selecting the database ownership lock.
+		parent, err := filepath.EvalSymlinks(filepath.Dir(absolute))
+		if err != nil {
+			return nil, err
+		}
+		name = filepath.Join(parent, filepath.Base(absolute))
+		if existing, err := filepath.EvalSymlinks(name); err == nil {
+			name = existing
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+		lock, err = processlock.TryAcquire(name + ".lock")
+		if err != nil {
+			return nil, fmt.Errorf("state database is already in use or unavailable: %w", err)
+		}
+	}
+	success := false
+	defer func() {
+		if !success && lock != nil {
+			_ = lock.Close()
+		}
+	}()
+	if name != ":memory:" {
+		if err := validateStateFile(name); err != nil {
 			return nil, err
 		}
 	}
+
 	db, err := sql.Open("sqlite", name)
 	if err != nil {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	store := &Store{db: db}
+	store := &Store{db: db, lock: lock}
 	if _, err = db.Exec("PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000"); err == nil {
 		err = store.initialize()
 	}
@@ -89,16 +120,17 @@ func Open(path string) (*Store, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	if path != "" {
-		if err := os.Chmod(path, 0o600); err != nil {
+	if name != ":memory:" {
+		if err := os.Chmod(name, 0o600); err != nil {
 			_ = db.Close()
 			return nil, err
 		}
 	}
+	success = true
 	return store, nil
 }
 
-func discardLegacyFile(path string) error {
+func validateStateFile(path string) error {
 	file, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -115,21 +147,7 @@ func discardLegacyFile(path string) error {
 	if count == 0 || string(header) == "SQLite format 3\x00" {
 		return nil
 	}
-	if header[0] != '{' {
-		return errors.New("unrecognized servediff state file")
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	var legacy struct {
-		Version  int                        `json:"version"`
-		Sessions map[string]json.RawMessage `json:"sessions"`
-	}
-	if json.Unmarshal(raw, &legacy) != nil || legacy.Version != 1 || legacy.Sessions == nil {
-		return errors.New("unrecognized servediff state file")
-	}
-	return os.Remove(path)
+	return errors.New("unrecognized or unsupported servediff state file; existing data preserved")
 }
 
 func (store *Store) initialize() error {
@@ -155,12 +173,8 @@ func (store *Store) initialize() error {
 			return err
 		}
 	}
-	if version > 0 && version < schemaVersion {
-		for _, name := range []string{"diff_files", "marks", "comments", "reviews", "diff_versions", "diffs", "locations", "repositories", "users"} {
-			if _, err := transaction.Exec("DROP TABLE IF EXISTS " + name); err != nil {
-				return err
-			}
-		}
+	if version > 0 && version != 2 && version != schemaVersion {
+		return fmt.Errorf("servediff state schema %d is unsupported; existing data preserved", version)
 	}
 	statements := []string{
 		`CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, os_uid TEXT NOT NULL UNIQUE, name TEXT NOT NULL, created_at INTEGER NOT NULL)`,
@@ -180,13 +194,22 @@ func (store *Store) initialize() error {
 			return err
 		}
 	}
+	if err := initializeCatalog(transaction); err != nil {
+		return err
+	}
 	if _, err := transaction.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
 		return err
 	}
 	return transaction.Commit()
 }
 
-func (store *Store) Close() error { return store.db.Close() }
+func (store *Store) Close() error {
+	err := store.db.Close()
+	if store.lock != nil {
+		return errors.Join(err, store.lock.Close())
+	}
+	return err
+}
 
 func (store *Store) User(osUID, name string) (User, error) {
 	if osUID == "" || name == "" {
@@ -211,6 +234,14 @@ func (store *Store) RegisterGit(ownerID, root, commonDir, worktreeKey string) (B
 		return Binding{}, err
 	}
 	defer transaction.Rollback()
+	binding, err := registerGit(transaction, ownerID, root, commonDir, worktreeKey)
+	if err != nil {
+		return Binding{}, err
+	}
+	return binding, transaction.Commit()
+}
+
+func registerGit(transaction *sql.Tx, ownerID, root, commonDir, worktreeKey string) (Binding, error) {
 	repoID, err := newID()
 	if err != nil {
 		return Binding{}, err
@@ -248,7 +279,10 @@ func (store *Store) RegisterGit(ownerID, root, commonDir, worktreeKey string) (B
 			return Binding{}, err
 		}
 	}
-	return binding, transaction.Commit()
+	if err := putWorktreeContext(transaction, ownerID, locationID, time.Now().UnixMilli()); err != nil {
+		return Binding{}, err
+	}
+	return binding, nil
 }
 
 func ensureReview(transaction *sql.Tx, ownerID, diffID string) error {
@@ -266,6 +300,14 @@ func (store *Store) Capture(ownerID, raw string, snapshot review.RepositoryDiff)
 		return Binding{}, err
 	}
 	defer transaction.Rollback()
+	binding, err := capture(transaction, ownerID, raw, snapshot, "")
+	if err != nil {
+		return Binding{}, err
+	}
+	return binding, transaction.Commit()
+}
+
+func capture(transaction *sql.Tx, ownerID, raw string, snapshot review.RepositoryDiff, submittedFrom string) (Binding, error) {
 	diffID, err := newID()
 	if err != nil {
 		return Binding{}, err
@@ -289,7 +331,10 @@ func (store *Store) Capture(ownerID, raw string, snapshot review.RepositoryDiff)
 	if err := ensureReview(transaction, ownerID, diffID); err != nil {
 		return Binding{}, err
 	}
-	return Binding{ContextID: diffID, DiffIDs: map[review.DiffMode]string{review.DiffAll: diffID}, VersionID: versionID}, transaction.Commit()
+	if err := putCaptureContext(transaction, ownerID, diffID, submittedFrom, now.UnixMilli()); err != nil {
+		return Binding{}, err
+	}
+	return Binding{ContextID: diffID, DiffIDs: map[review.DiffMode]string{review.DiffAll: diffID}, VersionID: versionID}, nil
 }
 
 func (store *Store) ReopenCapture(ownerID, diffID string, now time.Time) (string, Binding, error) {
@@ -322,8 +367,18 @@ func (store *Store) ListCaptures(ownerID string, now time.Time) ([]CaptureInfo, 
 }
 
 func (store *Store) PruneExpired(now time.Time) error {
-	_, err := store.db.Exec(`DELETE FROM diffs WHERE kind='capture' AND expires_at<=?`, now.UnixMilli())
-	return err
+	transaction, err := store.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer transaction.Rollback()
+	if _, err := transaction.Exec(`DELETE FROM diffs WHERE kind='capture' AND expires_at<=?`, now.UnixMilli()); err != nil {
+		return err
+	}
+	if _, err := transaction.Exec(`DELETE FROM submissions WHERE created_at<=?`, now.Add(-SubmissionLifetime).UnixMilli()); err != nil {
+		return err
+	}
+	return transaction.Commit()
 }
 
 func (store *Store) CaptureAlive(ownerID, diffID string, now time.Time) (bool, error) {

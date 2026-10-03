@@ -1,5 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
-import type { ApiRepositoryDiff, ApiSession } from "@servediff/api";
+import type { ApiContext, ApiRepositoryDiff } from "@servediff/api";
 import {
   isDiffMode,
   type DiffMode,
@@ -7,6 +7,9 @@ import {
 } from "@servediff/shared";
 
 async function localWorkspace(page: Page) {
+  await page.route("**/api/v2/metrics", (route) =>
+    route.fulfill({ json: { cpuUsage: 0, rssBytes: 0 } }),
+  );
   const before = Array.from({ length: 100 }, (_, index) => `line ${index + 1}`);
   before[49] = 'export const value = "before";';
   const state = {
@@ -20,12 +23,16 @@ async function localWorkspace(page: Page) {
     contentsRequests: 0,
     comments: new Array<ReviewComment>(),
   };
-  const session: ApiSession = {
+  const session: ApiContext = {
     id: "local-review",
-    user: { id: "user", name: "tester" },
     locationId: "location",
     repositoryId: "repo",
-    source: "local",
+    kind: "worktree",
+    createdAt: 1,
+    lastSubmittedAt: 1,
+    expiresAt: null,
+    submittedFrom: null,
+    availability: "available",
     root: "/local-review",
     name: "Local review",
     capabilities: {
@@ -45,7 +52,7 @@ async function localWorkspace(page: Page) {
       locationId: "location",
       repositoryId: "repo",
       source: "local",
-      root: session.root,
+      root: session.root ?? "",
       name: session.name,
       branch: "main",
       head: "head",
@@ -67,10 +74,13 @@ async function localWorkspace(page: Page) {
       ],
     };
   }
-  await page.route("**/api/v1/session", (route) =>
+  await page.route("**/api/v2/contexts?*", (route) =>
+    route.fulfill({ json: { contexts: [session], nextCursor: null } }),
+  );
+  await page.route("**/api/v2/contexts/*", (route) =>
     route.fulfill({ json: session }),
   );
-  await page.route("**/api/v1/diffs/current?*", (route) => {
+  await page.route("**/api/v2/contexts/*/diffs/current?*", (route) => {
     const scope = new URL(route.request().url()).searchParams.get("scope");
     if (!isDiffMode(scope)) throw new Error("Invalid scope");
     state.scopes.push(scope);
@@ -81,7 +91,7 @@ async function localWorkspace(page: Page) {
     }
     return route.fulfill({ json: diff });
   });
-  await page.route("**/api/v1/diffs/*/files/*/patch?*", (route) => {
+  await page.route("**/api/v2/contexts/*/diffs/*/files/*/patch?*", (route) => {
     if (state.failPatch)
       return route.fulfill({ status: 500, json: { detail: "Patch rejected" } });
     const version = new URL(route.request().url()).searchParams.get(
@@ -108,34 +118,37 @@ async function localWorkspace(page: Page) {
       },
     });
   });
-  await page.route("**/api/v1/diffs/*/files/*/contents?*", (route) => {
-    state.contentsRequests++;
-    const version = new URL(route.request().url()).searchParams.get(
-      "fileVersion",
-    );
-    const after = [...before];
-    after[49] = `export const value = "${version}";`;
-    return route.fulfill({
-      json: {
-        before: before.join("\n") + "\n",
-        after: after.join("\n") + "\n",
-      },
-    });
-  });
-  await page.route("**/api/v1/comments", (route) =>
+  await page.route(
+    "**/api/v2/contexts/*/diffs/*/files/*/contents?*",
+    (route) => {
+      state.contentsRequests++;
+      const version = new URL(route.request().url()).searchParams.get(
+        "fileVersion",
+      );
+      const after = [...before];
+      after[49] = `export const value = "${version}";`;
+      return route.fulfill({
+        json: {
+          before: before.join("\n") + "\n",
+          after: after.join("\n") + "\n",
+        },
+      });
+    },
+  );
+  await page.route("**/api/v2/contexts/*/comments", (route) =>
     route.fulfill({ json: { comments: state.comments } }),
   );
-  await page.route("**/api/v1/review-marks?*", (route) =>
+  await page.route("**/api/v2/contexts/*/review-marks?*", (route) =>
     route.fulfill({ json: { marks: [] } }),
   );
-  await page.route("**/api/v1/review-marks/*?*", (route) => {
+  await page.route("**/api/v2/contexts/*/review-marks/*?*", (route) => {
     if (state.holdMarks) {
       state.pendingMarks.push(route);
       return;
     }
     return route.fulfill({ json: {} });
   });
-  return state;
+  return Object.assign(state, { context: session, repository });
 }
 
 async function ready(page: Page, value = "all-v1") {
@@ -314,4 +327,132 @@ test("comment navigation changes scope and clears filters after previews load", 
   await expect(
     page.getByRole("searchbox", { name: "Filter files" }),
   ).toHaveValue("");
+});
+
+test("context switching isolates delayed repository responses and fixed captures", async ({
+  page,
+}) => {
+  const state = await localWorkspace(page);
+  const contexts: ApiContext[] = [
+    state.context,
+    {
+      ...state.context,
+      id: "second-repo",
+      name: "Second repo",
+      root: "/second-repo",
+    },
+    {
+      ...state.context,
+      id: "piped-patch",
+      kind: "capture",
+      name: "Captured patch",
+      root: null,
+      locationId: null,
+      repositoryId: null,
+      capabilities: {
+        ...state.context.capabilities,
+        diff: {
+          scopes: { state: "enabled", values: ["all"] },
+          refresh: { state: "unavailable" },
+          stagingMetadata: { state: "unavailable" },
+        },
+        files: { contents: { state: "unavailable" } },
+      },
+    },
+  ];
+  await page.route("**/api/v2/contexts?*", (route) =>
+    route.fulfill({ json: { contexts, nextCursor: null } }),
+  );
+  await page.route("**/api/v2/contexts/*", (route) => {
+    const id = new URL(route.request().url()).pathname.split("/").at(-1);
+    const context = contexts.find((entry) => entry.id === id);
+    return route.fulfill({ json: context });
+  });
+  let delayed: Route | undefined;
+  let delay = false;
+  await page.route("**/api/v2/contexts/*/diffs/current?*", (route) => {
+    const id = new URL(route.request().url()).pathname.split("/")[4];
+    const context = contexts.find((entry) => entry.id === id);
+    if (!context) throw new Error("Unknown context");
+    if (delay && id === state.context.id) {
+      delayed = route;
+      return;
+    }
+    return route.fulfill({
+      json: {
+        ...state.repository("all"),
+        id: `diff-${id}`,
+        name: context.name,
+        root: context.root ?? "",
+        source: context.kind === "capture" ? "stdin" : "local",
+      },
+    });
+  });
+  await page.goto("/");
+  await ready(page);
+  delay = true;
+  await page.getByRole("button", { name: "Refresh changes" }).click();
+  await expect.poll(() => delayed !== undefined).toBe(true);
+  await page.getByRole("combobox", { name: "Review context" }).click();
+  await page.getByRole("option", { name: /Second repo/ }).click();
+  await expect(page.locator("#changes-title")).toHaveText("Second repo");
+  await ready(page);
+  if (!delayed) throw new Error("Missing delayed request");
+  await delayed.fulfill({
+    json: { ...state.repository("all"), name: "Stale repo" },
+  });
+  await expect(page.locator("#changes-title")).toHaveText("Second repo");
+  await page.getByRole("combobox", { name: "Review context" }).click();
+  await page.getByRole("option", { name: /Captured patch/ }).click();
+  await expect(page.locator("#changes-title")).toHaveText("Piped diff");
+  await expect(
+    page.getByRole("button", { name: "Refresh changes" }),
+  ).toBeHidden();
+  await expect(page.locator("#connection")).toHaveText("Fixed snapshot");
+  await expect(page).toHaveURL(/\/contexts\/piped-patch$/);
+  await page.reload();
+  await expect(page.locator("#changes-title")).toHaveText("Piped diff");
+});
+
+test("empty service explains how to register a repository or pipe", async ({
+  page,
+}) => {
+  await page.route("**/api/v2/contexts?*", (route) =>
+    route.fulfill({ json: { contexts: [], nextCursor: null } }),
+  );
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "No review contexts yet" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "Run servediff . in a repository, or pipe a diff into servediff.",
+    ),
+  ).toBeVisible();
+});
+
+test("unavailable context keeps the switcher usable", async ({ page }) => {
+  const state = await localWorkspace(page);
+  const unavailable: ApiContext = {
+    ...state.context,
+    id: "unavailable",
+    name: "Unavailable repo",
+    availability: "unavailable",
+  };
+  await page.route("**/api/v2/contexts?*", (route) =>
+    route.fulfill({
+      json: { contexts: [state.context, unavailable], nextCursor: null },
+    }),
+  );
+  await page.route("**/api/v2/contexts/unavailable", (route) =>
+    route.fulfill({ status: 503, json: { detail: "Repository moved" } }),
+  );
+  await page.goto("/");
+  await ready(page);
+  await page.getByRole("combobox", { name: "Review context" }).click();
+  await page.getByRole("option", { name: /Unavailable repo/ }).click();
+  await expect(page.getByText("Repository moved")).toBeVisible();
+  await page.getByRole("combobox", { name: "Review context" }).click();
+  await page.getByRole("option", { name: /Local review/ }).click();
+  await ready(page);
 });

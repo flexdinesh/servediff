@@ -18,12 +18,12 @@ origin and lifecycle rules apply.
 Codex, Claude Code, and OpenCode running on a local machine are coding
 harnesses, not inherently browser agents. They can work with servediff without
 opening its page when they support MCP `2026-07-28`: configure the servediff
-[`/mcp` endpoint](mcp.md). A harness cannot obtain WebMCP tools merely from a
+[`/mcp/contexts/{id}` endpoint](mcp.md). A harness cannot obtain WebMCP tools merely from a
 page URL unless it is driving a WebMCP-capable browser.
 
 ## Registered tools
 
-When the session's review-comments capability is enabled, the page registers:
+When the selected context's review-comments capability is enabled, the page registers:
 
 - `get_review_comments`: returns open comments from all enabled scopes; optional
   `include_resolved: true` includes resolved comments.
@@ -37,8 +37,9 @@ actionable. Stale comments are returned and may be resolved by ID.
 
 The getter is marked read-only and its comment content is marked untrusted. The
 resolver is marked mutating and idempotent. Both operate only against the open
-servediff application; they do not access unrelated websites or external
-services.
+servediff context. They do not access unrelated contexts, websites, or external
+services. A worktree and a piped capture expose the same review tools when their
+capabilities permit them.
 
 ## How it works
 
@@ -46,11 +47,12 @@ services.
 2. It registers the two tools while review comments are enabled.
 3. A browser agent invokes a tool through the browser, subject to browser UX and
    permission policy.
-4. The page calls servediff's same-origin REST API.
+4. The page calls servediff's same-origin, context-scoped REST API.
 5. The Go server reads or updates the authoritative comment store.
 6. A successful resolution updates the visible review state immediately.
-7. Tool registrations are removed when the page unmounts or the capability
-   becomes unavailable.
+7. Tool registrations are removed when the page unmounts, its context changes,
+   or the capability becomes unavailable. An invocation retains its original
+   context binding; it cannot be redirected by a later switch.
 
 Closing or navigating away from the page removes access to these WebMCP tools.
 Comments themselves remain on the server and are still available through the
@@ -82,8 +84,8 @@ The servediff API is unauthenticated. WebMCP does not add authentication: anyone
 who can reach the server can access its review data through the available HTTP
 interfaces. Keep the default loopback binding, or use only a trusted network.
 
-Future hosted sessions, unique URLs, authentication, and multi-session routing
-are outside this first version.
+Authentication remains outside this version. The private CLI control listener
+does not authenticate browser requests.
 
 See the [WebMCP specification](https://webmachinelearning.github.io/webmcp/) for
 the current browser API.

@@ -21,11 +21,12 @@ test("disabled comments issue no requests and expose no comment UI", async ({
   page,
 }) => {
   let commentRequests = 0;
-  await page.route("**/api/v1/session", (route) =>
+  await page.route("**/api/v2/contexts/*", (route) =>
     route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
-        id: "comments-disabled",
+        id: new URL(route.request().url()).pathname.split("/").at(-1),
+        kind: "capture",
         source: "stdin",
         name: "Piped diff",
         root: "fixture",
@@ -41,7 +42,7 @@ test("disabled comments issue no requests and expose no comment UI", async ({
       }),
     }),
   );
-  await page.route("**/api/v1/comments**", (route) => {
+  await page.route("**/api/v2/contexts/*/comments**", (route) => {
     commentRequests++;
     return route.abort();
   });
@@ -60,7 +61,7 @@ test("disabled comments issue no requests and expose no comment UI", async ({
 test("shows server process metrics in the compact status bar", async ({
   page,
 }) => {
-  await page.route("**/api/v1/metrics", (route) =>
+  await page.route("**/api/v2/metrics", (route) =>
     route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({ cpuUsage: 12.5, rssBytes: 52_428_800 }),
@@ -1278,7 +1279,7 @@ test("copy dialog reports clipboard status and restores focus", async ({
   const exportQueries: string[] = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
-    if (url.pathname === "/api/v1/comments/export")
+    if (url.pathname.endsWith("/comments/export"))
       exportQueries.push(url.search);
   });
   await expect(card).toHaveAttribute("data-expanded", "false");

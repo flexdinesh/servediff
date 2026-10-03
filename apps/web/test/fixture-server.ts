@@ -29,6 +29,7 @@ export async function startFixtureServer(): Promise<{
     [
       "run",
       "./cmd/servediff",
+      "serve",
       "--fixture",
       "test/fixtures/sample.diff",
       "--state",

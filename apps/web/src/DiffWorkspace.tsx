@@ -99,16 +99,17 @@ function lineNumberColumnWidth(item: CodeViewItem<CommentAnnotation>) {
 }
 
 async function loadDiffFiles(
+  contextId: string,
   fileDiff: FileDiffMetadata,
   repository: RepositoryDiff,
 ) {
   const file = repository.files.find((entry) => entry.path === fileDiff.name);
   if (!file) throw new Error("File is no longer in this diff");
   const { data: body, error } = await api.GET(
-    "/api/v1/diffs/{diffId}/files/{fileId}/contents",
+    "/api/v2/contexts/{contextId}/diffs/{diffId}/files/{fileId}/contents",
     {
       params: {
-        path: { diffId: repository.id, fileId: file.id },
+        path: { contextId, diffId: repository.id, fileId: file.id },
         query: {
           scope: repository.mode,
           fileVersion: file.fingerprint,
@@ -153,7 +154,7 @@ function itemVersions() {
 // Keep Pierre's annotation versions and event callbacks local to its renderer.
 export function DiffWorkspace() {
   const { diff, repository, piped, mode } = useDiffSource();
-  const { capabilities } = useSession();
+  const { id: contextId, capabilities } = useSession();
   const { theme, diffTheme, lineDiffType, layout, wrap } = useAppearance();
   const { collapsed, setCollapsed } = useDiffCollapse();
   const {
@@ -371,7 +372,7 @@ export function DiffWorkspace() {
             loadDiffFiles(fileDiff) {
               const current = actions.current.repository;
               if (!current) throw new Error("Repository is unavailable");
-              return loadDiffFiles(fileDiff, current);
+              return loadDiffFiles(contextId, fileDiff, current);
             },
           }
         : {}),
@@ -512,6 +513,7 @@ export function DiffWorkspace() {
         : {}),
     }),
     [
+      contextId,
       theme,
       diffTheme,
       lineDiffType,

@@ -21,11 +21,14 @@ import {
 import type { CommentAnnotation } from "./review-model.ts";
 import { languageOverride } from "./display-options.ts";
 
-async function getDiff(mode: DiffMode, signal: AbortSignal) {
-  const { data, error } = await api.GET("/api/v1/diffs/current", {
-    params: { query: { scope: mode } },
-    signal,
-  });
+async function getDiff(contextId: string, mode: DiffMode, signal: AbortSignal) {
+  const { data, error } = await api.GET(
+    "/api/v2/contexts/{contextId}/diffs/current",
+    {
+      params: { path: { contextId }, query: { scope: mode } },
+      signal,
+    },
+  );
   if (!data) throw new Error(errorDetail(error, "Unable to load changes"));
   return data;
 }
@@ -63,6 +66,7 @@ const initialState: DiffState = {
 // Own polling and cancellation in one effect; drafts pause polling and scope changes
 // abort stale requests. Cached previews retain their identity between refreshes.
 export function useDiff(
+  contextId: string,
   mode: DiffMode,
   composing: boolean,
   refreshEnabled: boolean,
@@ -88,7 +92,7 @@ export function useDiff(
       busy = true;
       setState((previous) => ({ ...previous, busy: true }));
       try {
-        const data: RepositoryDiff = await getDiff(mode, signal);
+        const data: RepositoryDiff = await getDiff(contextId, mode, signal);
         if (signal.aborted || disposed) return;
         if (!force && !retry && current?.revision === data.revision) {
           setState((previous) => ({
@@ -134,10 +138,10 @@ export function useDiff(
             if (!file) continue;
             try {
               const { data: body, error } = await api.GET(
-                "/api/v1/diffs/{diffId}/files/{fileId}/patch",
+                "/api/v2/contexts/{contextId}/diffs/{diffId}/files/{fileId}/patch",
                 {
                   params: {
-                    path: { diffId: data.id, fileId: file.id },
+                    path: { contextId, diffId: data.id, fileId: file.id },
                     query: {
                       scope: mode,
                       versionId: data.versionId,
@@ -188,6 +192,7 @@ export function useDiff(
                     : parsed;
                   // Reuse worker highlighting across navigation and scope reloads.
                   displayDiff.cacheKey = JSON.stringify([
+                    contextId,
                     data.id,
                     mode,
                     file.path,
@@ -287,6 +292,6 @@ export function useDiff(
       if (refreshEnabled)
         document.removeEventListener("visibilitychange", check);
     };
-  }, [mode, refreshEnabled]);
+  }, [contextId, mode, refreshEnabled]);
   return useMemo(() => ({ ...state, refresh }), [state, refresh]);
 }

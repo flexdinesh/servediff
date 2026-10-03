@@ -57,15 +57,20 @@ func (failure *gitFailure) Unwrap() error { return failure.err }
 func runGit(ctx context.Context, root string, maximum int, arguments ...string) (string, error) {
 	commandContext, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
+	release, err := gitProcesses.acquire(commandContext)
+	if err != nil {
+		return "", err
+	}
+	defer release()
 	args := append([]string{"--literal-pathspecs", "-c", "core.quotePath=false"}, arguments...)
 	command := exec.CommandContext(commandContext, "git", args...)
 	command.Dir = root
-	command.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0", "GIT_TERMINAL_PROMPT=0")
+	command.Env = gitEnvironment(os.Environ())
 	output := &limitedBuffer{maximum: maximum}
 	errorOutput := &limitedBuffer{maximum: 64 * 1024}
 	command.Stdout = output
 	command.Stderr = errorOutput
-	err := command.Run()
+	err = command.Run()
 	if output.exceeded {
 		return output.String(), errOutputLimit
 	}
@@ -227,9 +232,17 @@ func OpenRepository(ctx context.Context, directory string) (Source, error) {
 	}
 	root, err := runGit(ctx, absolute, 16*1024*1024, "rev-parse", "--show-toplevel")
 	if err != nil {
+		var failure *gitFailure
+		if !errors.As(err, &failure) {
+			return nil, err
+		}
 		return nil, fmt.Errorf("not a Git working tree: %s", absolute)
 	}
-	return &gitSource{root: strings.TrimSuffix(root, "\n")}, nil
+	canonical, err := filepath.EvalSymlinks(strings.TrimSuffix(root, "\n"))
+	if err != nil {
+		return nil, err
+	}
+	return &gitSource{root: filepath.Clean(canonical)}, nil
 }
 
 func RepositoryIdentity(ctx context.Context, root string) (commonDir, worktreeDir string, err error) {
@@ -246,7 +259,15 @@ func RepositoryIdentity(ctx context.Context, root string) (commonDir, worktreeDi
 	if !filepath.IsAbs(commonDir) {
 		commonDir = filepath.Join(root, commonDir)
 	}
-	return filepath.Clean(commonDir), worktreeDir, nil
+	commonDir, err = filepath.EvalSymlinks(commonDir)
+	if err != nil {
+		return "", "", err
+	}
+	worktreeDir, err = filepath.EvalSymlinks(worktreeDir)
+	if err != nil {
+		return "", "", err
+	}
+	return filepath.Clean(commonDir), filepath.Clean(worktreeDir), nil
 }
 
 func (source *gitSource) Root() string { return source.root }
@@ -266,19 +287,27 @@ func (source *gitSource) headAndBase(ctx context.Context) (*string, string, erro
 		head = strings.TrimSpace(head)
 		return &head, head, nil
 	}
+	var failure *gitFailure
+	if !errors.As(err, &failure) {
+		return nil, "", err
+	}
 	base, baseError := runGit(ctx, source.root, 16*1024*1024, "hash-object", "-t", "tree", "--stdin")
 	return nil, strings.TrimSpace(base), baseError
 }
 
-func (source *gitSource) recreatedContents(ctx context.Context, path string, head string) review.FilePatch {
+func (source *gitSource) recreatedContents(ctx context.Context, path string, head string) (review.FilePatch, error) {
 	absolute := filepath.Join(source.root, filepath.FromSlash(path))
 	stat, err := os.Lstat(absolute)
 	if err != nil || (!stat.Mode().IsRegular() && stat.Mode()&os.ModeSymlink == 0) || stat.Size() > MaxFileBytes {
-		return review.FilePatch{Message: Message("Recreated file exceeds the preview limit or is not a text file.")}
+		return review.FilePatch{Message: Message("Recreated file exceeds the preview limit or is not a text file.")}, nil
 	}
 	before, err := runGit(ctx, source.root, MaxFileBytes, "show", head+":"+path)
 	if err != nil {
-		return review.FilePatch{Message: Message("Original file exceeds the 2 MiB preview limit or changed while loading.")}
+		var failure *gitFailure
+		if !errors.Is(err, errOutputLimit) && !errors.As(err, &failure) {
+			return review.FilePatch{}, err
+		}
+		return review.FilePatch{Message: Message("Original file exceeds the 2 MiB preview limit or changed while loading.")}, nil
 	}
 	var raw []byte
 	if stat.Mode()&os.ModeSymlink != 0 {
@@ -288,14 +317,14 @@ func (source *gitSource) recreatedContents(ctx context.Context, path string, hea
 		raw, err = os.ReadFile(absolute)
 	}
 	if err != nil || len(raw) > MaxFileBytes {
-		return review.FilePatch{Message: Message("Original file exceeds the 2 MiB preview limit or changed while loading.")}
+		return review.FilePatch{Message: Message("Original file exceeds the 2 MiB preview limit or changed while loading.")}, nil
 	}
 	after := string(raw)
 	message := (*string)(nil)
 	if !validUTF8(before) || !validUTF8(after) {
 		message = Message("Binary file changed. No text preview available.")
 	}
-	return review.FilePatch{Patch: "", Message: message, Contents: &review.FileContents{Before: before, After: after}}
+	return review.FilePatch{Patch: "", Message: message, Contents: &review.FileContents{Before: before, After: after}}, nil
 }
 
 type fingerprintContent struct {
@@ -333,6 +362,10 @@ func (source *gitSource) Snapshot(ctx context.Context, mode review.DiffMode) (re
 	}
 	branch, branchError := runGit(ctx, source.root, 16*1024*1024, "symbolic-ref", "--quiet", "--short", "HEAD")
 	if branchError != nil {
+		var failure *gitFailure
+		if !errors.As(branchError, &failure) {
+			return review.RepositoryDiff{}, branchError
+		}
 		branch = "detached at HEAD"
 		if head != nil {
 			branch = "detached at " + (*head)[:7]
@@ -368,7 +401,10 @@ func (source *gitSource) Snapshot(ctx context.Context, mode review.DiffMode) (re
 			if file == nil {
 				continue
 			}
-			preview := source.recreatedContents(ctx, path, *head)
+			preview, previewError := source.recreatedContents(ctx, path, *head)
+			if previewError != nil {
+				return review.RepositoryDiff{}, previewError
+			}
 			stat, statError := os.Lstat(filepath.Join(source.root, filepath.FromSlash(path)))
 			if statError != nil {
 				return review.RepositoryDiff{}, statError
@@ -427,7 +463,7 @@ func (source *gitSource) Snapshot(ctx context.Context, mode review.DiffMode) (re
 
 func (source *gitSource) Patch(ctx context.Context, mode review.DiffMode, file review.ChangedFile, head *string) (review.FilePatch, error) {
 	if file.Recreated && head != nil {
-		return source.recreatedContents(ctx, file.Path, *head), nil
+		return source.recreatedContents(ctx, file.Path, *head)
 	}
 	if file.Binary {
 		return review.FilePatch{Message: Message("Binary file changed. No text preview available.")}, nil
@@ -476,6 +512,9 @@ func (source *gitSource) Patch(ctx context.Context, mode review.DiffMode, file r
 		if errors.Is(commandError, errOutputLimit) {
 			return review.FilePatch{Message: Message("Diff exceeds the 2 MiB preview limit.")}, nil
 		}
+		if !errors.As(commandError, &failure) {
+			return review.FilePatch{}, commandError
+		}
 		return review.FilePatch{}, Error(409, "File changed while loading. Refresh to try again.")
 	}
 	if output == "" {
@@ -494,7 +533,8 @@ func (source *gitSource) Contents(ctx context.Context, mode review.DiffMode, fil
 	}
 	readBlob := func(revision, path string, missing bool) (string, error) {
 		output, err := runGit(ctx, source.root, MaxFileBytes, "show", revision+":"+path)
-		if err != nil && missing {
+		var failure *gitFailure
+		if err != nil && missing && errors.As(err, &failure) {
 			return "", nil
 		}
 		return output, err
