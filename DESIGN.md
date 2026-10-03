@@ -293,6 +293,13 @@ such detail into a token. New layout spacing must use the scale.
 
 ### Overlays
 
+- Project navigation uses an inline popup action after the brand divider, showing
+  repository plus branch and a worktree/branch icon. Use a search icon and shortcut
+  hint, never a dropdown chevron. Click and Cmd/Ctrl+K open the same centered,
+  searchable picker. Group checkouts by repository identity; show branch, linked
+  worktree name, and path. Keep main and linked checkouts adjacent and captures in
+  their own group. The picker owns focus and stays available during context errors.
+
 - Use the controlled shadcn `Dialog` built on Base UI, with a visible accessible
   title. Keep focus inside while open, support Escape, and restore focus on close.
 - Use `--surface-raised`, `--radius-lg`, `--shadow-overlay`, and `--backdrop`.

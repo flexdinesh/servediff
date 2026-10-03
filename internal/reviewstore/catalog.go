@@ -217,6 +217,50 @@ func (store *Store) ContextCounts(ownerID string, now time.Time) (int, int, erro
 	return worktrees, captures, err
 }
 
+func (store *Store) WorktreeContexts(ownerID string) ([]ContextInfo, error) {
+	rows, err := store.db.Query(contextSelect+` WHERE c.owner_id=? AND c.kind='worktree' ORDER BY c.created_at,c.id`, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]ContextInfo, 0)
+	for rows.Next() {
+		item, err := scanContext(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+// DiscoverGit preserves submission order and review identity on rediscovery.
+func (store *Store) DiscoverGit(ownerID, root, commonDir, worktreeKey string) (string, error) {
+	transaction, err := store.db.Begin()
+	if err != nil {
+		return "", err
+	}
+	defer transaction.Rollback()
+	var id string
+	err = transaction.QueryRow(`SELECT id FROM locations WHERE owner_id=? AND worktree_key=?`, ownerID, worktreeKey).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		binding, registerErr := registerGit(transaction, ownerID, root, commonDir, worktreeKey)
+		if registerErr != nil {
+			return "", registerErr
+		}
+		id = binding.ContextID
+		// Discovery is not a submission; do not replace the CLI's selected context.
+		if _, err := transaction.Exec(`UPDATE contexts SET last_submitted_at=0 WHERE id=?`, id); err != nil {
+			return "", err
+		}
+	} else if err != nil {
+		return "", err
+	} else if _, err := transaction.Exec(`UPDATE locations SET root=? WHERE id=? AND owner_id=?`, root, id, ownerID); err != nil {
+		return "", err
+	}
+	return id, transaction.Commit()
+}
+
 type queryer interface {
 	QueryRow(string, ...any) *sql.Row
 	Query(string, ...any) (*sql.Rows, error)

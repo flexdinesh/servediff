@@ -872,10 +872,10 @@ test("inline comments use a distinct structured surface while sidebar comments r
   const viewed = page.locator("#viewer .review-button").first();
   await expect(viewed).toHaveCSS("height", "28px");
   await expect(viewed).toHaveAttribute("data-size", "sm");
-  await expect(page.locator(".branch-badge")).toHaveCSS(
+  await expect(page.locator(".context-switcher")).toHaveCSS(
     "height",
     await page
-      .locator("#view-options")
+      .locator("#refresh")
       .evaluate((element) => getComputedStyle(element).height),
   );
   await page.getByRole("tab", { name: /Review/ }).click();
@@ -1110,7 +1110,7 @@ test("header icons and sidebar tab indicator use design-system sizes", async ({
     colorProbe.remove();
     return {
       sidebar: size("#sidebar-toggle svg"),
-      branch: size(".branch-badge svg"),
+      branch: size(".context-switcher-search"),
       viewOptions: size("#view-options svg"),
       refresh: size("#refresh svg"),
       theme: size("#theme svg"),

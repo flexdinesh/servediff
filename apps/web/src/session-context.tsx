@@ -6,16 +6,13 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
+  type RefObject,
 } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+import { ProjectPicker, ProjectPickerTrigger } from "./ProjectPicker.tsx";
 
 type LoadState =
   | { status: "loading" }
@@ -26,6 +23,9 @@ interface Catalog {
   contexts: ApiContext[];
   selectedId: string;
   select: (id: string) => void;
+  pickerOpen: boolean;
+  openPicker: () => void;
+  triggerRef: RefObject<HTMLButtonElement | null>;
 }
 const CatalogContext = createContext<Catalog | null>(null);
 const SessionContext = createContext<ApiContext | null>(null);
@@ -48,32 +48,14 @@ export function ContextSwitcher() {
   const catalog = useContext(CatalogContext);
   if (!catalog || !catalog.contexts.length) return null;
   return (
-    <Select
-      value={catalog.selectedId || null}
-      items={catalog.contexts.map((context) => ({
-        value: context.id,
-        label: context.name,
-      }))}
-      onValueChange={(value) => {
-        if (typeof value === "string") catalog.select(value);
-      }}
-    >
-      <SelectTrigger aria-label="Review context" className="context-switcher">
-        <SelectValue placeholder="Select a repository or piped diff" />
-      </SelectTrigger>
-      <SelectContent align="start" alignItemWithTrigger={false}>
-        {catalog.contexts.map((context) => (
-          <SelectItem key={context.id} value={context.id}>
-            <span className="context-option">
-              <span>{context.name}</span>
-              <span className="context-option-detail">
-                {context.kind === "capture" ? "Piped diff" : context.root}
-              </span>
-            </span>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <ProjectPickerTrigger
+      current={catalog.contexts.find(
+        (context) => context.id === catalog.selectedId,
+      )}
+      open={catalog.pickerOpen}
+      onOpen={catalog.openPicker}
+      triggerRef={catalog.triggerRef}
+    />
   );
 }
 
@@ -84,8 +66,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [catalogError, setCatalogError] = useState("");
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const restorePickerFocus = useRef(false);
+  const openPicker = useCallback(() => setPickerOpen(true), []);
   const select = useCallback((id: string) => {
     if (id === contextFromUrl()) return;
+    restorePickerFocus.current = true;
     window.history.pushState(null, "", `/contexts/${encodeURIComponent(id)}`);
     setSelectedId(id);
     setState({ status: "loading" });
@@ -179,11 +166,23 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return () => controller.abort();
   }, [selectedId, attempt]);
   const catalog = useMemo(
-    () => ({ contexts, selectedId, select }),
-    [contexts, selectedId, select],
+    () => ({
+      contexts,
+      selectedId,
+      select,
+      pickerOpen,
+      openPicker,
+      triggerRef,
+    }),
+    [contexts, selectedId, select, pickerOpen, openPicker],
   );
   const ready = state.status === "ready" && state.session.id === selectedId;
   const empty = catalogLoaded && !contexts.length && !selectedId;
+  useEffect(() => {
+    if (!restorePickerFocus.current || state.status === "loading") return;
+    restorePickerFocus.current = false;
+    triggerRef.current?.focus();
+  }, [state]);
   return (
     <CatalogContext value={catalog}>
       {ready ? (
@@ -194,6 +193,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             <a className="brand" href="/" aria-label="servediff home">
               servediff
             </a>
+            <Separator className="header-divider" orientation="vertical" />
             <ContextSwitcher />
           </header>
           <main className="session-status" role="status">
@@ -227,6 +227,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           </main>
         </>
       )}
+      <ProjectPicker
+        contexts={contexts}
+        selectedId={selectedId}
+        select={select}
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        triggerRef={triggerRef}
+      />
     </CatalogContext>
   );
 }

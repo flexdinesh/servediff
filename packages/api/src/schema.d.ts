@@ -541,6 +541,10 @@ export interface components {
       /** @enum {string} */
       kind: "worktree" | "capture";
       name: string;
+      /** @description Checked-out branch, or detached HEAD label. Null for captures or unknown metadata. */
+      branch: string | null;
+      /** @description Linked worktree directory name. Null for the main checkout or a capture. */
+      worktreeName: string | null;
       root: string | null;
       locationId: string | null;
       repositoryId: string | null;
@@ -1264,7 +1268,7 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Registered worktrees and retained captures, without scanning Git. */
+      /** @description Worktrees discovered from registered repositories and retained captures, with cached Git metadata. */
       200: {
         headers: {
           [name: string]: unknown;
