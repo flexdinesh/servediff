@@ -116,6 +116,9 @@ func (service *Service) ResolveComment(commentID string) (Resolution, error) {
 				return Resolution{}, err
 			}
 		}
+		if service.session.ReviewChanged != nil {
+			service.session.ReviewChanged()
+		}
 		return Resolution{CommentID: comment.ID, Status: "resolved"}, nil
 	}
 	return Resolution{}, &CommentNotFoundError{CommentID: commentID}

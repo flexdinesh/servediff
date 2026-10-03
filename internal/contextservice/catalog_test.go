@@ -31,6 +31,9 @@ func TestCatalogDiscoversAllWorktreesAndPreservesReviewBindings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := service.Worktrees(ctx, *submission.Context.RepositoryID); err != nil {
+		t.Fatal(err)
+	}
 	page, err := service.List(ctx, 100, "")
 	if err != nil || len(page.Contexts) != 2 {
 		t.Fatalf("catalog: %#v, %v", page, err)
@@ -56,7 +59,7 @@ func TestCatalogDiscoversAllWorktreesAndPreservesReviewBindings(t *testing.T) {
 	catalogGit(t, root, "worktree", "add", "-qb", "feature/new", newRoot)
 	moved := filepath.Join(t.TempDir(), "moved-worktree")
 	catalogGit(t, root, "worktree", "move", linked, moved)
-	if err := service.refreshCatalog(ctx, true); err != nil {
+	if _, err := service.Worktrees(ctx, *submission.Context.RepositoryID); err != nil {
 		t.Fatal(err)
 	}
 	updated, err := service.List(ctx, 100, "")
@@ -77,7 +80,7 @@ func TestCatalogDiscoversAllWorktreesAndPreservesReviewBindings(t *testing.T) {
 			}
 		}
 	}
-	if err := service.refreshCatalog(ctx, true); err != nil {
+	if _, err := service.Worktrees(ctx, *submission.Context.RepositoryID); err != nil {
 		t.Fatal(err)
 	}
 	again, err := service.List(ctx, 100, "")
@@ -97,7 +100,7 @@ func TestCatalogDiscoversAllWorktreesAndPreservesReviewBindings(t *testing.T) {
 	}
 }
 
-func TestCatalogTracksWorktreeChangesWithoutChangingSubmissionOrder(t *testing.T) {
+func TestCatalogDefersWorktreeChangesUntilScopedCollection(t *testing.T) {
 	service := testService(t)
 	ctx := t.Context()
 	root := testRepo(t)
@@ -112,8 +115,8 @@ func TestCatalogTracksWorktreeChangesWithoutChangingSubmissionOrder(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if submission.Context.LastChangedAt != committed.UnixMilli() {
-		t.Fatalf("registration replaced commit time: %#v", submission.Context)
+	if submission.Context.LastChangedAt != 0 {
+		t.Fatalf("registration unexpectedly collected change metadata: %#v", submission.Context)
 	}
 	file := filepath.Join(linked, "file")
 	if err := os.WriteFile(file, []byte("edited\n"), 0o600); err != nil {
@@ -123,7 +126,10 @@ func TestCatalogTracksWorktreeChangesWithoutChangingSubmissionOrder(t *testing.T
 	if err := os.Chtimes(file, edited, edited); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.refreshCatalog(ctx, true); err != nil {
+	if _, err := service.Worktrees(ctx, *submission.Context.RepositoryID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Worktrees(ctx, *submission.Context.RepositoryID); err != nil {
 		t.Fatal(err)
 	}
 	page, err := service.List(ctx, 100, "")
@@ -134,13 +140,20 @@ func TestCatalogTracksWorktreeChangesWithoutChangingSubmissionOrder(t *testing.T
 		t.Fatal("worktree edit changed submission order or time")
 	}
 	discovered := page.Contexts[1]
-	if discovered.LastSubmittedAt != 0 || discovered.LastChangedAt != edited.UnixMilli() {
+	if discovered.LastSubmittedAt != 0 || discovered.LastChangedAt != 0 {
 		t.Fatalf("discovered worktree change time: %#v", discovered)
+	}
+	if err := service.Refresh(ctx, discovered.ID, "all"); err != nil {
+		t.Fatal(err)
+	}
+	collected, err := service.Get(ctx, discovered.ID)
+	if err != nil || collected.LastChangedAt == 0 {
+		t.Fatalf("selected collection: %#v, %v", collected, err)
 	}
 	restarted := New(service.store, service.user)
 	t.Cleanup(func() { _ = restarted.Close() })
 	item, err := restarted.Get(ctx, discovered.ID)
-	if err != nil || item.LastChangedAt != edited.UnixMilli() {
+	if err != nil || item.LastChangedAt != collected.LastChangedAt {
 		t.Fatalf("restored change time: %#v, %v", item, err)
 	}
 	capture, err := service.Capture(ctx, "capture", testPatch, "")

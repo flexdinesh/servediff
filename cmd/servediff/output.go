@@ -80,15 +80,19 @@ func writeStartup(writer io.Writer, input loadedInput, url string) {
 		fmt.Fprintf(writer, "  MCP:                %s\n", input.mcpURL)
 	}
 	fmt.Fprintln(writer, "  ")
-	elapsed := max(input.processed.Round(time.Millisecond).Milliseconds(), 1)
-	fmt.Fprintf(writer, "  %s %s\n", color.paint(color.dim, "diff statistics"), color.paint(color.magenta, fmt.Sprintf("%dms", elapsed)))
-	fmt.Fprintf(writer, "    %s\n", plural(files, "file changed", "files changed"))
-	fmt.Fprintf(writer, "    %s\n", color.paint(color.green, plural(additions, "addition", "additions")))
-	fmt.Fprintf(writer, "    %s\n", color.paint(color.red, plural(deletions, "deletion", "deletions")))
-	if binaries > 0 {
-		fmt.Fprintf(writer, "    %s\n", plural(binaries, "binary file", "binary files"))
+	if input.mode != "git" || input.snapshot.Revision != "" {
+		elapsed := max(input.processed.Round(time.Millisecond).Milliseconds(), 1)
+		fmt.Fprintf(writer, "  %s %s\n", color.paint(color.dim, "diff statistics"), color.paint(color.magenta, fmt.Sprintf("%dms", elapsed)))
+		fmt.Fprintf(writer, "    %s\n", plural(files, "file changed", "files changed"))
+		fmt.Fprintf(writer, "    %s\n", color.paint(color.green, plural(additions, "addition", "additions")))
+		fmt.Fprintf(writer, "    %s\n", color.paint(color.red, plural(deletions, "deletion", "deletions")))
+		if binaries > 0 {
+			fmt.Fprintf(writer, "    %s\n", plural(binaries, "binary file", "binary files"))
+		}
+		fmt.Fprintln(writer, "  ")
+	} else {
+		fmt.Fprintln(writer, "  changes collected when opened or refreshed.")
 	}
-	fmt.Fprintln(writer, "  ")
 	guidance := "ctrl-c to stop."
 	if input.submitted {
 		guidance = "servediff service stop to stop the daemon."
@@ -97,6 +101,10 @@ func writeStartup(writer io.Writer, input loadedInput, url string) {
 }
 
 func writeSubmission(writer io.Writer, submission contextservice.Submission, elapsed time.Duration, url, mcpURL string) {
+	if submission.Context.Kind == "worktree" && submission.Snapshot.Revision == "" {
+		fmt.Fprintf(writer, "  repository registered: %s\n  url:                %s\n  context ID:         %s\n  MCP:                %s\n", submission.Snapshot.Root, url, submission.Context.ID, mcpURL)
+		return
+	}
 	input := submissionInput(submission, elapsed)
 	input.contextID, input.mcpURL, input.submitted = submission.Context.ID, mcpURL, true
 	writeStartup(writer, input, url)

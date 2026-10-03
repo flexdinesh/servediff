@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -278,21 +279,23 @@ func checkSettings(status Status, requested Settings, explicit Explicit) error {
 		return ErrIncompatible
 	}
 	current := status.Settings
-	var flags []string
+
+	settings := map[string]interface{}{}
 	if explicit.Host && requested.Host != current.Host {
-		flags = append(flags, "--host "+requested.Host)
+		settings["host"] = requested.Host
 	}
 	if explicit.Port && requested.Port > 0 && requested.Port != current.Port {
-		flags = append(flags, "--port "+strconv.Itoa(requested.Port))
+		settings["port"] = requested.Port
 	}
 	if explicit.State && requested.State != current.State {
-		flags = append(flags, "--state "+requested.State)
+		settings["state"] = requested.State
 	}
 	if explicit.WebDir && requested.WebDir != current.WebDir {
-		flags = append(flags, "--web-dir "+requested.WebDir)
+		settings["webDir"] = requested.WebDir
 	}
-	if len(flags) != 0 {
-		return fmt.Errorf("service running at %s with different settings; run: servediff service restart %s", status.URL, strings.Join(flags, " "))
+	if len(settings) != 0 {
+		raw, _ := json.Marshal(settings)
+		return fmt.Errorf("service running at %s with different settings; update service config or run: servediff service restart --config '%s'", status.URL, raw)
 	}
 	return nil
 }
@@ -431,4 +434,18 @@ func logTail(dir string) string {
 	}
 	data, _ := io.ReadAll(file)
 	return strings.TrimSpace(string(data))
+}
+
+func (client *Client) RunningConnection(ctx context.Context) (*Connection, error) {
+	descriptor, status, err := client.probe(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if status.State != "running" {
+		return nil, errors.New("service is stopped; run servediff to register a repository first")
+	}
+	return boundConnection(descriptor, status)
+}
+func (connection *Connection) Change(ctx context.Context, input contextservice.ChangeInput) (contextservice.ChangeEvent, error) {
+	return connection.control.Change(ctx, input)
 }

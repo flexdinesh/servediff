@@ -9,6 +9,7 @@ export function createApiClient({ baseUrl }: { baseUrl?: string } = {}) {
 
 export const api = createApiClient();
 
+export type ApiRepository = components["schemas"]["Repository"];
 export type ApiContext = components["schemas"]["Context"];
 export type ApiContextPage = components["schemas"]["ContextPage"];
 export type ApiSession = components["schemas"]["Session"];

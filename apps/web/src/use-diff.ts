@@ -18,6 +18,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { subscribeChanges } from "./change-events.ts";
 import type { CommentAnnotation } from "./review-model.ts";
 import { languageOverride } from "./display-options.ts";
 
@@ -63,7 +64,7 @@ const initialState: DiffState = {
   connected: false,
 };
 
-// Own polling and cancellation in one effect; drafts pause polling and scope changes
+// Own notifications and cancellation in one effect; drafts defer reloads and scope changes
 // abort stale requests. Cached previews retain their identity between refreshes.
 export function useDiff(
   contextId: string,
@@ -74,6 +75,7 @@ export function useDiff(
   const [state, setState] = useState<DiffState>(initialState);
   const cache = useRef(new Map<string, Preview>());
   const refreshRef = useRef<(force: boolean) => void>(() => {});
+  const pendingChange = useRef(false);
   const paused = useEffectEvent(() => composing);
   const refresh = useCallback(() => refreshRef.current(true), []);
   useEffect(() => {
@@ -272,26 +274,55 @@ export function useDiff(
         if (!signal.aborted && !disposed) {
           busy = false;
           setState((previous) => ({ ...previous, busy: false }));
+          if (pendingChange.current && !paused() && !document.hidden) {
+            pendingChange.current = false;
+            void load(false);
+          }
         }
       }
     }
     refreshRef.current = (force) => {
       if (!refreshEnabled) return;
+      pendingChange.current = false;
       void load(force);
     };
     void load(true);
-    const check = () => {
-      if (!document.hidden) void load(false);
+
+    pendingChange.current = false;
+    const changed = () => {
+      pendingChange.current = true;
+      if (paused() || document.hidden || busy) {
+        setState((previous) => ({
+          ...previous,
+          notice:
+            "Changes available. Finish your draft or refresh to load them.",
+        }));
+        return;
+      }
+      pendingChange.current = false;
+      void load(false);
     };
-    const timer = refreshEnabled ? setInterval(check, 3000) : undefined;
-    if (refreshEnabled) document.addEventListener("visibilitychange", check);
+    const unsubscribe = subscribeChanges((event) => {
+      if (
+        refreshEnabled &&
+        (event.kind === "reconnect" ||
+          (event.kind === "change" && event.contextId === contextId))
+      )
+        changed();
+    });
+    const visible = () => {
+      if (pendingChange.current && !document.hidden) changed();
+    };
+    document.addEventListener("visibilitychange", visible);
     return () => {
       disposed = true;
       controller.abort();
-      if (timer !== undefined) clearInterval(timer);
-      if (refreshEnabled)
-        document.removeEventListener("visibilitychange", check);
+      unsubscribe();
+      document.removeEventListener("visibilitychange", visible);
     };
   }, [contextId, mode, refreshEnabled]);
+  useEffect(() => {
+    if (!composing && pendingChange.current) refresh();
+  }, [composing, refresh]);
   return useMemo(() => ({ ...state, refresh }), [state, refresh]);
 }

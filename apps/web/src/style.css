@@ -965,3 +965,29 @@ h2 {
     min-height: var(--touch-target);
   }
 }
+
+.project-picker-step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-muted);
+}
+.project-picker-step > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--weight-semibold);
+}
+.project-picker-loading {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+.project-picker-loading > span {
+  display: block;
+  height: var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+}

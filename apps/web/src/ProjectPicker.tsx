@@ -1,5 +1,11 @@
-import type { ApiContext } from "@servediff/api";
 import {
+  api,
+  errorDetail,
+  type ApiRepository,
+  type ApiContext,
+} from "@servediff/api";
+import {
+  ArrowLeftIcon,
   CheckIcon,
   FolderGit2Icon,
   GitBranchIcon,
@@ -79,6 +85,8 @@ export function ProjectPickerTrigger({
 
 export function ProjectPicker({
   contexts,
+  repositories,
+  onDiscovered,
   selectedId,
   select,
   open,
@@ -86,6 +94,8 @@ export function ProjectPicker({
   triggerRef,
 }: {
   contexts: ApiContext[];
+  repositories: ApiRepository[];
+  onDiscovered: (items: ApiContext[]) => void;
   selectedId: string;
   select: (id: string) => void;
   open: boolean;
@@ -94,26 +104,119 @@ export function ProjectPicker({
 }) {
   const [query, setQuery] = useState("");
   const [highlightedId, setHighlightedId] = useState("");
+  const [repository, setRepository] = useState<ApiRepository | null>(null);
+  const [worktrees, setWorktrees] = useState<ApiContext[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
   const searchRef = useRef<HTMLInputElement>(null);
   const listId = useId();
-  const results = pickerResults(contexts, query);
+
+  useEffect(() => {
+    if (!open || !repository) return;
+    const controller = new AbortController();
+    setLoading(true);
+    setError("");
+    void api
+      .GET("/api/v2/repositories/{repositoryId}/worktrees", {
+        params: { path: { repositoryId: repository.id } },
+        signal: controller.signal,
+      })
+      .then(({ data, error }) => {
+        if (controller.signal.aborted) return;
+        if (!data)
+          throw new Error(errorDetail(error, "Unable to load worktrees"));
+        setWorktrees(data.worktrees);
+        onDiscovered(data.worktrees);
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted)
+          setError(errorDetail(error, "Unable to load worktrees"));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [repository, open, attempt, onDiscovered]);
+
+  type Item =
+    | {
+        kind: "repository";
+        repository: ApiRepository;
+        id: string;
+        name: string;
+        detail: string;
+        path: string;
+      }
+    | {
+        kind: "context";
+        context: ApiContext;
+        id: string;
+        name: string;
+        detail: string;
+        path: string;
+      };
+  const contextItems = (entries: ApiContext[]): Item[] =>
+    pickerResults(entries, query).map((context) => ({
+      kind: "context",
+      context,
+      id: context.id,
+      name: repository
+        ? (context.worktreeName ?? "Main worktree")
+        : context.name,
+      detail: contextDetail(context),
+      path: context.root ?? context.submittedFrom ?? "Piped diff",
+    }));
+  const words = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  const results: Item[] = repository
+    ? contextItems(worktrees)
+    : [
+        ...repositories
+          .filter((item) =>
+            words.every((word) =>
+              (item.name + " " + item.root).toLowerCase().includes(word),
+            ),
+          )
+          .map((item): Item => ({
+            kind: "repository",
+            repository: item,
+            id: item.id,
+            name: item.name,
+            detail: "Repository",
+            path: item.root,
+          })),
+        ...contextItems(contexts.filter((item) => item.kind === "capture")),
+      ];
   const active =
-    results.find((context) => context.id === highlightedId) ??
-    (!query.trim()
-      ? results.find((context) => context.id === selectedId)
-      : undefined) ??
+    results.find((item) => item.id === highlightedId) ??
+    results.find((item) => item.id === selectedId) ??
     results[0];
-  const optionId = (id: string) => `${listId}-${id}`;
+  const optionId = (id: string) => listId + "-" + id;
+  const reset = () => {
+    setQuery("");
+    setHighlightedId("");
+    setRepository(null);
+    setWorktrees([]);
+    setError("");
+    setLoading(false);
+  };
   const changeOpen = (next: boolean) => {
-    if (!next) {
-      setQuery("");
-      setHighlightedId("");
-    }
+    if (!next) reset();
     onOpenChange(next);
   };
-  const choose = (id: string) => {
-    changeOpen(false);
-    select(id);
+  const choose = (item: Item) => {
+    if (item.kind === "repository") {
+      setRepository(item.repository);
+      setQuery("");
+      setHighlightedId("");
+      setWorktrees([]);
+      setLoading(true);
+      setError("");
+      searchRef.current?.focus();
+    } else {
+      changeOpen(false);
+      select(item.context.id);
+    }
   };
 
   useEffect(() => {
@@ -132,13 +235,12 @@ export function ProjectPicker({
       )
         return;
       event.preventDefault();
-      if (contexts.length) onOpenChange(true);
-      if (open) searchRef.current?.focus();
+      onOpenChange(true);
+      searchRef.current?.focus();
     };
     document.addEventListener("keydown", shortcut);
     return () => document.removeEventListener("keydown", shortcut);
-  }, [contexts.length, onOpenChange, open]);
-
+  }, [onOpenChange, open]);
   const activeOptionId = active ? optionId(active.id) : undefined;
   useEffect(() => {
     if (open && activeOptionId)
@@ -155,22 +257,45 @@ export function ProjectPicker({
         finalFocus={triggerRef}
         showCloseButton={false}
       >
-        <DialogTitle className="sr-only">Switch repository</DialogTitle>
+        <DialogTitle className="sr-only">
+          {repository ? "Select worktree" : "Switch repository"}
+        </DialogTitle>
         <DialogDescription className="sr-only">
-          Search repositories, branches, worktrees, and paths. Use arrow keys to
-          navigate and Enter to switch.
+          Select a repository, then its worktree. Use arrow keys to navigate and
+          Enter to select.
         </DialogDescription>
+        {repository && (
+          <div className="project-picker-step">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                reset();
+                searchRef.current?.focus();
+              }}
+              aria-label="Back to repositories"
+            >
+              <ArrowLeftIcon aria-hidden="true" /> Repositories
+            </Button>
+            <span title={worktrees[0]?.name ?? repository.name}>
+              {worktrees[0]?.name ?? repository.name}
+            </span>
+          </div>
+        )}
         <div className="project-picker-search">
           <SearchIcon className="size-(--icon-base)" aria-hidden="true" />
           <Input
             ref={searchRef}
             role="combobox"
-            aria-label="Search repositories"
+            aria-label={repository ? "Search worktrees" : "Search repositories"}
             aria-autocomplete="list"
             aria-expanded={open}
             aria-controls={listId}
             aria-activedescendant={activeOptionId}
-            placeholder="Search repositories…"
+            placeholder={
+              repository ? "Search worktrees…" : "Search repositories…"
+            }
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
@@ -178,9 +303,7 @@ export function ProjectPicker({
             }}
             onKeyDown={(event) => {
               if (event.nativeEvent.isComposing) return;
-              const index = results.findIndex(
-                (context) => context.id === active?.id,
-              );
+              const index = results.findIndex((item) => item.id === active?.id);
               if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                 event.preventDefault();
                 const next =
@@ -196,7 +319,7 @@ export function ProjectPicker({
                 if (next) setHighlightedId(next.id);
               } else if (event.key === "Enter" && active) {
                 event.preventDefault();
-                choose(active.id);
+                choose(active);
               }
             }}
           />
@@ -209,86 +332,120 @@ export function ProjectPicker({
           id={listId}
           className="project-picker-results"
           role="listbox"
-          aria-label="Repositories"
+          aria-label={repository ? "Worktrees" : "Repositories"}
+          aria-busy={loading}
         >
-          {results.map((context) => (
-            <button
-              type="button"
-              role="option"
-              tabIndex={-1}
-              id={optionId(context.id)}
-              key={context.id}
-              className="project-picker-option"
-              aria-selected={context.id === active?.id}
-              title={context.root ?? context.name}
-              onClick={() => choose(context.id)}
-              onMouseMove={() => setHighlightedId(context.id)}
-            >
-              <ContextIcon context={context} />
-              <span className="project-picker-copy">
-                <span className="project-picker-label">
-                  <span className="project-picker-name">{context.name}</span>
-                  <span className="project-picker-branch">
-                    {context.kind !== "capture" && (
-                      <GitBranchIcon
-                        className="size-(--icon-sm)"
-                        aria-hidden="true"
-                      />
-                    )}
-                    <span>
-                      {context.kind === "capture"
-                        ? "Snapshot"
-                        : contextDetail(context)}
-                    </span>
-                  </span>
-                </span>
-                <span className="project-picker-path">
-                  {context.worktreeName && (
-                    <span className="project-picker-kind">Worktree · </span>
-                  )}
-                  {context.root ?? context.submittedFrom ?? "Piped diff"}
-                </span>
-                {context.availability === "unavailable" && (
-                  <span className="project-picker-unavailable">
-                    Unavailable
-                  </span>
-                )}
-              </span>
-              {context.id === selectedId && (
-                <span className="project-picker-current">
-                  <CheckIcon
+          {loading ? (
+            <div className="project-picker-empty" role="status">
+              <p>Loading worktrees…</p>
+              <span>Checking {repository?.name}</span>
+              <div className="project-picker-loading" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </div>
+            </div>
+          ) : error ? (
+            <div className="project-picker-empty" role="alert">
+              <p>Cannot load worktrees</p>
+              <span>{error}</span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setAttempt((current) => current + 1)}
+              >
+                Retry
+              </Button>
+            </div>
+          ) : (
+            results.map((item) => (
+              <button
+                type="button"
+                role="option"
+                tabIndex={-1}
+                id={optionId(item.id)}
+                key={item.id}
+                className="project-picker-option"
+                aria-selected={item.id === active?.id}
+                title={item.path}
+                onClick={() => choose(item)}
+                onMouseMove={() => setHighlightedId(item.id)}
+              >
+                {item.kind === "repository" ? (
+                  <FolderGit2Icon
                     className="size-(--icon-base)"
                     aria-hidden="true"
                   />
-                  <span className="sr-only">
-                    Current<span className="sr-only"> repository</span>
+                ) : (
+                  <ContextIcon context={item.context} />
+                )}
+                <span className="project-picker-copy">
+                  <span className="project-picker-label">
+                    <span className="project-picker-name">{item.name}</span>
+                    <span className="project-picker-branch">
+                      {item.kind === "context" &&
+                        item.context.kind === "worktree" && (
+                          <GitBranchIcon
+                            className="size-(--icon-sm)"
+                            aria-hidden="true"
+                          />
+                        )}
+                      <span>{item.detail}</span>
+                    </span>
                   </span>
+                  <span className="project-picker-path">{item.path}</span>
+                  {item.kind === "context" &&
+                    item.context.availability === "unavailable" && (
+                      <span className="project-picker-unavailable">
+                        Unavailable
+                      </span>
+                    )}
                 </span>
-              )}
-            </button>
-          ))}
-          {!results.length && (
+                {item.id === selectedId && (
+                  <span className="project-picker-current">
+                    <CheckIcon
+                      className="size-(--icon-base)"
+                      aria-hidden="true"
+                    />
+                    <span className="sr-only">Current worktree</span>
+                  </span>
+                )}
+              </button>
+            ))
+          )}
+          {!loading && !error && !results.length && (
             <div className="project-picker-empty">
-              <p>No repositories found</p>
-              <span>Try another repository, branch, or folder.</span>
+              <p>
+                {repository ? "No worktrees found" : "No repositories found"}
+              </p>
+              <span>
+                {query
+                  ? "Try another name or path."
+                  : repository
+                    ? "Create a worktree, then reopen this repository."
+                    : "Run servediff in a repository to register it."}
+              </span>
             </div>
           )}
         </div>
         <div className="project-picker-footer">
           <p className="project-picker-status" role="status">
-            {results.length
-              ? `${results.length} ${results.length === 1 ? "result" : "results"}`
-              : "No matching repositories"}
+            {loading
+              ? "Loading worktrees"
+              : results.length +
+                " " +
+                (repository ? "worktrees" : "repositories and captures")}
           </p>
           <div className="project-picker-shortcuts">
             <span>
               <kbd>↑ ↓</kbd> Navigate
             </span>
             <span>
-              <kbd>Enter</kbd> Switch
+              <kbd>↵</kbd> Select
             </span>
             <span>
-              <kbd>Esc</kbd> Close
+              <kbd>esc</kbd> Close
             </span>
           </div>
         </div>

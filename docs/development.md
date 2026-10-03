@@ -122,13 +122,13 @@ geometry, and Pierre's measured rendering boundary.
 `App.tsx` composes page sections. `AppProvider` composes appearance, sidebar,
 and workspace owners. Consumers subscribe through domain hooks for diff source,
 navigation, draft, review, reviewed files, and collapse state. One draft persists
-across scopes and pauses diff polling. Context selection uses the top-bar
-popup picker (also Cmd/Ctrl+K) and scopes every request. Registering a repository
-discovers its Git worktrees at any path. Catalog reads reuse metadata for
-10 seconds without loading diffs; registration refreshes discovery immediately.
-Discovery preserves existing review identities and submission order.
-The picker orders checkouts by latest commit or working-tree change, including
-search results.
+across scopes and defers hook-triggered refreshes. The top-bar popup (Cmd/Ctrl+K)
+selects a repository, awaits scoped worktree discovery, then selects a worktree.
+Registration and catalog listing do not collect diffs. Discovery preserves review
+identities and submission order; worktrees sort by latest collected changes.
+One shared EventSource connection carries targeted change/review notifications.
+No periodic diff/catalog/comment polling runs; navigation or Refresh sees edits
+without hooks.
 Switching disposes the previous workspace's request ownership and resets transient
 state.
 `DiffWorkspace.tsx` owns Pierre rendering,

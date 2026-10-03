@@ -1,4 +1,10 @@
-import { api, errorDetail, type ApiContext } from "@servediff/api";
+import { subscribeChanges } from "./change-events.ts";
+import {
+  api,
+  errorDetail,
+  type ApiContext,
+  type ApiRepository,
+} from "@servediff/api";
 import {
   createContext,
   type ReactNode,
@@ -21,6 +27,7 @@ type LoadState =
 
 interface Catalog {
   contexts: ApiContext[];
+  repositories: ApiRepository[];
   selectedId: string;
   select: (id: string) => void;
   pickerOpen: boolean;
@@ -60,6 +67,8 @@ export function ContextSwitcher() {
 }
 
 export function SessionProvider({ children }: { children: ReactNode }) {
+  const [repositories, setRepositories] = useState<ApiRepository[]>([]);
+  const [catalogEpoch, setCatalogEpoch] = useState(0);
   const [contexts, setContexts] = useState<ApiContext[]>([]);
   const [selectedId, setSelectedId] = useState(contextFromUrl);
   const [catalogLoaded, setCatalogLoaded] = useState(false);
@@ -69,7 +78,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const restorePickerFocus = useRef(false);
-  const openPicker = useCallback(() => setPickerOpen(true), []);
+  const discovered = useCallback(
+    (items: ApiContext[]) =>
+      setContexts((current) => [
+        ...current.filter((item) => !items.some((next) => next.id === item.id)),
+        ...items,
+      ]),
+    [],
+  );
+  const openPicker = useCallback(() => {
+    setPickerOpen(true);
+    setCatalogEpoch((current) => current + 1);
+  }, []);
   const select = useCallback((id: string) => {
     if (id === contextFromUrl()) return;
     restorePickerFocus.current = true;
@@ -107,6 +127,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           cursor = data.nextCursor ?? undefined;
         } while (cursor && !controller.signal.aborted);
         if (controller.signal.aborted) return;
+        const repositoryResult = await api.GET("/api/v2/repositories", {
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
+        if (!repositoryResult.data)
+          throw new Error(
+            errorDetail(repositoryResult.error, "Unable to list repositories"),
+          );
+        const registered = repositoryResult.data.repositories;
+        setRepositories(registered);
         setContexts(entries);
         setCatalogLoaded(true);
         setCatalogError("");
@@ -127,17 +157,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       }
     }
     void loadCatalog();
-    const timer = setInterval(() => void loadCatalog(), 3000);
-    const visible = () => {
-      if (!document.hidden) void loadCatalog();
-    };
-    document.addEventListener("visibilitychange", visible);
+    const unsubscribe = subscribeChanges((event) => {
+      if (event.kind === "catalog" || event.kind === "reconnect")
+        void loadCatalog();
+    });
     return () => {
       controller.abort();
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", visible);
+      unsubscribe();
     };
-  }, [attempt]);
+  }, [attempt, catalogEpoch]);
   useEffect(() => {
     if (!selectedId) return;
     const controller = new AbortController();
@@ -168,13 +196,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const catalog = useMemo(
     () => ({
       contexts,
+      repositories,
       selectedId,
       select,
       pickerOpen,
       openPicker,
       triggerRef,
     }),
-    [contexts, selectedId, select, pickerOpen, openPicker],
+    [contexts, repositories, selectedId, select, pickerOpen, openPicker],
   );
   const ready = state.status === "ready" && state.session.id === selectedId;
   const empty = catalogLoaded && !contexts.length && !selectedId;
@@ -229,6 +258,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       )}
       <ProjectPicker
         contexts={contexts}
+        repositories={repositories}
+        onDiscovered={discovered}
         selectedId={selectedId}
         select={select}
         open={pickerOpen}

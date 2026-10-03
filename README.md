@@ -34,7 +34,8 @@ go install github.com/flexdinesh/servediff/cmd/servediff@main
 Run from a Git repository:
 
 ```sh
-servediff .
+servediff
+# Also: servediff . or servediff --path /path/to/repo
 ```
 
 Register another repository or choose the service address:
@@ -42,14 +43,15 @@ Register another repository or choose the service address:
 ```sh
 servediff /path/to/repo
 servediff . --port 4000
-servediff . --host 0.0.0.0
+servediff service config set host 0.0.0.0
+servediff service restart
 servediff --version
 ```
 
 Commands start or reuse one background service per user, register their input,
-open its browser URL, and exit. Register several repositories, then switch
-between them and piped diffs in the top bar. Repeated registration of the same
-worktree reuses its context; linked worktrees remain separate.
+open its browser URL, and exit. Choose a repository, then its worktree in the
+top bar. Worktrees are discovered only for the selected repository. Piped diffs
+remain directly selectable. Repeated registration preserves review IDs.
 
 By default, the service binds to `127.0.0.1` and uses the first available port
 from 7981 through 7990. Manage its lifetime explicitly:
@@ -59,22 +61,33 @@ servediff service start
 servediff service status
 servediff service status --json
 servediff service stop
-servediff service restart --host 0.0.0.0 --port 4000
+servediff service config set port 4000
+servediff service config get host
+servediff service config remove port
+servediff service restart --config '{"port":4000}'
 ```
 
 `service start` starts an empty service and prints its status without opening a
 browser. The service stays running after terminal closure and has no idle shutdown.
 `--no-browser` suppresses browser opening for that invocation. Listener, state,
 and asset settings supplied explicitly must match a running service; conflicting
-settings require `service restart`. Restart inherits the running settings unless
-overridden. Settings are not saved: starting a stopped service uses defaults
-unless flags are supplied. `--host` selects the web listener, not a remote daemon.
+settings require `service restart`.
+
+First registration or service start creates `~/.config/servediff/config.json`.
+Settings: `host` (default `127.0.0.1`), `port` (`null` selects 7981–7990; `0`
+requests an ephemeral port), `state` (SQLite path, or `memory`), and `webDir`
+(empty uses embedded assets). `config remove KEY` restores its default.
+Config edits apply on the next start/restart. Start/restart `--config` merges
+temporary JSON overrides over saved settings; overrides are never saved.
+Restart without overrides reapplies saved config. Legacy `--port`, `--state`,
+and `--web-dir` remain supported. Public `--host` is replaced by
+`service config set host VALUE`.
 
 If acknowledgement is lost, the CLI retries once against the same state and
 settings. It refuses to replay into a changed database or restarted memory
 store. When recovery fails, the error identifies where data may have been saved.
 
-Passing `--host 0.0.0.0` exposes every registered context through the
+Setting `host` to `0.0.0.0` exposes every registered context through the
 unauthenticated web server on every network interface and accepts any HTTP host
 name. Use it only on a trusted network.
 
@@ -86,6 +99,19 @@ unresolved** and **Copy all** export review comments as agent-ready XML.
 
 Comments and reviewed-file marks persist by worktree or capture. Display preferences stay
 in the browser.
+
+Live diffs load on navigation or **Refresh**. No repository watchers or background
+diff polling run. Agent hooks can announce a change in the current checkout:
+
+```sh
+servediff change
+servediff change --path /path/to/worktree --branch feature --detail "Agent finished"
+```
+
+The hook requires a running service and registered repository; it does not start
+a service or register a repository. Branch/detail are notification metadata.
+Only an open view reloads its selected worktree/scope; dormant worktrees stay idle.
+Drafts defer automatic reloads. Without hooks, navigate or refresh to see edits.
 
 ## Piped diffs
 
@@ -111,7 +137,10 @@ per file. Combined merge diffs are shown against the first parent. Use
 ## API and data
 
 The OpenAPI 3.1 contract is served at `/openapi.yaml`. `/api/v2/contexts` lists
-worktrees and captures; review operations use `/api/v2/contexts/{id}/...`.
+known worktree contexts and captures. `/api/v2/repositories` reads registered
+repositories; `/api/v2/repositories/{id}/worktrees` discovers the selected repo's
+worktrees. `/api/v2/events` delivers change/review notifications. Review operations
+use `/api/v2/contexts/{id}/...`.
 Legacy unscoped `/api/v1` review routes require exactly one context in daemon
 mode; multiple contexts return `409 context_required`. Compatible coding agents
 can access review-comment tools through the MCP `2026-07-28` Streamable HTTP

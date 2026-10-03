@@ -28,17 +28,27 @@ type options struct {
 	json          bool
 	noBrowser     bool
 	version       bool
+	config        string
+	branch        string
+	detail        string
 }
 
 func parseOptions(arguments []string, stderr io.Writer) (options, error) {
 	return parseOptionsMode(arguments, stderr, false)
 }
 
-func parseOptionsMode(arguments []string, stderr io.Writer, internal bool) (options, error) {
+func parseOptionsMode(arguments []string, stderr io.Writer, internal bool, foreground ...bool) (options, error) {
 	flags := flag.NewFlagSet("servediff", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	values := options{host: "127.0.0.1", directory: "."}
-	flags.StringVar(&values.host, "host", values.host, "IP address to bind")
+	if internal || (len(foreground) > 0 && foreground[0]) {
+		flags.StringVar(&values.host, "host", values.host, "IP address to bind (foreground/internal only)")
+	}
+	flags.StringVar(&values.config, "config", "", "JSON settings override for service start/restart")
+	flags.StringVar(&values.branch, "branch", "", "branch metadata for change notification")
+	flags.StringVar(&values.detail, "detail", "", "detail for change notification")
+	var path string
+	flags.StringVar(&path, "path", "", "repository or worktree path; defaults to current directory")
 	flags.IntVar(&values.port, "port", 0, "HTTP port; defaults to the first available port from 7981 to 7990")
 	flags.IntVar(&values.port, "p", 0, "HTTP port; defaults to the first available port from 7981 to 7990")
 	flags.StringVar(&values.fixture, "fixture", "", "read a Git patch fixture")
@@ -54,6 +64,8 @@ func parseOptionsMode(arguments []string, stderr io.Writer, internal bool) (opti
 	flags.Usage = func() {
 		fmt.Fprintln(stderr, "  Usage: servediff [directory | - | --capture ID] [options]")
 		fmt.Fprintln(stderr, "         servediff service {start|stop|restart|status} [options]")
+		fmt.Fprintln(stderr, "         servediff service config {set KEY VALUE|get KEY|remove KEY}")
+		fmt.Fprintln(stderr, "         servediff change [--path PATH] [--branch BRANCH] [--detail TEXT]")
 		fmt.Fprintln(stderr, "         servediff serve [directory | - | --fixture FILE] [options]")
 		flags.PrintDefaults()
 	}
@@ -82,6 +94,12 @@ func parseOptionsMode(arguments []string, stderr io.Writer, internal bool) (opti
 		values.directory = flags.Arg(0)
 		values.repositorySet = true
 	}
+	if path != "" {
+		if values.repositorySet {
+			return options{}, errors.New("path cannot be combined with a directory")
+		}
+		values.directory, values.repositorySet = path, true
+	}
 	if values.capture != "" && (values.repositorySet || values.fixture != "") {
 		return options{}, errors.New("capture cannot be combined with a directory or fixture")
 	}
@@ -104,7 +122,7 @@ func parseOptionsMode(arguments []string, stderr io.Writer, internal bool) (opti
 
 func normalizeArguments(arguments []string) []string {
 	valueOptions := map[string]bool{
-		"-p": true, "--port": true, "--host": true, "--fixture": true,
+		"-p": true, "--port": true, "--host": true, "--fixture": true, "--path": true, "--config": true, "--branch": true, "--detail": true,
 		"--state": true, "--web-dir": true, "--capture": true, "--runtime-dir": true,
 	}
 	options, positionals := make([]string, 0, len(arguments)), make([]string, 0, 1)

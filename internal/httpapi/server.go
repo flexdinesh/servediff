@@ -72,6 +72,16 @@ func randomID() (string, error) {
 func (handler *Handler) SessionID() string { return handler.session.ID }
 
 func (handler *Handler) snapshot(request *http.Request, mode review.DiffMode, fresh bool) (review.RepositoryDiff, error) {
+	if handler.session.Collect != nil {
+		// The collector owns shared live work. Read its committed SQLite result
+		// directly so a simultaneous review read cannot satisfy a fresh request.
+		if fresh || request.URL.Path == "/api/v1/diffs/current" || request.URL.Path == "/api/v1/session" {
+			if err := handler.session.Collect(request.Context(), mode); err != nil {
+				return review.RepositoryDiff{}, err
+			}
+		}
+		return handler.session.Source.Snapshot(request.Context(), mode)
+	}
 	cache := handler.cache
 	cache.mu.Lock()
 	if cached, ok := cache.snapshots[mode]; !fresh && ok && time.Since(cached.at) < 500*time.Millisecond {
@@ -156,6 +166,9 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		return
 	}
 	if handled {
+		if request.Method != http.MethodGet && request.Method != http.MethodHead && handler.session.ReviewChanged != nil {
+			handler.session.ReviewChanged()
+		}
 		return
 	}
 	if request.Method != http.MethodGet && request.Method != http.MethodHead {
@@ -218,7 +231,7 @@ func (handler *Handler) api(response http.ResponseWriter, request *http.Request)
 		if err != nil {
 			return true, err
 		}
-		snapshot, err := handler.snapshot(request, mode, false)
+		snapshot, err := handler.snapshot(request, mode, handler.session.Collect != nil)
 		return true, writeResult(response, snapshot, err)
 	}
 	if diffID, versionID, ok := parseVersionRoute(pathname); ok && request.Method == http.MethodGet {

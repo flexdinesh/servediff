@@ -375,6 +375,62 @@ paths:
           description: Review mark deleted.
         default:
           $ref: "#/components/responses/Problem"
+  /api/v2/repositories:
+    get:
+      operationId: listRepositories
+      responses:
+        "200":
+          description: Registered repositories, read from SQLite without invoking Git.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [repositories]
+                properties:
+                  repositories:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Repository"
+        default:
+          $ref: "#/components/responses/Problem"
+  /api/v2/repositories/{repositoryId}/worktrees:
+    get:
+      operationId: discoverWorktrees
+      parameters:
+        - name: repositoryId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Discover this repository's current worktrees, persist metadata, and return stored rows.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [worktrees]
+                properties:
+                  worktrees:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Context"
+        default:
+          $ref: "#/components/responses/Problem"
+  /api/v2/events:
+    get:
+      operationId: subscribeChanges
+      responses:
+        "200":
+          description: Targeted change/catalog/review notifications. Heartbeats do not collect data.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        default:
+          $ref: "#/components/responses/Problem"
   /api/v2/contexts:
     get:
       operationId: listContexts
@@ -848,6 +904,19 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
   schemas:
+    Repository:
+      type: object
+      additionalProperties: false
+      required: [id, name, root, lastSubmittedAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        root:
+          type: string
+        lastSubmittedAt:
+          type: integer
     ContextPage:
       type: object
       additionalProperties: false
