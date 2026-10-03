@@ -330,8 +330,9 @@ Do not add motion for decoration. New animation must honor
   chrome. Synchronize drawer behavior with `use-sidebar.ts`.
 - Keep scope and desktop layout choice visible. Put wrap, collapse-all, inline
   detail, code theme, and narrow layout choice in View options.
-- Mobile hides secondary repository/branch chrome and the refresh text, not its
-  accessible label. Keep the current file task and theme/sidebar controls available.
+- Mobile retains the project trigger's repository/branch context; truncate long
+  labels and hide its shortcut hint. Hide the secondary heading/path and refresh
+  text, preserving accessible labels and theme/sidebar controls.
 - Collapse navigation to the toggle-controlled modal drawer; its width is
   `min(320px, 88vw)`. Keep file selection, comments, and export reachable there.
 - Hide redundant summary/shortcut detail before removing essential actions.

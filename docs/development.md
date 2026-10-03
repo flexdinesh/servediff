@@ -124,10 +124,11 @@ and workspace owners. Consumers subscribe through domain hooks for diff source,
 navigation, draft, review, reviewed files, and collapse state. One draft persists
 across scopes and pauses diff polling. Context selection uses the top-bar
 popup picker (also Cmd/Ctrl+K) and scopes every request. Registering a repository
-discovers its Git worktrees at any path. Catalog metadata refreshes at most every
-10 seconds without loading diffs; discovery preserves existing review identities
-and submission order. Switching disposes the previous workspace's
-request ownership and resets transient state. `DiffWorkspace.tsx` owns Pierre rendering,
+discovers its Git worktrees at any path. Catalog reads reuse metadata for
+10 seconds without loading diffs; registration refreshes discovery immediately.
+Discovery preserves existing review identities and submission order. Switching
+disposes the previous workspace's request ownership and resets transient state.
+`DiffWorkspace.tsx` owns Pierre rendering,
 versions, worker options, and measured geometry. `use-review.ts` and
 `use-reviewed-files.ts` own their REST requests and recovery; reads cannot settle
 across writes or owner disposal. Keep section-only state within its component.
