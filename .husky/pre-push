@@ -1,1 +1,5 @@
+for name in $(git rev-parse --local-env-vars); do
+  unset "$name"
+done
+
 mise run check:push
