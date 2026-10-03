@@ -456,6 +456,12 @@ for (const [start, end] of [
     // Worker rendering can replace the hover utility before the drag starts.
     await expect(async () => {
       if (await editor.isVisible()) return;
+      // File spacing can leave the drag endpoint below the clipped viewport.
+      const endpoint = file.locator(
+        `[data-gutter] [data-column-number="${end}"]`,
+      );
+      await endpoint.scrollIntoViewIfNeeded();
+      await expect(endpoint).toBeInViewport({ ratio: 1 });
       await file
         .locator(`[data-gutter] [data-column-number="${start}"]`)
         .hover({ timeout: 1_000 });
