@@ -177,6 +177,10 @@ such detail into a token. New layout spacing must use the scale.
   The diff receives all width remaining after navigation.
 - Header: `--topbar-height` (56 desktop, 48 narrow). Toolbar and sidebar tabs: `--toolbar-height`
   (44) as the desktop baseline; allow toolbar height to grow when controls wrap.
+- Header uses `--panel`, a quiet brand, and the repository trigger as its primary
+  context. Keep the secondary scope heading and muted monospace path inline;
+  hide the path at 768–1011px and both below 768px. Group ghost Refresh/theme
+  actions at the trailing edge; share `--hover` feedback with the trigger.
 - Status bar: `--statusbar-height` (28), with shortcuts shed before server metrics.
 - Desktop sidebar: `--sidebar-width` defaults to 330px. `use-sidebar.ts` owns
   the user's pixel width, bounded to 200–520px and available viewport space.
@@ -293,15 +297,28 @@ such detail into a token. New layout spacing must use the scale.
 
 ### Overlays
 
-- Project navigation uses an inline popup action after the brand divider, showing
-  repository plus branch and a worktree/branch icon. Use a search icon and shortcut
-  hint, never a dropdown chevron. Click and Cmd/Ctrl+K open the same centered,
-  searchable picker. Group checkouts by repository identity; show branch, linked
-  worktree name, and path. Keep main and linked checkouts adjacent and captures in
-  their own group. The picker owns focus and stays available during context errors.
+- Project navigation uses a compact borderless ghost action after the brand
+  divider, with a semibold repository name, quieter branch, and repository/capture
+  icon. Give the repository name priority when long context labels truncate.
+  Use a search icon and shortcut hint, never a dropdown chevron. Click and
+  Cmd/Ctrl+K open the same searchable “Switch repository” dialog. Position it at
+  `--topbar-height` plus `--space-6` on desktop (80px default), `--space-4` on
+  mobile (16px default). Bound picker width to 35rem and viewport gutters. The
+  picker owns focus and stays available during context errors.
+- Search leads the picker; keep “Switch repository” as its screen-reader title.
+  Use one integrated field (36px input) with close at its right edge and the
+  focus ring around its entire boundary.
+  Use a flat, scrollable result list ordered by recency; search ranks matches
+  before recency. Compact rows (about 48px) put repository name and branch on
+  one line, with a muted monospace path below; truncate long text to single lines.
+  Mark linked paths with “Worktree”; captures show “Snapshot” in the same list.
+  Distinguish the current checkout with a check and accessible “Current repository”
+  text; retain explicit “Unavailable” feedback. Keep the footer to a short result
+  count and keyboard hints.
 
-- Use the controlled shadcn `Dialog` built on Base UI, with a visible accessible
-  title. Keep focus inside while open, support Escape, and restore focus on close.
+- Use the controlled shadcn `Dialog` built on Base UI. General dialogs retain a
+  visible accessible title; the repository picker uses the screen-reader title
+  above. Keep focus inside while open, support Escape, and restore focus on close.
 - Use `--surface-raised`, `--radius-lg`, `--shadow-overlay`, and `--backdrop`.
   Shadows communicate actual elevation only; no resting button/card shadows.
 - Bound width by `--reading-width` and viewport gutters; bound height by the

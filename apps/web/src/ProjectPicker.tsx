@@ -5,25 +5,22 @@ import {
   GitBranchIcon,
   SearchIcon,
   SquareTerminalIcon,
+  XIcon,
 } from "lucide-react";
 import { useEffect, useId, useRef, useState, type RefObject } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { contextDetail, pickerGroups } from "./project-picker.ts";
+import { contextDetail, pickerResults } from "./project-picker.ts";
 
 function ContextIcon({ context }: { context: ApiContext }) {
-  const Icon =
-    context.kind === "capture"
-      ? SquareTerminalIcon
-      : context.worktreeName
-        ? FolderGit2Icon
-        : GitBranchIcon;
+  const Icon = context.kind === "capture" ? SquareTerminalIcon : FolderGit2Icon;
   return <Icon className="size-(--icon-base)" aria-hidden="true" />;
 }
 
@@ -44,25 +41,26 @@ export function ProjectPickerTrigger({
       type="button"
       variant="ghost"
       className="context-switcher"
-      aria-label="Switch project"
+      aria-label="Switch repository"
       aria-haspopup="dialog"
       aria-expanded={open}
       title={
         current
           ? `${current.name} · ${contextDetail(current)}${current.worktreeName ? ` · Worktree: ${current.worktreeName}` : ""}\n${current.root ?? "Piped diff"}`
-          : "Switch project"
+          : "Switch repository"
       }
       onClick={onOpen}
     >
+      {current && <ContextIcon context={current} />}
       <span className="context-switcher-name">
-        {current?.name ?? "Switch project"}
+        {current?.name ?? "Switch repository"}
       </span>
       {current?.kind === "worktree" && (
         <>
           <span className="context-switcher-separator" aria-hidden="true">
             /
           </span>
-          <ContextIcon context={current} />
+          <GitBranchIcon className="size-(--icon-sm)" aria-hidden="true" />
           <span className="context-switcher-branch">
             {contextDetail(current)}
           </span>
@@ -98,8 +96,7 @@ export function ProjectPicker({
   const [highlightedId, setHighlightedId] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const listId = useId();
-  const groups = pickerGroups(contexts, query);
-  const results = groups.flatMap((group) => group.contexts);
+  const results = pickerResults(contexts, query);
   const active =
     results.find((context) => context.id === highlightedId) ??
     (!query.trim()
@@ -156,8 +153,9 @@ export function ProjectPicker({
         className="project-picker"
         initialFocus={searchRef}
         finalFocus={triggerRef}
+        showCloseButton={false}
       >
-        <DialogTitle>Switch project</DialogTitle>
+        <DialogTitle className="sr-only">Switch repository</DialogTitle>
         <DialogDescription className="sr-only">
           Search repositories, branches, worktrees, and paths. Use arrow keys to
           navigate and Enter to switch.
@@ -167,12 +165,12 @@ export function ProjectPicker({
           <Input
             ref={searchRef}
             role="combobox"
-            aria-label="Search projects"
+            aria-label="Search repositories"
             aria-autocomplete="list"
             aria-expanded={open}
             aria-controls={listId}
             aria-activedescendant={activeOptionId}
-            placeholder="Search repos, branches, or folders…"
+            placeholder="Search repositories…"
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
@@ -202,90 +200,97 @@ export function ProjectPicker({
               }
             }}
           />
+          <DialogClose render={<Button variant="ghost" size="icon-sm" />}>
+            <XIcon aria-hidden="true" />
+            <span className="sr-only">Close</span>
+          </DialogClose>
         </div>
         <div
           id={listId}
           className="project-picker-results"
           role="listbox"
-          aria-label="Projects"
+          aria-label="Repositories"
         >
-          {groups.map((group) => (
-            <div
-              role="group"
-              key={group.id}
-              aria-labelledby={`${listId}-group-${group.id}`}
+          {results.map((context) => (
+            <button
+              type="button"
+              role="option"
+              tabIndex={-1}
+              id={optionId(context.id)}
+              key={context.id}
+              className="project-picker-option"
+              aria-selected={context.id === active?.id}
+              title={context.root ?? context.name}
+              onClick={() => choose(context.id)}
+              onMouseMove={() => setHighlightedId(context.id)}
             >
-              <div
-                id={`${listId}-group-${group.id}`}
-                className="project-picker-group"
-              >
-                {group.name}
-              </div>
-              {group.contexts.map((context) => (
-                <button
-                  type="button"
-                  role="option"
-                  tabIndex={-1}
-                  id={optionId(context.id)}
-                  key={context.id}
-                  className="project-picker-option"
-                  aria-selected={context.id === active?.id}
-                  title={context.root ?? context.name}
-                  onClick={() => choose(context.id)}
-                  onMouseMove={() => setHighlightedId(context.id)}
-                >
-                  <ContextIcon context={context} />
-                  <span className="project-picker-copy">
-                    <span className="project-picker-label">
-                      {context.kind === "capture"
-                        ? context.name
-                        : contextDetail(context)}
-                      <span className="project-picker-kind">
-                        {context.kind === "capture"
-                          ? "Snapshot"
-                          : context.worktreeName
-                            ? `Worktree · ${context.worktreeName}`
-                            : "Main checkout"}
-                      </span>
-                    </span>
-                    <span className="project-picker-path">
-                      {context.root ?? context.submittedFrom ?? "Piped diff"}
-                    </span>
-                    {context.availability === "unavailable" && (
-                      <span className="project-picker-unavailable">
-                        Unavailable
-                      </span>
-                    )}
-                  </span>
-                  {context.id === selectedId && (
-                    <>
-                      <CheckIcon
-                        className="project-picker-check size-(--icon-base)"
+              <ContextIcon context={context} />
+              <span className="project-picker-copy">
+                <span className="project-picker-label">
+                  <span className="project-picker-name">{context.name}</span>
+                  <span className="project-picker-branch">
+                    {context.kind !== "capture" && (
+                      <GitBranchIcon
+                        className="size-(--icon-sm)"
                         aria-hidden="true"
                       />
-                      <span className="sr-only">Current project</span>
-                    </>
+                    )}
+                    <span>
+                      {context.kind === "capture"
+                        ? "Snapshot"
+                        : contextDetail(context)}
+                    </span>
+                  </span>
+                </span>
+                <span className="project-picker-path">
+                  {context.worktreeName && (
+                    <span className="project-picker-kind">Worktree · </span>
                   )}
-                </button>
-              ))}
-            </div>
+                  {context.root ?? context.submittedFrom ?? "Piped diff"}
+                </span>
+                {context.availability === "unavailable" && (
+                  <span className="project-picker-unavailable">
+                    Unavailable
+                  </span>
+                )}
+              </span>
+              {context.id === selectedId && (
+                <span className="project-picker-current">
+                  <CheckIcon
+                    className="size-(--icon-base)"
+                    aria-hidden="true"
+                  />
+                  <span className="sr-only">
+                    Current<span className="sr-only"> repository</span>
+                  </span>
+                </span>
+              )}
+            </button>
           ))}
+          {!results.length && (
+            <div className="project-picker-empty">
+              <p>No repositories found</p>
+              <span>Try another repository, branch, or folder.</span>
+            </div>
+          )}
         </div>
-        <p className="project-picker-status" role="status">
-          {results.length
-            ? `${results.length} ${results.length === 1 ? "checkout or snapshot" : "checkouts and snapshots"}`
-            : "No matching projects"}
-        </p>
         <div className="project-picker-footer">
-          <span>
-            <kbd>↑ ↓</kbd> Navigate
-          </span>
-          <span>
-            <kbd>Enter</kbd> Switch
-          </span>
-          <span>
-            <kbd>Esc</kbd> Close
-          </span>
+          <p className="project-picker-status" role="status">
+            {results.length
+              ? `${results.length} ${results.length === 1 ? "result" : "results"}`
+              : "No matching repositories"}
+          </p>
+          <div className="project-picker-shortcuts">
+            <span>
+              <kbd>↑ ↓</kbd> Navigate
+            </span>
+            <span>
+              <kbd>Enter</kbd> Switch
+            </span>
+            <span>
+              <kbd>Esc</kbd> Close
+            </span>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

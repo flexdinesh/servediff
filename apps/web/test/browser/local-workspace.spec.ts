@@ -396,10 +396,10 @@ test("context switching isolates delayed repository responses and fixed captures
   await page.getByRole("button", { name: "Refresh changes" }).click();
   await expect.poll(() => delayed !== undefined).toBe(true);
   await page
-    .getByRole("button", { name: "Switch project", exact: true })
+    .getByRole("button", { name: "Switch repository", exact: true })
     .click();
   await page
-    .getByRole("combobox", { name: "Search projects" })
+    .getByRole("combobox", { name: "Search repositories" })
     .fill("Second repo");
   await page.keyboard.press("Enter");
   await expect(page.locator(".context-switcher-name")).toHaveText(
@@ -414,7 +414,7 @@ test("context switching isolates delayed repository responses and fixed captures
     "Second repo",
   );
   await page
-    .getByRole("button", { name: "Switch project", exact: true })
+    .getByRole("button", { name: "Switch repository", exact: true })
     .click();
   await page.getByRole("option", { name: /Captured patch/ }).click();
   await expect(page.locator("#changes-title")).toHaveText("Piped diff");
@@ -463,24 +463,24 @@ test("unavailable context keeps the switcher usable", async ({ page }) => {
   await page.goto("/");
   await ready(page);
   await page
-    .getByRole("button", { name: "Switch project", exact: true })
+    .getByRole("button", { name: "Switch repository", exact: true })
     .click();
   await page
-    .getByRole("combobox", { name: "Search projects" })
+    .getByRole("combobox", { name: "Search repositories" })
     .fill("Unavailable repo");
   await page.keyboard.press("Enter");
   await expect(page.getByText("Repository moved")).toBeVisible();
   await page
-    .getByRole("button", { name: "Switch project", exact: true })
+    .getByRole("button", { name: "Switch repository", exact: true })
     .click();
   await page
-    .getByRole("combobox", { name: "Search projects" })
+    .getByRole("combobox", { name: "Search repositories" })
     .fill("Local review");
   await page.keyboard.press("Enter");
   await ready(page);
 });
 
-test("project popup groups checkouts and shares click and keyboard search", async ({
+test("repository popup lists ungrouped checkouts and shares click and keyboard search", async ({
   page,
 }) => {
   const state = await localWorkspace(page);
@@ -514,26 +514,38 @@ test("project popup groups checkouts and shares click and keyboard search", asyn
   await page.goto("/");
   await ready(page);
   const trigger = page.getByRole("button", {
-    name: "Switch project",
+    name: "Switch repository",
     exact: true,
   });
   await expect(trigger).toHaveAttribute("aria-haspopup", "dialog");
   await expect(trigger).toContainText("servediff");
   await expect(trigger).toContainText("main");
   await trigger.click();
-  const dialog = page.getByRole("dialog", { name: "Switch project" });
-  const search = dialog.getByRole("combobox", { name: "Search projects" });
+  const dialog = page.getByRole("dialog", { name: "Switch repository" });
+  const search = dialog.getByRole("combobox", { name: "Search repositories" });
   await expect(search).toBeFocused();
-  await expect(
-    dialog.getByRole("group", { name: "servediff" }).getByRole("option"),
-  ).toHaveCount(2);
+  await expect(dialog.getByRole("group")).toHaveCount(0);
+  await expect(dialog.getByRole("option")).toHaveCount(3);
+  await expect(dialog.locator(".project-picker-name")).toHaveText([
+    "dotfiles",
+    "servediff",
+    "servediff",
+  ]);
+  const desktopBounds = await dialog.boundingBox();
+  if (!desktopBounds) throw new Error("Missing popup bounds");
+  expect(desktopBounds.y).toBeLessThan(120);
+  await search.fill("servediff");
+  await expect(dialog.getByRole("option")).toHaveCount(2);
+  await search.fill("");
   await expect(
     dialog.getByRole("option", { name: /feature\/picker/ }),
-  ).toContainText("Worktree · picker-folder");
+  ).toContainText("Worktree · /elsewhere/picker-folder");
   await search.fill("no matching repo");
-  await expect(dialog.getByRole("status")).toHaveText("No matching projects");
+  await expect(dialog.getByRole("status")).toHaveText(
+    "No matching repositories",
+  );
   await search.fill("");
-  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowUp");
   await expect(
     dialog.getByRole("option", { name: /feature\/picker/ }),
   ).toHaveAttribute("aria-selected", "true");

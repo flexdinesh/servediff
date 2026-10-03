@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ApiContext } from "@servediff/api";
-import { pickerGroups } from "../src/project-picker.ts";
+import { pickerResults } from "../src/project-picker.ts";
 
 const main: ApiContext = {
   id: "main",
@@ -42,15 +42,23 @@ const clone: ApiContext = {
   root: "/other/servediff",
 };
 
-test("groups by repository identity, keeps sibling checkouts adjacent, and separates clones", () => {
-  const groups = pickerGroups([worktree, clone, main], "");
+test("lists individual checkouts by recency without repository grouping", () => {
+  const recentClone = { ...clone, lastSubmittedAt: 3 };
   assert.deepEqual(
-    groups.map((group) => group.id),
-    ["repo", "other-repo"],
+    pickerResults([worktree, recentClone, main], "").map(
+      (context) => context.id,
+    ),
+    ["clone", "picker", "main"],
   );
+});
+
+test("repo name search includes all its checkouts and excludes other repos", () => {
+  const other = { ...clone, name: "dotfiles", root: "/repos/dotfiles" };
   assert.deepEqual(
-    groups[0]?.contexts.map((context) => context.id),
-    ["main", "picker"],
+    pickerResults([main, other, worktree], "servediff").map(
+      (context) => context.id,
+    ),
+    ["picker", "main"],
   );
 });
 
@@ -62,19 +70,17 @@ test("search matches repo, branch, worktree, and external paths with all query w
     "ftprpck",
   ]) {
     assert.deepEqual(
-      pickerGroups([main, worktree], query).flatMap((group) =>
-        group.contexts.map((context) => context.id),
-      ),
+      pickerResults([main, worktree], query).map((context) => context.id),
       ["picker"],
     );
   }
-  assert.deepEqual(pickerGroups([main, worktree], "nonexistent"), []);
+  assert.deepEqual(pickerResults([main, worktree], "nonexistent"), []);
 });
 
 test("exact matches precede fuzzy matches and captures stay selectable", () => {
   const exact = { ...clone, name: "picker", branch: "other" };
   assert.equal(
-    pickerGroups([main, worktree, exact], "picker")[0]?.contexts[0]?.id,
+    pickerResults([main, worktree, exact], "picker")[0]?.id,
     "clone",
   );
   const capture: ApiContext = {
@@ -87,10 +93,10 @@ test("exact matches precede fuzzy matches and captures stay selectable", () => {
     locationId: null,
     branch: null,
   };
-  const groups = pickerGroups([capture, main], "");
-  assert.equal(groups.at(-1)?.name, "Piped diffs");
+  const results = pickerResults([capture, main], "");
   assert.equal(
-    pickerGroups([main, capture], "captured")[0]?.contexts[0]?.id,
-    "capture",
+    results.find((context) => context.id === "capture")?.name,
+    "Captured patch",
   );
+  assert.equal(pickerResults([main, capture], "captured")[0]?.id, "capture");
 });
