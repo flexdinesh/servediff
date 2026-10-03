@@ -9,9 +9,10 @@ import (
 )
 
 type worktreeMetadata struct {
-	name         string
-	branch       string
-	worktreeName *string
+	name          string
+	branch        string
+	worktreeName  *string
+	lastChangedAt int64
 }
 
 // Refresh lightweight Git metadata at most once per interval, never diff snapshots.
@@ -56,7 +57,12 @@ func (service *Service) refreshCatalog(ctx context.Context, force bool) error {
 				folder := filepath.Base(root)
 				metadata.worktreeName = &folder
 			}
+			lastChangedAt, changeErr := diffsource.WorktreeLastChangedAt(ctx, root, key)
 			service.mu.Lock()
+			metadata.lastChangedAt = service.metadata[id].lastChangedAt
+			if changeErr == nil {
+				metadata.lastChangedAt = lastChangedAt
+			}
 			service.metadata[id] = metadata
 			service.mu.Unlock()
 		}

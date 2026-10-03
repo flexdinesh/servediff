@@ -872,6 +872,7 @@ components:
           repositoryId,
           createdAt,
           lastSubmittedAt,
+          lastChangedAt,
           expiresAt,
           submittedFrom,
           capabilities,
@@ -905,6 +906,10 @@ components:
         lastSubmittedAt:
           type: integer
           format: int64
+        lastChangedAt:
+          type: integer
+          format: int64
+          description: Latest commit or working-tree change time in Unix milliseconds. Submission time for captures; zero when worktree change metadata is unknown.
         expiresAt:
           type: [integer, "null"]
           format: int64

@@ -29,6 +29,7 @@ type Context struct {
 	RepositoryID    *string              `json:"repositoryId"`
 	CreatedAt       int64                `json:"createdAt"`
 	LastSubmittedAt int64                `json:"lastSubmittedAt"`
+	LastChangedAt   int64                `json:"lastChangedAt"`
 	ExpiresAt       *int64               `json:"expiresAt"`
 	SubmittedFrom   *string              `json:"submittedFrom"`
 	Capabilities    session.Capabilities `json:"capabilities"`
@@ -292,9 +293,11 @@ func (service *Service) Count(ctx context.Context) (int, int, error) {
 
 func (service *Service) present(item reviewstore.ContextInfo) Context {
 	var branch, worktreeName *string
+	lastChangedAt := item.LastSubmittedAt
 	availability := "available"
 	name := "Piped diff · " + time.UnixMilli(item.CreatedAt).Format("2006-01-02 15:04") + " · " + item.ID[:min(8, len(item.ID))]
 	if item.Kind == "worktree" {
+		lastChangedAt = 0
 		availability = "unchecked"
 		if item.Root != nil {
 			name = filepath.Base(*item.Root)
@@ -304,6 +307,7 @@ func (service *Service) present(item reviewstore.ContextInfo) Context {
 			name = metadata.name
 			branch = &metadata.branch
 			worktreeName = metadata.worktreeName
+			lastChangedAt = metadata.lastChangedAt
 		}
 		if known, ok := service.availability[item.ID]; ok {
 			availability = known
@@ -311,7 +315,7 @@ func (service *Service) present(item reviewstore.ContextInfo) Context {
 		service.mu.Unlock()
 	}
 	return Context{ID: item.ID, Kind: item.Kind, Name: name, Branch: branch, WorktreeName: worktreeName, Root: item.Root, LocationID: item.LocationID,
-		RepositoryID: item.RepositoryID, CreatedAt: item.CreatedAt, LastSubmittedAt: item.LastSubmittedAt,
+		RepositoryID: item.RepositoryID, CreatedAt: item.CreatedAt, LastSubmittedAt: item.LastSubmittedAt, LastChangedAt: lastChangedAt,
 		ExpiresAt: item.ExpiresAt, SubmittedFrom: item.SubmittedFrom, Capabilities: capabilities(item.Kind), Availability: availability}
 }
 

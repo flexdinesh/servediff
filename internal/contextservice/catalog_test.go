@@ -2,9 +2,11 @@ package contextservice
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func catalogGit(t *testing.T, root string, args ...string) {
@@ -92,5 +94,57 @@ func TestCatalogDiscoversAllWorktreesAndPreservesReviewBindings(t *testing.T) {
 	page, err = restarted.List(ctx, 100, "")
 	if err != nil || len(page.Contexts) != 3 || page.Contexts[0].Name != "servediff" {
 		t.Fatalf("restart metadata: %#v, %v", page, err)
+	}
+}
+
+func TestCatalogTracksWorktreeChangesWithoutChangingSubmissionOrder(t *testing.T) {
+	service := testService(t)
+	ctx := t.Context()
+	root := testRepo(t)
+	committed := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	t.Setenv("GIT_AUTHOR_DATE", committed.Format(time.RFC3339))
+	t.Setenv("GIT_COMMITTER_DATE", committed.Format(time.RFC3339))
+	catalogGit(t, root, "add", ".")
+	catalogGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "initial")
+	linked := filepath.Join(t.TempDir(), "linked")
+	catalogGit(t, root, "worktree", "add", "-qb", "feature", linked)
+	submission, err := service.Register(ctx, "main", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if submission.Context.LastChangedAt != committed.UnixMilli() {
+		t.Fatalf("registration replaced commit time: %#v", submission.Context)
+	}
+	file := filepath.Join(linked, "file")
+	if err := os.WriteFile(file, []byte("edited\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	edited := committed.Add(24 * time.Hour)
+	if err := os.Chtimes(file, edited, edited); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.refreshCatalog(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	page, err := service.List(ctx, 100, "")
+	if err != nil || len(page.Contexts) != 2 {
+		t.Fatalf("catalog: %#v, %v", page, err)
+	}
+	if page.Contexts[0].ID != submission.Context.ID || page.Contexts[0].LastSubmittedAt != submission.Context.LastSubmittedAt {
+		t.Fatal("worktree edit changed submission order or time")
+	}
+	discovered := page.Contexts[1]
+	if discovered.LastSubmittedAt != 0 || discovered.LastChangedAt != edited.UnixMilli() {
+		t.Fatalf("discovered worktree change time: %#v", discovered)
+	}
+	restarted := New(service.store, service.user)
+	t.Cleanup(func() { _ = restarted.Close() })
+	item, err := restarted.Get(ctx, discovered.ID)
+	if err != nil || item.LastChangedAt != edited.UnixMilli() {
+		t.Fatalf("restored change time: %#v, %v", item, err)
+	}
+	capture, err := service.Capture(ctx, "capture", testPatch, "")
+	if err != nil || capture.Context.LastChangedAt != capture.Context.LastSubmittedAt {
+		t.Fatalf("capture change time: %#v, %v", capture, err)
 	}
 }

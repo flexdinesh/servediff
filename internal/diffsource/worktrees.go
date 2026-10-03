@@ -2,9 +2,12 @@ package diffsource
 
 import (
 	"context"
+	"errors"
 	"net/url"
+	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -29,6 +32,59 @@ func RepositoryWorktrees(ctx context.Context, root string) (string, []Worktree, 
 		name = remoteRepositoryName(strings.TrimSpace(remote), name)
 	}
 	return name, worktrees, nil
+}
+
+// WorktreeLastChangedAt reads commit and changed-path times without loading diffs.
+func WorktreeLastChangedAt(ctx context.Context, root, gitDir string) (int64, error) {
+	status, err := runGit(ctx, root, 16*1024*1024, "--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=none", "--no-renames")
+	if err != nil {
+		return 0, err
+	}
+	var latest int64
+	commit, err := runGit(ctx, root, 1024, "log", "-1", "--format=%ct")
+	if err == nil {
+		seconds, parseErr := strconv.ParseInt(strings.TrimSpace(commit), 10, 64)
+		if parseErr != nil {
+			return 0, parseErr
+		}
+		latest = seconds * 1000
+	} else {
+		var failure *gitFailure
+		if !errors.As(err, &failure) {
+			return 0, err
+		}
+	}
+	staged := false
+	for name, state := range parseStatus(status) {
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
+		staged = staged || (state.indexStatus != " " && state.indexStatus != "?")
+		changedPath := filepath.Join(root, filepath.FromSlash(name))
+		for {
+			info, err := os.Lstat(changedPath)
+			if err == nil {
+				latest = max(latest, info.ModTime().UnixMilli())
+				break
+			}
+			if !errors.Is(err, os.ErrNotExist) {
+				return 0, err
+			}
+			if changedPath == root {
+				break
+			}
+			// Deleted files use the nearest surviving directory's change time.
+			changedPath = filepath.Dir(changedPath)
+		}
+	}
+	if staged {
+		if info, err := os.Stat(filepath.Join(gitDir, "index")); err == nil {
+			latest = max(latest, info.ModTime().UnixMilli())
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return 0, err
+		}
+	}
+	return latest, nil
 }
 
 func parseWorktrees(raw string) []Worktree {
