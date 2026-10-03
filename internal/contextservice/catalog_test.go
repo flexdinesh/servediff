@@ -148,3 +148,73 @@ func TestCatalogTracksWorktreeChangesWithoutChangingSubmissionOrder(t *testing.T
 		t.Fatalf("capture change time: %#v, %v", capture, err)
 	}
 }
+
+func TestCatalogChangeCountsRefreshWithoutLoadingDiffs(t *testing.T) {
+	service := testService(t)
+	ctx := t.Context()
+	root := testRepo(t)
+	submission, err := service.Register(ctx, "repo", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertCount := func(item Context, want int) {
+		t.Helper()
+		if item.ChangedFileCount == nil || *item.ChangedFileCount != want {
+			t.Fatalf("changed file count: %#v; want %d", item, want)
+		}
+	}
+	assertCount(submission.Context, 1)
+	catalogGit(t, root, "add", ".")
+	catalogGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "initial")
+	if err := service.refreshCatalog(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	item, err := service.Get(ctx, submission.Context.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertCount(item, 0)
+	captured, err := service.Capture(ctx, "capture", testPatch, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertCount(captured.Context, 1)
+	restarted := New(service.store, service.user)
+	t.Cleanup(func() { _ = restarted.Close() })
+	page, err := restarted.List(ctx, 100, "")
+	if err != nil || len(page.Contexts) != 2 {
+		t.Fatalf("restarted catalog: %#v, %v", page, err)
+	}
+	for _, item := range page.Contexts {
+		if item.Kind == "capture" {
+			assertCount(item, 1)
+		} else {
+			assertCount(item, 0)
+		}
+	}
+	if len(restarted.sources) != 0 {
+		t.Fatal("catalog loaded diff sources")
+	}
+	if err := os.WriteFile(filepath.Join(root, "file"), []byte("changed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := restarted.refreshCatalog(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	item, err = restarted.Get(ctx, submission.Context.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertCount(item, 1)
+	moved := filepath.Join(t.TempDir(), "missing-repo")
+	if err := os.Rename(root, moved); err != nil {
+		t.Fatal(err)
+	}
+	if err := restarted.refreshCatalog(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	item, err = restarted.Get(ctx, submission.Context.ID)
+	if err != nil || item.ChangedFileCount != nil {
+		t.Fatalf("missing checkout retained a known change count: %#v, %v", item, err)
+	}
+}

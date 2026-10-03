@@ -308,13 +308,18 @@ such detail into a token. New layout spacing must use the scale.
 - Search leads the picker; keep “Switch repository” as its screen-reader title.
   Use one integrated field (36px input) with close at its right edge and the
   focus ring around its entire boundary.
-  Use a flat, scrollable result list ordered by recency; search ranks matches
-  before recency. Compact rows (about 48px) put repository name and branch on
+  Use a flat, scrollable result list with changed checkouts first, then recency
+  within each group; search preserves that order, using match strength to break
+  recency ties. Compact rows (about 48px) put repository name and branch on
   one line, with a muted monospace path below; truncate long text to single lines.
   Mark linked paths with “Worktree”; captures show “Snapshot” in the same list.
   Distinguish the current checkout with a check and accessible “Current repository”
   text; retain explicit “Unavailable” feedback. Keep the footer to a short result
   count and keyboard hints.
+  Show a compact trailing changed-file count across staged, unstaged, and
+  untracked changes, independent of the current scope. Empty checkouts show
+  “No changes” and remain selectable; unknown metadata shows “Status unknown”.
+  Keep names readable and truncate paths before status, including on mobile.
 
 - Use the controlled shadcn `Dialog` built on Base UI. General dialogs retain a
   visible accessible title; the repository picker uses the screen-reader title

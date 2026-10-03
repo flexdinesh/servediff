@@ -16,17 +16,18 @@ var (
 )
 
 type ContextInfo struct {
-	ID              string
-	Kind            string
-	Root            *string
-	LocationID      *string
-	RepositoryID    *string
-	CommonDir       *string
-	WorktreeKey     *string
-	SubmittedFrom   *string
-	CreatedAt       int64
-	LastSubmittedAt int64
-	ExpiresAt       *int64
+	ID               string
+	Kind             string
+	Root             *string
+	LocationID       *string
+	RepositoryID     *string
+	CommonDir        *string
+	WorktreeKey      *string
+	SubmittedFrom    *string
+	CreatedAt        int64
+	LastSubmittedAt  int64
+	ExpiresAt        *int64
+	ChangedFileCount *int
 }
 
 func initializeCatalog(transaction *sql.Tx) error {
@@ -156,7 +157,8 @@ func putSubmission(transaction *sql.Tx, ownerID, id, kind, hash, contextID strin
 }
 
 const contextSelect = `SELECT c.id,c.kind,l.root,c.location_id,l.repository_id,r.common_dir,l.worktree_key,c.submitted_from,
-	c.created_at,c.last_submitted_at,d.expires_at
+	c.created_at,c.last_submitted_at,d.expires_at,
+	(SELECT json_array_length(v.manifest, '$.files') FROM diff_versions v WHERE v.diff_id=c.capture_id LIMIT 1)
 	FROM contexts c LEFT JOIN locations l ON l.id=c.location_id LEFT JOIN repositories r ON r.id=l.repository_id
 	LEFT JOIN diffs d ON d.id=c.capture_id`
 
@@ -165,7 +167,7 @@ type scanner interface{ Scan(...any) error }
 func scanContext(row scanner) (ContextInfo, error) {
 	var item ContextInfo
 	err := row.Scan(&item.ID, &item.Kind, &item.Root, &item.LocationID, &item.RepositoryID, &item.CommonDir, &item.WorktreeKey,
-		&item.SubmittedFrom, &item.CreatedAt, &item.LastSubmittedAt, &item.ExpiresAt)
+		&item.SubmittedFrom, &item.CreatedAt, &item.LastSubmittedAt, &item.ExpiresAt, &item.ChangedFileCount)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ContextInfo{}, ErrNotFound
 	}

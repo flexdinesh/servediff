@@ -127,8 +127,10 @@ popup picker (also Cmd/Ctrl+K) and scopes every request. Registering a repositor
 discovers its Git worktrees at any path. Catalog reads reuse metadata for
 10 seconds without loading diffs; registration refreshes discovery immediately.
 Discovery preserves existing review identities and submission order.
-The picker orders checkouts by latest commit or working-tree change, including
-search results.
+The picker shows changed-file counts across staged, unstaged, and untracked
+changes. Changed checkouts come first, ordered within each group by latest commit
+or working-tree change, including search results. Captures use their fixed
+snapshot count; unknown metadata is distinct from an empty checkout.
 Switching disposes the previous workspace's request ownership and resets transient
 state.
 `DiffWorkspace.tsx` owns Pierre rendering,

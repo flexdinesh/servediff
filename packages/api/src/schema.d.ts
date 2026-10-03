@@ -557,6 +557,8 @@ export interface components {
        * @description Latest commit or working-tree change time in Unix milliseconds. Submission time for captures; zero when worktree change metadata is unknown.
        */
       lastChangedAt: number;
+      /** @description Unique files with staged, unstaged, or untracked changes, independent of the selected scope. Captures use their snapshot file count. Null when change metadata is unknown. */
+      changedFileCount: number | null;
       /** Format: int64 */
       expiresAt: number | null;
       submittedFrom: string | null;

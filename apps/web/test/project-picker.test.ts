@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ApiContext } from "@servediff/api";
-import { pickerResults } from "../src/project-picker.ts";
+import { contextChangeLabel, pickerResults } from "../src/project-picker.ts";
 
 const main: ApiContext = {
   id: "main",
@@ -15,6 +15,7 @@ const main: ApiContext = {
   createdAt: 1,
   lastSubmittedAt: 1,
   lastChangedAt: 1,
+  changedFileCount: 0,
   expiresAt: null,
   submittedFrom: null,
   availability: "available",
@@ -101,11 +102,50 @@ test("captures stay selectable", () => {
     repositoryId: null,
     locationId: null,
     branch: null,
+    changedFileCount: 1,
   };
   const results = pickerResults([capture, main], "");
+  assert.equal(results[0]?.id, "capture");
   assert.equal(
     results.find((context) => context.id === "capture")?.name,
     "Captured patch",
   );
   assert.equal(pickerResults([main, capture], "captured")[0]?.id, "capture");
+});
+
+test("changed checkouts precede newer empty projects, including search results", () => {
+  const changed = { ...worktree, changedFileCount: 2 };
+  const newerEmpty = { ...main, lastChangedAt: 10 };
+  const newerChanged = { ...clone, changedFileCount: 1, lastChangedAt: 4 };
+  for (const query of ["", "servediff"]) {
+    assert.deepEqual(
+      pickerResults([newerEmpty, changed, newerChanged], query).map(
+        (context) => context.id,
+      ),
+      ["clone", "picker", "main"],
+    );
+  }
+});
+
+test("unknown and unavailable metadata is not treated as reviewable changes", () => {
+  const unknown = { ...main, changedFileCount: null };
+  const unavailable: ApiContext = {
+    ...clone,
+    availability: "unavailable",
+    changedFileCount: 8,
+    lastChangedAt: 20,
+  };
+  const changed = { ...worktree, changedFileCount: 1 };
+  assert.equal(
+    pickerResults([unknown, unavailable, changed], "")[0]?.id,
+    changed.id,
+  );
+  assert.equal(contextChangeLabel(unknown), "Status unknown");
+  assert.equal(contextChangeLabel(unavailable), "Unavailable");
+  assert.equal(contextChangeLabel(main), "No changes");
+  assert.equal(contextChangeLabel(changed), "1 changed file");
+  assert.equal(
+    contextChangeLabel({ ...changed, changedFileCount: 2 }),
+    "2 changed files",
+  );
 });
