@@ -18,6 +18,7 @@ var (
 )
 
 type ContextInfo struct {
+	Stale            bool
 	Metadata         *ingestion.Metadata
 	ID               string
 	Kind             string
@@ -161,7 +162,13 @@ func putSubmission(transaction *sql.Tx, ownerID, id, kind, hash, contextID strin
 
 const contextSelect = `SELECT c.id,c.kind,COALESCE(l.root,json_extract(o.metadata,'$.root')),c.location_id,COALESCE(l.repository_id,o.repository_id),r.common_dir,COALESCE(l.worktree_key,json_extract(o.metadata,'$.checkoutKey')),c.submitted_from,
 	c.created_at,c.last_submitted_at,d.expires_at,
-	(SELECT json_array_length(v.manifest, '$.files') FROM diff_versions v WHERE v.diff_id=c.capture_id LIMIT 1),o.metadata
+	(SELECT json_array_length(v.manifest, '$.files') FROM diff_versions v WHERE v.diff_id=c.capture_id LIMIT 1),o.metadata,
+	COALESCE((SELECT latest.context_id FROM observation_submissions latest WHERE latest.owner_id=o.owner_id AND latest.source_id=o.source_id
+		AND json_extract(o.metadata,'$.repositoryKey')<>'' AND json_extract(o.metadata,'$.checkoutKey')<>''
+		AND json_extract(latest.metadata,'$.repositoryKey')=json_extract(o.metadata,'$.repositoryKey')
+		AND json_extract(latest.metadata,'$.checkoutKey')=json_extract(o.metadata,'$.checkoutKey')
+		AND json_extract(latest.metadata,'$.branch')=json_extract(o.metadata,'$.branch')
+		ORDER BY json_extract(latest.metadata,'$.collectedAt') DESC,latest.rowid DESC LIMIT 1)<>c.id,0)
 	FROM contexts c LEFT JOIN locations l ON l.id=c.location_id LEFT JOIN repositories r ON r.id=l.repository_id
 	LEFT JOIN diffs d ON d.id=c.capture_id LEFT JOIN observations o ON o.context_id=c.id`
 
@@ -171,7 +178,7 @@ func scanContext(row scanner) (ContextInfo, error) {
 	var item ContextInfo
 	var metadata *string
 	err := row.Scan(&item.ID, &item.Kind, &item.Root, &item.LocationID, &item.RepositoryID, &item.CommonDir, &item.WorktreeKey,
-		&item.SubmittedFrom, &item.CreatedAt, &item.LastSubmittedAt, &item.ExpiresAt, &item.ChangedFileCount, &metadata)
+		&item.SubmittedFrom, &item.CreatedAt, &item.LastSubmittedAt, &item.ExpiresAt, &item.ChangedFileCount, &metadata, &item.Stale)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ContextInfo{}, ErrNotFound
 	}

@@ -35,6 +35,7 @@ async function localWorkspace(page: Page) {
     expiresAt: null,
     submittedFrom: null,
     availability: "available",
+    stale: false,
     root: "/local-review",
     name: "Local review",
     branch: "main",
@@ -480,6 +481,18 @@ test("unavailable context keeps the switcher usable", async ({ page }) => {
     .fill("Local review");
   await page.keyboard.press("Enter");
   await ready(page);
+  await page
+    .getByRole("button", { name: "Switch repository", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Switch repository" });
+  await dialog.getByRole("button", { name: "Filters", exact: true }).click();
+  await dialog.getByRole("checkbox", { name: "All", exact: true }).check();
+  const search = dialog.getByRole("combobox", { name: "Search repositories" });
+  await search.fill("Unavailable repo");
+  await expect(dialog.getByRole("option")).toBeDisabled();
+  await search.press("Enter");
+  await expect(dialog).toBeVisible();
+  await expect(page).toHaveURL(/\/contexts\/local-review$/);
 });
 
 test("repository popup orders checkouts by changes and shares click and keyboard search", async ({
@@ -536,7 +549,12 @@ test("repository popup orders checkouts by changes and shares click and keyboard
   const dialog = page.getByRole("dialog", { name: "Switch repository" });
   const search = dialog.getByRole("combobox", { name: "Search repositories" });
   await expect(search).toBeFocused();
-  await expect(dialog.getByRole("group")).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Filters", exact: true }).click();
+  const includeAll = dialog.getByRole("checkbox", { name: "All", exact: true });
+  await expect(includeAll).not.toBeChecked();
+  await expect(dialog.getByRole("option")).toHaveCount(1);
+  await expect(dialog.getByRole("option")).toContainText("feature/picker");
+  await includeAll.check();
   await expect(dialog.getByRole("option")).toHaveCount(3);
   await expect(dialog.locator(".project-picker-name")).toHaveText([
     "servediff",
@@ -642,20 +660,17 @@ test("picker distinguishes unknown and unavailable status and refreshes change c
     .getByRole("button", { name: "Switch repository", exact: true })
     .click();
   const dialog = page.getByRole("dialog", { name: "Switch repository" });
+  await dialog.getByRole("button", { name: "Filters", exact: true }).click();
+  const includeAll = dialog.getByRole("checkbox", { name: "All", exact: true });
+  await expect(includeAll).not.toBeChecked();
+  await expect(dialog.getByRole("option")).toHaveCount(0);
+  await includeAll.check();
   await expect(
     dialog.getByRole("option", { name: /Local review/ }),
   ).toContainText("No changes");
   await expect(
     dialog.getByRole("option", { name: /Unknown repo/ }),
   ).toContainText("Status unknown");
-  await expect(
-    dialog.getByRole("option", { name: /Missing repo/ }),
-  ).toHaveCount(0);
-  await dialog.getByRole("button", { name: "Filters", exact: true }).click();
-  await dialog
-    .getByRole("button", { name: "Availability", exact: true })
-    .click();
-  await page.getByRole("menuitemradio", { name: "All", exact: true }).click();
   await expect(
     dialog.getByRole("option", { name: /Missing repo/ }),
   ).toContainText("Unavailable");
@@ -665,6 +680,9 @@ test("picker distinguishes unknown and unavailable status and refreshes change c
   const search = dialog.getByRole("combobox", { name: "Search repositories" });
   await search.fill("Local");
   await expect(dialog.getByRole("option")).toHaveCount(1);
+  await includeAll.uncheck();
+  await expect(dialog.getByRole("option")).toHaveCount(0);
+  await search.focus();
   changedFileCount = 2;
   await page.evaluate(() =>
     document.dispatchEvent(new Event("visibilitychange")),
@@ -676,6 +694,111 @@ test("picker distinguishes unknown and unavailable status and refreshes change c
     "aria-activedescendant",
     (await dialog.getByRole("option").getAttribute("id")) ?? "",
   );
+});
+
+test("picker combines freshness and All filters and preserves them on reopening", async ({
+  page,
+}) => {
+  const state = await localWorkspace(page);
+  const contexts: ApiContext[] = [
+    state.context,
+    { ...state.context, id: "old", name: "Old changes", stale: true },
+    {
+      ...state.context,
+      id: "empty",
+      name: "Empty latest",
+      changedFileCount: 0,
+    },
+    {
+      ...state.context,
+      id: "unknown",
+      name: "Unknown latest",
+      changedFileCount: null,
+    },
+    {
+      ...state.context,
+      id: "missing",
+      name: "Missing latest",
+      availability: "unavailable",
+    },
+    {
+      ...state.context,
+      id: "old-empty",
+      name: "Empty stale",
+      stale: true,
+      changedFileCount: 0,
+    },
+    {
+      ...state.context,
+      id: "old-missing",
+      name: "Missing stale",
+      stale: true,
+      availability: "unavailable",
+    },
+  ];
+  await page.route("**/api/v2/contexts?*", (route) =>
+    route.fulfill({ json: { contexts, nextCursor: null } }),
+  );
+  await page.goto("/");
+  await ready(page);
+  const trigger = page.getByRole("button", {
+    name: "Switch repository",
+    exact: true,
+  });
+  await trigger.click();
+  const dialog = page.getByRole("dialog", { name: "Switch repository" });
+  await dialog.getByRole("button", { name: "Filters", exact: true }).click();
+  const search = dialog.getByRole("combobox", { name: "Search repositories" });
+  const latest = dialog.getByRole("button", { name: "Latest", exact: true });
+  const stale = dialog.getByRole("button", { name: "Stale", exact: true });
+  const allFreshness = dialog.getByRole("button", { name: "All", exact: true });
+  const includeAll = dialog.getByRole("checkbox", { name: "All", exact: true });
+  await expect(latest).toHaveAttribute("aria-pressed", "true");
+  await expect(allFreshness).toHaveAttribute("aria-pressed", "false");
+  await expect(stale).toHaveAttribute("aria-pressed", "false");
+  await expect(includeAll).not.toBeChecked();
+  await expect(
+    dialog.getByTitle(/include unavailable.*no changes/i),
+  ).toBeVisible();
+  const checkboxBounds = await includeAll.boundingBox();
+  const staleBounds = await stale.boundingBox();
+  if (!checkboxBounds || !staleBounds) throw new Error("Missing filter bounds");
+  expect(checkboxBounds.x).toBeGreaterThan(staleBounds.x + staleBounds.width);
+  await expect(dialog.getByRole("option")).toHaveCount(1);
+  await expect(dialog.getByRole("option")).toContainText("Local review");
+  await search.fill("Old changes");
+  await expect(dialog.getByRole("option")).toHaveCount(0);
+  await allFreshness.click();
+  await expect(dialog.getByRole("option")).toHaveCount(1);
+  await expect(dialog.getByRole("option")).toContainText("Stale");
+  await search.fill("");
+  await expect(dialog.getByRole("option")).toHaveCount(2);
+  await stale.click();
+  await expect(dialog.getByRole("option")).toHaveCount(1);
+  await expect(dialog.getByRole("option")).toContainText("Old changes");
+  await includeAll.check();
+  await expect(dialog.getByRole("option")).toHaveCount(3);
+  await expect(
+    dialog.getByRole("option", { name: /Empty stale/ }),
+  ).toContainText("No changes");
+  await expect(
+    dialog.getByRole("option", { name: /Missing stale/ }),
+  ).toContainText("Unavailable");
+  await latest.click();
+  await expect(dialog.getByRole("option")).toHaveCount(4);
+  await expect(dialog.getByRole("option", { name: /Old changes/ })).toHaveCount(
+    0,
+  );
+  await includeAll.uncheck();
+  await expect(dialog.getByRole("option")).toHaveCount(1);
+  await stale.click();
+  await includeAll.check();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await trigger.click();
+  await expect(stale).toHaveAttribute("aria-pressed", "true");
+  await expect(includeAll).toBeChecked();
+  await expect(dialog.getByRole("option")).toHaveCount(3);
 });
 
 test("observation picker drills into repositories and searches independent sources on the same branch", async ({
@@ -735,7 +858,7 @@ test("observation picker drills into repositories and searches independent sourc
     };
   }
   const contexts = [
-    observation("first", "container-a", "run-a", 1000),
+    { ...observation("first", "container-a", "run-a", 1000), stale: true },
     observation("second", "container-b", "run-b", 2000),
     observation("third", "container-a", "run-a", 3000),
   ];
@@ -771,14 +894,14 @@ test("observation picker drills into repositories and searches independent sourc
   const dialog = page.getByRole("dialog", { name: "Switch repository" });
   const search = dialog.getByRole("combobox", { name: "Search repositories" });
   await expect(dialog.getByRole("option")).toHaveCount(1);
-  await expect(dialog.getByRole("option")).toContainText("3 snapshots");
+  await expect(dialog.getByRole("option")).toContainText("2 snapshots");
   await search.press("Enter");
   await expect(
     dialog.getByRole("listbox", { name: "Collected snapshots" }),
   ).toBeVisible();
-  await expect(dialog.getByRole("option")).toHaveCount(3);
+  await expect(dialog.getByRole("option")).toHaveCount(2);
   await expect(dialog.getByRole("option", { name: /container-a/ })).toHaveCount(
-    2,
+    1,
   );
   await search.fill("main container-b run-b");
   await expect(dialog.getByRole("option")).toHaveCount(1);
@@ -806,12 +929,24 @@ test("observation picker drills into repositories and searches independent sourc
   await expect(
     dialog.getByRole("listbox", { name: "Repositories" }),
   ).toBeVisible();
-  contexts.push(observation("fourth", "container-c", "run-c", 4000));
+  const selected = contexts.find((context) => context.id === "second");
+  if (!selected) throw new Error("Missing selected observation");
+  selected.stale = true;
+  contexts.push(observation("fourth", "container-b", "run-new", 4000));
   const diffReads = state.scopes.length;
   await page.evaluate(() => window.dispatchEvent(new Event("test-ingestion")));
-  await expect(dialog.getByRole("option")).toContainText("4 snapshots");
+  await expect(dialog.getByRole("option")).toContainText("2 snapshots");
   await expect(page).toHaveURL(/\/contexts\/second$/);
   expect(state.scopes).toHaveLength(diffReads);
+  await dialog.getByRole("button", { name: "Filters", exact: true }).click();
+  await dialog.getByRole("button", { name: "All", exact: true }).click();
+  await expect(dialog.getByRole("option")).toContainText("4 snapshots");
+  await search.press("Enter");
+  await expect(dialog.getByRole("option")).toHaveCount(4);
+  await expect(
+    dialog.getByRole("option", { name: /container-b.*run-b/ }),
+  ).toContainText("Stale");
+  await expect(page).toHaveURL(/\/contexts\/second$/);
 });
 
 test("picker combines filters before grouping and preserves them across navigation and reopening", async ({
@@ -880,7 +1015,7 @@ test("picker combines filters before grouping and preserves them across navigati
   await trigger.click();
   const dialog = page.getByRole("dialog", { name: "Switch repository" });
   const search = dialog.getByRole("combobox", { name: "Search repositories" });
-  await expect(dialog.getByRole("option")).toContainText("3 snapshots");
+  await expect(dialog.getByRole("option")).toContainText("2 snapshots");
   await expect(
     dialog.getByRole("option", { name: /Missing checkout/ }),
   ).toHaveCount(0);
@@ -905,23 +1040,11 @@ test("picker combines filters before grouping and preserves them across navigati
     .getByRole("menuitemcheckbox", { name: "tree-b", exact: true })
     .click();
   await page.keyboard.press("Escape");
-  await dialog.getByRole("button", { name: "Changes", exact: true }).click();
-  await page
-    .getByRole("menuitemradio", { name: "No changes", exact: true })
-    .click();
-  await expect(
-    page.getByRole("menuitemradio", { name: "No changes", exact: true }),
-  ).toBeHidden();
+  await dialog.getByRole("button", { name: "Stale", exact: true }).click();
   await expect(
     dialog.getByText("No repositories found", { exact: true }),
   ).toBeVisible();
-  await dialog.getByRole("button", { name: "Changes", exact: true }).click();
-  await page
-    .getByRole("menuitemradio", { name: "Changed", exact: true })
-    .click();
-  await expect(
-    page.getByRole("menuitemradio", { name: "Changed", exact: true }),
-  ).toBeHidden();
+  await dialog.getByRole("button", { name: "Latest", exact: true }).click();
   await search.focus();
   await search.press("Enter");
   await expect(dialog.getByRole("option")).toHaveCount(1);
@@ -943,11 +1066,11 @@ test("picker combines filters before grouping and preserves them across navigati
   await dialog
     .getByRole("button", { name: "Clear filters", exact: true })
     .click();
-  await expect(dialog.getByRole("option")).toContainText("3 snapshots");
-  await dialog
-    .getByRole("button", { name: "Availability", exact: true })
-    .click();
-  await page.getByRole("menuitemradio", { name: "All", exact: true }).click();
+  await expect(dialog.getByRole("option")).toContainText("2 snapshots");
+  await dialog.getByRole("checkbox", { name: "All", exact: true }).check();
+  await expect(dialog.getByRole("option", { name: /3 snapshots/ })).toHaveCount(
+    1,
+  );
   const unavailable = dialog.getByRole("option", { name: /Missing checkout/ });
   await expect(unavailable).toBeDisabled();
   await expect(unavailable).toContainText(

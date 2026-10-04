@@ -24,6 +24,7 @@ func initializeIngestion(tx *sql.Tx) error {
 		`CREATE TABLE IF NOT EXISTS observation_identities (owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, identity_hash TEXT NOT NULL, context_id TEXT NOT NULL REFERENCES observations(context_id) ON DELETE CASCADE, PRIMARY KEY(owner_id,identity_hash))`,
 		`CREATE INDEX IF NOT EXISTS observations_source ON observations(owner_id,source_id)`,
 		`CREATE INDEX IF NOT EXISTS observations_branch ON observations(owner_id,json_extract(metadata,'$.branch'))`,
+		`CREATE INDEX IF NOT EXISTS observation_submissions_stream ON observation_submissions(owner_id,source_id,json_extract(metadata,'$.repositoryKey'),json_extract(metadata,'$.checkoutKey'),json_extract(metadata,'$.branch'),json_extract(metadata,'$.collectedAt'))`,
 	}
 	for _, statement := range statements {
 		if _, err := tx.Exec(statement); err != nil {

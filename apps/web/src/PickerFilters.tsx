@@ -4,8 +4,6 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -14,21 +12,16 @@ import {
   type pickerFilterOptions,
 } from "./project-picker.ts";
 
-const availabilityLabels = {
-  all: "All availability",
-  available: "Available",
-  unavailable: "Unavailable",
-};
-const changesLabels = {
-  all: "All changes",
-  changed: "Changed",
-  unchanged: "No changes",
+const freshnessLabels = {
+  all: "All snapshots",
+  latest: "Latest snapshots",
+  stale: "Stale snapshots",
 };
 
 export function pickerFilterSummary(filters: PickerFilters) {
   return [
-    availabilityLabels[filters.availability],
-    ...(filters.changes === "all" ? [] : [changesLabels[filters.changes]]),
+    freshnessLabels[filters.freshness],
+    filters.includeAll ? "All statuses" : "With changes",
     ...filters.hosts.map((host) => `Host: ${host}`),
     ...filters.branches.map((branch) => `Branch: ${branch}`),
     ...filters.worktrees.map((worktree) => `Worktree: ${worktree}`),
@@ -37,8 +30,8 @@ export function pickerFilterSummary(filters: PickerFilters) {
 
 export function pickerFiltersChanged(filters: PickerFilters) {
   return (
-    filters.availability !== defaultPickerFilters.availability ||
-    filters.changes !== defaultPickerFilters.changes ||
+    filters.freshness !== defaultPickerFilters.freshness ||
+    filters.includeAll !== defaultPickerFilters.includeAll ||
     filters.hosts.length > 0 ||
     filters.branches.length > 0 ||
     filters.worktrees.length > 0
@@ -115,64 +108,40 @@ export function PickerFilterControls({
       role="group"
       aria-label="Repository filters"
     >
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          aria-label="Availability"
-          render={filterTrigger(availabilityLabels[filters.availability])}
-        />
-        <DropdownMenuContent>
-          <DropdownMenuRadioGroup
-            value={filters.availability}
-            onValueChange={(value) => {
-              if (
-                value === "all" ||
-                value === "available" ||
-                value === "unavailable"
-              )
-                onChange({ ...filters, availability: value });
-            }}
-          >
-            <DropdownMenuRadioItem closeOnClick value="all">
-              All
-            </DropdownMenuRadioItem>
-            <DropdownMenuRadioItem closeOnClick value="available">
-              Available
-            </DropdownMenuRadioItem>
-            <DropdownMenuRadioItem closeOnClick value="unavailable">
-              Unavailable
-            </DropdownMenuRadioItem>
-          </DropdownMenuRadioGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          aria-label="Changes"
-          render={filterTrigger(changesLabels[filters.changes])}
-        />
-        <DropdownMenuContent>
-          <DropdownMenuRadioGroup
-            value={filters.changes}
-            onValueChange={(value) => {
-              if (
-                value === "all" ||
-                value === "changed" ||
-                value === "unchanged"
-              )
-                onChange({ ...filters, changes: value });
-            }}
-          >
-            <DropdownMenuRadioItem closeOnClick value="all">
-              All
-            </DropdownMenuRadioItem>
-            <DropdownMenuRadioItem closeOnClick value="changed">
-              Changed
-            </DropdownMenuRadioItem>
-            <DropdownMenuRadioItem closeOnClick value="unchanged">
-              No changes
-            </DropdownMenuRadioItem>
-          </DropdownMenuRadioGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <div className="project-picker-freshness-row">
+        <div className="segmented" role="group" aria-label="Snapshot freshness">
+          {(
+            ["all", "latest", "stale"] satisfies PickerFilters["freshness"][]
+          ).map((value) => (
+            <Button
+              key={value}
+              variant="ghost"
+              size="sm"
+              aria-pressed={filters.freshness === value}
+              onClick={() => onChange({ ...filters, freshness: value })}
+            >
+              {value === "all"
+                ? "All"
+                : value === "latest"
+                  ? "Latest"
+                  : "Stale"}
+            </Button>
+          ))}
+        </div>
+        <label
+          className="project-picker-all"
+          title="Include unavailable snapshots and snapshots with no changes or unknown status"
+        >
+          <input
+            type="checkbox"
+            checked={filters.includeAll}
+            onChange={(event) =>
+              onChange({ ...filters, includeAll: event.target.checked })
+            }
+          />
+          All
+        </label>
+      </div>
       <MultiFilter
         label="Host"
         options={options.hosts}

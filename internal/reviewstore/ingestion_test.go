@@ -63,6 +63,160 @@ func TestObservationRetryAndIndependentSources(t *testing.T) {
 	}
 }
 
+func TestObservationFreshnessUsesCollectionOrderAndRetries(t *testing.T) {
+	store := openTestStore(t)
+	user := testUser(t, store, "freshness")
+	requests := []ingestion.Request{
+		observationRequest("source", "old"),
+		observationRequest("source", "new"),
+		observationRequest("source", "late"),
+		observationRequest("source", "equal-time"),
+	}
+	requests[0].Metadata.CollectedAt = 100
+	requests[0].Metadata.RunID = "old-run"
+	requests[1].Metadata.CollectedAt = 200
+	for index := range requests[1].Scopes {
+		requests[1].Scopes[index].Snapshot.Files = []review.ChangedFile{}
+		requests[1].Scopes[index].Patches = map[string]review.FilePatch{}
+	}
+	requests[2].Metadata.CollectedAt = 150
+	requests[3].Metadata.CollectedAt = 200
+	bindings := make([]Binding, 0, len(requests))
+	expected := [][]bool{{false}, {true, false}, {true, false, true}, {true, true, true, false}}
+	for index, request := range requests {
+		binding, err := store.Ingest(user.ID, request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bindings = append(bindings, binding)
+		for previous, binding := range bindings {
+			item, err := store.Context(user.ID, binding.ContextID, time.Now())
+			if err != nil || item.Stale != expected[index][previous] {
+				t.Fatalf("freshness after %s for %s: %#v, %v", request.SubmissionID, requests[previous].SubmissionID, item, err)
+			}
+		}
+	}
+	// Equal collection times use arrival order; replaying an earlier arrival
+	// must not make it latest again.
+	retry, err := store.Ingest(user.ID, requests[1])
+	if err != nil || retry.ContextID != bindings[1].ContextID {
+		t.Fatalf("retry: %#v, %v", retry, err)
+	}
+	for index, binding := range bindings {
+		item, err := store.Context(user.ID, binding.ContextID, time.Now())
+		if err != nil || item.Stale != (index < len(bindings)-1) {
+			t.Fatalf("freshness for %s: %#v, %v", requests[index].SubmissionID, item, err)
+		}
+	}
+	filtered, err := store.ObservationContexts(user.ID, 1, 0, "", ingestion.Filter{RunID: "old-run"})
+	if err != nil || len(filtered) != 1 || !filtered[0].Stale {
+		t.Fatalf("staleness with newer observation outside search: %#v, %v", filtered, err)
+	}
+	all, err := store.Contexts(user.ID, 100, 0, "", time.Now())
+	if err != nil || len(all) != len(bindings) {
+		t.Fatalf("catalog: %#v, %v", all, err)
+	}
+	page, err := store.Contexts(user.ID, 1, all[0].LastSubmittedAt, all[0].ID, time.Now())
+	if err != nil || len(page) != 1 || page[0].ID != all[1].ID || page[0].Stale != all[1].Stale {
+		t.Fatalf("paginated freshness: %#v, %v", page, err)
+	}
+}
+
+func TestObservationFreshnessTracksDeduplicatedSubmissions(t *testing.T) {
+	store := openTestStore(t)
+	user := testUser(t, store, "dedupe-freshness")
+	steps := []struct {
+		id, content, latest string
+		collectedAt         int64
+	}{
+		{"a-first", "a", "a", 100},
+		{"b-first", "b", "b", 200},
+		{"empty-first", "empty", "empty", 300},
+		{"a-fresh", "a", "a", 400},
+		{"empty-late", "empty", "a", 350},
+		{"b-equal-time", "b", "b", 400},
+		{"a-fresh", "a", "b", 400}, // A retry cannot supersede B's equal-time arrival.
+	}
+	contexts := make(map[string]string)
+	metadata := make(map[string]ingestion.Metadata)
+	for _, step := range steps {
+		request := observationRequest("source", step.id)
+		request.Metadata.CollectedAt = step.collectedAt
+		request.Metadata.RunID = step.id
+		if step.content == "empty" {
+			for index := range request.Scopes {
+				request.Scopes[index].Snapshot.Files = []review.ChangedFile{}
+				request.Scopes[index].Patches = map[string]review.FilePatch{}
+			}
+		} else {
+			request.ContentHash = strings.Repeat(step.content, 64)
+		}
+		binding, err := store.Ingest(user.ID, request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if id, exists := contexts[step.content]; exists {
+			if binding.ContextID != id {
+				t.Fatalf("dedupe for %s created %s, want %s", step.id, binding.ContextID, id)
+			}
+		} else {
+			contexts[step.content] = binding.ContextID
+			metadata[step.content] = request.Metadata
+		}
+		for content, id := range contexts {
+			item, err := store.Context(user.ID, id, time.Now())
+			if err != nil || item.Stale != (content != step.latest) || item.Metadata == nil || *item.Metadata != metadata[content] {
+				t.Fatalf("freshness after %s for %s: %#v, %v", step.id, content, item, err)
+			}
+		}
+	}
+}
+
+func TestObservationFreshnessKeepsStreamsSeparate(t *testing.T) {
+	for _, field := range []string{"owner", "source", "repository", "checkout", "branch", "no repository", "no checkout"} {
+		t.Run(field, func(t *testing.T) {
+			store := openTestStore(t)
+			user := testUser(t, store, "streams")
+			request := observationRequest("source", "old")
+			if field == "no repository" {
+				request.Metadata.RepositoryKey = ""
+			}
+			if field == "no checkout" {
+				request.Metadata.CheckoutKey = ""
+			}
+			old, err := store.Ingest(user.ID, request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request.SubmissionID = "new"
+			request.Metadata.CollectedAt++
+			ownerID := user.ID
+			switch field {
+			case "owner":
+				ownerID = testUser(t, store, "another-owner").ID
+			case "source":
+				request.Metadata.SourceID = "another-source"
+			case "repository":
+				request.Metadata.RepositoryKey = "another-repository"
+			case "checkout":
+				request.Metadata.CheckoutKey = "another-checkout"
+			case "branch":
+				request.Metadata.Branch = "another-branch"
+			}
+			newest, err := store.Ingest(ownerID, request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, identity := range []struct{ ownerID, contextID string }{{user.ID, old.ContextID}, {ownerID, newest.ContextID}} {
+				item, err := store.Context(identity.ownerID, identity.contextID, time.Now())
+				if err != nil || item.Stale {
+					t.Fatalf("independent stream became stale: %#v, %v", item, err)
+				}
+			}
+		})
+	}
+}
+
 func TestObservationRollbackOnIncompleteScope(t *testing.T) {
 	store := openTestStore(t)
 	user := testUser(t, store, "rollback")
@@ -96,6 +250,12 @@ func TestObservationReopensWithoutCheckoutWithinRetention(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	newer := observationRequest("source", "newer")
+	newer.Metadata.CollectedAt++
+	newest, err := store.Ingest(user.ID, newer)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -115,8 +275,12 @@ func TestObservationReopensWithoutCheckoutWithinRetention(t *testing.T) {
 		t.Fatalf("durable replay: %#v, %v", retry, err)
 	}
 	item, err := store.Context(user.ID, binding.ContextID, time.Now().Add(24*time.Hour))
-	if err != nil || item.Kind != "observation" || item.Metadata == nil || item.Metadata.SourceID != "source" || item.Root == nil || *item.Root != request.Metadata.Root || item.ExpiresAt == nil {
+	if err != nil || !item.Stale || item.Kind != "observation" || item.Metadata == nil || item.Metadata.SourceID != "source" || item.Root == nil || *item.Root != request.Metadata.Root || item.ExpiresAt == nil {
 		t.Fatalf("metadata: %#v, %v", item, err)
+	}
+	latest, err := store.Context(user.ID, newest.ContextID, time.Now())
+	if err != nil || latest.Stale {
+		t.Fatalf("latest after reopening and retry: %#v, %v", latest, err)
 	}
 	snapshot, err := store.ObservationSnapshot(user.ID, binding.ContextID, review.DiffStaged)
 	if err != nil || snapshot.ID != binding.DiffIDs[review.DiffStaged] || snapshot.Revision != "staged-revision" {
@@ -472,6 +636,7 @@ func TestSchemaFourMigrationPreservesObservationHistoryAndRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	request.SubmissionID = "duplicate"
+	request.Metadata.CollectedAt++
 	second, err := store.Ingest(user.ID, request)
 	if err != nil {
 		t.Fatal(err)
@@ -501,7 +666,7 @@ func TestSchemaFourMigrationPreservesObservationHistoryAndRetry(t *testing.T) {
 	defer store.Close()
 	for _, binding := range []Binding{first, second} {
 		item, err := store.Context(user.ID, binding.ContextID, time.Now())
-		if err != nil || item.ExpiresAt == nil || *item.ExpiresAt != lastSubmitted+CaptureLifetime.Milliseconds() {
+		if err != nil || item.Stale != (binding.ContextID == first.ContextID) || item.ExpiresAt == nil || *item.ExpiresAt != lastSubmitted+CaptureLifetime.Milliseconds() {
 			t.Fatalf("migration TTL: %#v %v", item, err)
 		}
 		var scopes int
@@ -514,6 +679,7 @@ func TestSchemaFourMigrationPreservesObservationHistoryAndRetry(t *testing.T) {
 		t.Fatalf("migration review: %#v %v", comments, err)
 	}
 	request.SubmissionID = "original"
+	request.Metadata.CollectedAt--
 	retry, err := store.Ingest(user.ID, request)
 	if err != nil || retry.ContextID != first.ContextID {
 		t.Fatalf("migration replay: %#v %v", retry, err)

@@ -132,12 +132,18 @@ observation, with branch, worktree, source/run, and collection-time metadata.
 Search includes repository, branch, worktree, hostname, and source/run labels.
 Catalog reads query stored metadata only; ingestion events, reconnect, and tab
 visibility reload the catalog without replacing the selected observation.
-Opening a review never discovers worktrees or reads Git. Changed observations
-come first, ordered by last submission time; counts describe their fixed
-snapshots. Picker filters cover Availability, Host, Changes, Branch and
-Worktree; apply them before repository grouping. Available is the default,
-unavailable entries are disabled and skipped during keyboard navigation, and
-filter selections persist while navigating and reopening the picker.
+Opening a review never discovers worktrees or reads Git. The picker defaults to
+Latest snapshots with changes. All / Latest / Stale filters freshness; the
+right-aligned All checkbox also includes unavailable, empty, and unknown-status
+snapshots. A newer collection supersedes older snapshots for the same owner,
+source, repository, checkout, and branch; arrival order breaks collection-time
+ties. Freshness uses submission history, including deduplicated collections and
+observations outside the current search or page. Returning to previous content
+makes its existing review latest again; its original snapshot metadata stays fixed.
+Changed observations come first, ordered by last submission time; counts
+describe their fixed snapshots. Host, Branch, and Worktree filters apply before
+repository grouping. Unavailable entries are disabled and skipped during keyboard
+navigation. Filter selections persist while navigating and reopening the picker.
 Switching disposes the previous workspace's request ownership and resets transient
 state.
 `DiffWorkspace.tsx` owns Pierre rendering,

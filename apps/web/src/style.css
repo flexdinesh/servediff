@@ -857,6 +857,30 @@ h2 {
   color: var(--muted);
   font-size: var(--text-xs);
 }
+.project-picker-freshness-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+}
+.project-picker-all {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--control-height);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.project-picker-all input {
+  accent-color: var(--accent);
+}
+.project-picker-stale {
+  flex-shrink: 0;
+  color: var(--warning);
+  font-size: var(--text-xs);
+}
 .project-picker-filter-summary > span {
   min-width: 0;
   flex: 1;

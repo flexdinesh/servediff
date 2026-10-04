@@ -1,6 +1,7 @@
 package contextservice
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -108,11 +109,101 @@ func TestCatalogCountsAndBranchRemainCapturedUntilNewIngestion(t *testing.T) {
 	restarted := New(service.store, service.user)
 	t.Cleanup(func() { _ = restarted.Close() })
 	old, err := restarted.Get(t.Context(), before.Context.ID)
-	if err != nil || old.Branch == nil || *old.Branch != input.Metadata.Branch || old.ChangedFileCount == nil || *old.ChangedFileCount != 1 || old.LastChangedAt != input.Metadata.CollectedAt {
+	if err != nil || old.Stale || old.Branch == nil || *old.Branch != input.Metadata.Branch || old.ChangedFileCount == nil || *old.ChangedFileCount != 1 || old.LastChangedAt != input.Metadata.CollectedAt {
 		t.Fatalf("old observation mutated: %#v, %v", old, err)
 	}
 	latest, err := restarted.Get(t.Context(), after.Context.ID)
-	if err != nil || latest.Branch == nil || *latest.Branch != "next" || latest.ChangedFileCount == nil || *latest.ChangedFileCount != 0 {
+	if err != nil || latest.Stale || latest.Branch == nil || *latest.Branch != "next" || latest.ChangedFileCount == nil || *latest.ChangedFileCount != 0 {
 		t.Fatalf("new observation: %#v, %v", latest, err)
+	}
+}
+
+func TestCatalogStaleStatusSurvivesRestartAndFilteredPages(t *testing.T) {
+	service := testService(t)
+	root := testRepo(t)
+	input, err := collector.Collect(t.Context(), root, collector.Options{SourceID: "source", RunID: "before-run", SubmissionID: "before"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := service.Ingest(t.Context(), input)
+	if err != nil || before.Context.Stale {
+		t.Fatalf("initial observation: %#v, %v", before, err)
+	}
+	if err := os.Remove(filepath.Join(root, "file")); err != nil {
+		t.Fatal(err)
+	}
+	afterInput, err := collector.Collect(t.Context(), root, collector.Options{SourceID: "source", RunID: "after-run", SubmissionID: "after"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterInput.Metadata.CollectedAt = input.Metadata.CollectedAt + 1
+	after, err := service.Ingest(t.Context(), afterInput)
+	if err != nil || after.Context.Stale || after.Context.ChangedFileCount == nil || *after.Context.ChangedFileCount != 0 {
+		t.Fatalf("empty latest observation: %#v, %v", after, err)
+	}
+	if err := os.RemoveAll(root); err != nil {
+		t.Fatal(err)
+	}
+	restarted := New(service.store, service.user)
+	t.Cleanup(func() { _ = restarted.Close() })
+	for _, identity := range []struct {
+		id    string
+		stale bool
+	}{{before.Context.ID, true}, {after.Context.ID, false}} {
+		item, err := restarted.Get(t.Context(), identity.id)
+		if err != nil || item.Stale != identity.stale {
+			t.Fatalf("freshness after restart: %#v, %v", item, err)
+		}
+		encoded, err := json.Marshal(item)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var wire struct {
+			Stale *bool `json:"stale"`
+		}
+		if err := json.Unmarshal(encoded, &wire); err != nil || wire.Stale == nil || *wire.Stale != identity.stale {
+			t.Fatalf("wire freshness: %s, %v", encoded, err)
+		}
+	}
+	filtered, err := restarted.ListFiltered(t.Context(), 1, "", ingestion.Filter{Query: "before-run"})
+	if err != nil || len(filtered.Contexts) != 1 || filtered.Contexts[0].ID != before.Context.ID || !filtered.Contexts[0].Stale {
+		t.Fatalf("search omitted latest: %#v, %v", filtered, err)
+	}
+	seen := 0
+	cursor := ""
+	for {
+		page, err := restarted.List(t.Context(), 1, cursor)
+		if err != nil || len(page.Contexts) != 1 {
+			t.Fatalf("catalog page: %#v, %v", page, err)
+		}
+		item := page.Contexts[0]
+		if item.Stale != (item.ID == before.Context.ID) {
+			t.Fatalf("page freshness: %#v", item)
+		}
+		seen++
+		if page.NextCursor == nil {
+			break
+		}
+		cursor = *page.NextCursor
+	}
+	if seen != 2 {
+		t.Fatalf("catalog returned %d observations, want 2", seen)
+	}
+	fresh := input
+	fresh.SubmissionID = "before-fresh"
+	fresh.Metadata.CollectedAt = afterInput.Metadata.CollectedAt + 1
+	reused, err := restarted.Ingest(t.Context(), fresh)
+	if err != nil || reused.Context.ID != before.Context.ID || reused.Context.Stale || reused.Context.LastChangedAt != input.Metadata.CollectedAt {
+		t.Fatalf("deduplicated latest observation: %#v, %v", reused, err)
+	}
+	late := afterInput
+	late.SubmissionID = "after-late"
+	delayed, err := restarted.Ingest(t.Context(), late)
+	if err != nil || delayed.Context.ID != after.Context.ID || !delayed.Context.Stale {
+		t.Fatalf("delayed deduplicated empty observation: %#v, %v", delayed, err)
+	}
+	filtered, err = restarted.ListFiltered(t.Context(), 1, "", ingestion.Filter{Query: "before-run"})
+	if err != nil || len(filtered.Contexts) != 1 || filtered.Contexts[0].ID != before.Context.ID || filtered.Contexts[0].Stale {
+		t.Fatalf("deduplicated freshness outside search: %#v, %v", filtered, err)
 	}
 }

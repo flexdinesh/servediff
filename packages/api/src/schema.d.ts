@@ -644,6 +644,8 @@ export interface components {
       submittedFrom: string | null;
       /** @enum {string} */
       availability: "unchecked" | "available" | "unavailable";
+      /** @description A newer observation exists for the same owner, source, repository, checkout, and branch. Collection time determines freshness; arrival order breaks ties. False for ungrouped captures and legacy contexts. */
+      stale?: boolean;
       capabilities: components["schemas"]["Session"]["capabilities"];
       observation?: components["schemas"]["ObservationMetadata"];
     };

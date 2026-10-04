@@ -359,7 +359,12 @@ such detail into a token. New layout spacing must use the scale.
   count and keyboard hints.
   Show a compact trailing changed-file count across staged, unstaged, and
   untracked changes, independent of the current scope. Empty checkouts show
-  “No changes” and remain selectable; unknown metadata shows “Status unknown”.
+  “No changes”; unknown metadata shows “Status unknown”. The picker defaults to
+  Latest snapshots with changes. Put All / Latest / Stale in a compact segmented
+  control below search, with a right-aligned All checkbox that includes unavailable,
+  empty, and unknown-status snapshots. Keep freshness independent of that checkbox.
+  Mark stale snapshot rows with an explicit trailing “Stale” indicator. Preserve
+  the selected review when ingestion refreshes the catalog.
   Keep names readable and truncate paths before status, including on mobile.
 
 - Use the controlled shadcn `Dialog` built on Base UI. General dialogs retain a

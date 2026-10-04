@@ -381,6 +381,9 @@ export function ProjectPicker({
                       : observationDetail(context)}
                   </span>
                 </span>
+                {!grouped && context.stale && (
+                  <span className="project-picker-stale">Stale</span>
+                )}
                 {!grouped && (
                   <span
                     className="project-picker-changes"
