@@ -248,7 +248,8 @@ such detail into a token. New layout spacing must use the scale.
 ## Borders, radii, and shadows
 
 - Use the shared `outline-muted` Button variant (`--border-muted`) for compact
-  diff actions and reset reviewed. Segmented layout controls share this token.
+  diff actions and reset reviewed. Segmented layout controls and the grouped
+  file-filter field share this token.
   Text, icons, hover and focus identify these actions; avoid per-button colors.
 - Use 1px `--border-muted` for separators and `--border-control` for interactive
   boundaries requiring 3:1 contrast. Reserve `--border-strong` for exceptional

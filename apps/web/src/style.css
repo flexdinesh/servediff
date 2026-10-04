@@ -215,7 +215,7 @@ kbd {
   height: var(--control-small);
   min-height: var(--control-small);
   padding: 0 var(--space-1-5);
-  border: 1px solid var(--border-control);
+  border: 1px solid var(--border-muted);
   border-radius: var(--radius-control);
   background: var(--bg);
   color: var(--muted);

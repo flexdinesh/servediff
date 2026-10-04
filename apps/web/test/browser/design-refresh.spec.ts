@@ -505,7 +505,7 @@ test("diff header actions use shared muted borders and collapse files directly",
       const expected = getComputedStyle(probe).borderColor;
       const actual = Array.from(
         document.querySelectorAll(
-          ".layout-control, #view-options, #toggle-all-files, .review-button, .file-comment-button, #reset-reviewed",
+          ".search-box, .layout-control, #view-options, #toggle-all-files, .review-button, .file-comment-button, #reset-reviewed",
         ),
         (element) => getComputedStyle(element).borderTopColor,
       );
