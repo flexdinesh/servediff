@@ -22,6 +22,7 @@ func (service *Service) Ingest(ctx context.Context, input ingestion.Request) (Su
 	if err != nil {
 		return Submission{}, requestError(err)
 	}
+	service.events.publish(binding.ContextID)
 	item, err := service.Get(ctx, binding.ContextID)
 	if err != nil {
 		return Submission{}, err
@@ -30,7 +31,6 @@ func (service *Service) Ingest(ctx context.Context, input ingestion.Request) (Su
 	if err != nil {
 		return Submission{}, requestError(err)
 	}
-	service.events.publish(binding.ContextID)
 	return Submission{Context: item, Snapshot: snapshot}, nil
 }
 
@@ -137,9 +137,4 @@ func (service *Service) Subscribe() (<-chan string, func()) {
 		delete(service.events.listeners, channel)
 		service.events.mu.Unlock()
 	}
-}
-
-func observationContents(store *reviewstore.Store, ownerID, id string) bool {
-	snapshot, err := store.ObservationSnapshot(ownerID, id, review.DiffAll)
-	return err == nil && snapshot.Source == "local"
 }

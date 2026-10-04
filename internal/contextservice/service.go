@@ -180,6 +180,9 @@ func (service *Service) Resolve(ctx context.Context, id string) (session.Session
 	}
 	var source diffsource.Source
 	if item.Kind == "observation" {
+		if item.Metadata == nil {
+			return session.Session{}, diffsource.Error(500, "Observation metadata missing")
+		}
 		snapshot, readErr := service.store.ObservationSnapshot(service.user.ID, id, review.DiffAll)
 		if readErr != nil {
 			return session.Session{}, requestError(readErr)
@@ -212,7 +215,7 @@ func (service *Service) Get(ctx context.Context, id string) (Context, error) {
 	if err != nil {
 		return Context{}, requestError(err)
 	}
-	return service.present(item), nil
+	return service.present(item)
 }
 
 type cursorValue struct {
@@ -263,7 +266,11 @@ func (service *Service) ListFiltered(ctx context.Context, limit int, cursor stri
 		items = items[:limit]
 	}
 	for _, item := range items {
-		page.Contexts = append(page.Contexts, service.present(item))
+		value, err := service.present(item)
+		if err != nil {
+			return Page{}, err
+		}
+		page.Contexts = append(page.Contexts, value)
 	}
 	return page, nil
 }
@@ -275,23 +282,28 @@ func (service *Service) Count(ctx context.Context) (int, int, error) {
 	return service.store.ContextCounts(service.user.ID, time.Now())
 }
 
-func (service *Service) present(item reviewstore.ContextInfo) Context {
+func (service *Service) present(item reviewstore.ContextInfo) (Context, error) {
 	if item.Kind == "observation" && item.Metadata != nil {
 		m := item.Metadata
 		binding, err := service.store.ContextBinding(service.user.ID, item.ID, time.Now())
 		scopes := []review.DiffMode{}
-		if err == nil {
-			for _, mode := range []review.DiffMode{review.DiffAll, review.DiffStaged, review.DiffUnstaged} {
-				if _, ok := binding.DiffIDs[mode]; ok {
-					scopes = append(scopes, mode)
-				}
+		if err != nil {
+			return Context{}, requestError(err)
+		}
+		for _, mode := range []review.DiffMode{review.DiffAll, review.DiffStaged, review.DiffUnstaged} {
+			if _, ok := binding.DiffIDs[mode]; ok {
+				scopes = append(scopes, mode)
 			}
+		}
+		snapshot, err := service.store.ObservationSnapshot(service.user.ID, item.ID, review.DiffAll)
+		if err != nil {
+			return Context{}, requestError(err)
 		}
 		name := m.RepositoryName
 		if name == "" {
 			name = "Piped diff"
 		}
-		return Context{ID: item.ID, Kind: "observation", Name: name, Root: &m.Root, RepositoryID: item.RepositoryID, CreatedAt: item.CreatedAt, LastSubmittedAt: item.LastSubmittedAt, LastChangedAt: m.CollectedAt, ChangedFileCount: item.ChangedFileCount, SubmittedFrom: item.SubmittedFrom, Observation: m, Branch: &m.Branch, WorktreeName: &m.WorktreeName, Availability: "available", Capabilities: storedCapabilities(scopes, observationContents(service.store, service.user.ID, item.ID))}
+		return Context{ID: item.ID, Kind: "observation", Name: name, Root: &m.Root, RepositoryID: item.RepositoryID, CreatedAt: item.CreatedAt, LastSubmittedAt: item.LastSubmittedAt, LastChangedAt: m.CollectedAt, ChangedFileCount: item.ChangedFileCount, SubmittedFrom: item.SubmittedFrom, Observation: m, Branch: &m.Branch, WorktreeName: &m.WorktreeName, Availability: "available", Capabilities: storedCapabilities(scopes, snapshot.Source == "local")}, nil
 	}
 	var branch, worktreeName *string
 	lastChangedAt := item.LastSubmittedAt
@@ -305,11 +317,10 @@ func (service *Service) present(item reviewstore.ContextInfo) Context {
 		if item.Root != nil {
 			name = filepath.Base(*item.Root)
 		}
-
 	}
 	return Context{ID: item.ID, Kind: item.Kind, Name: name, Branch: branch, WorktreeName: worktreeName, Root: item.Root, LocationID: item.LocationID,
 		RepositoryID: item.RepositoryID, CreatedAt: item.CreatedAt, LastSubmittedAt: item.LastSubmittedAt, LastChangedAt: lastChangedAt, ChangedFileCount: changedFileCount,
-		ExpiresAt: item.ExpiresAt, SubmittedFrom: item.SubmittedFrom, Capabilities: capabilities(item.Kind), Availability: availability}
+		ExpiresAt: item.ExpiresAt, SubmittedFrom: item.SubmittedFrom, Capabilities: capabilities(item.Kind), Availability: availability}, nil
 }
 
 func capabilities(kind string) session.Capabilities {
