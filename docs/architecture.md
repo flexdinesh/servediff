@@ -1,5 +1,8 @@
 # Architecture
 
+For system responsibilities, request flows and design decisions, see
+[system.md](system.md).
+
 servediff is a Go/React monorepo with two server composition roots and one
 Git-aware producer pipeline. Node is a frontend build/test dependency only.
 
