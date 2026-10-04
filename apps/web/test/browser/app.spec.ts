@@ -344,7 +344,7 @@ test("file frames preserve measured gutters, gaps, and virtual geometry", async 
   await expect(containers.first()).toHaveCSS("box-shadow", "none");
   await expect(containers.first()).toHaveCSS("border-radius", "6px");
   await expect(containers.first()).toHaveCSS("outline-width", "1px");
-  await expect(containers.first()).toHaveCSS("outline-offset", "-1px");
+  await expect(containers.first()).toHaveCSS("outline-offset", "0px");
   await expect(page.locator("#viewer")).toHaveCSS(
     "background-image",
     /radial-gradient/,

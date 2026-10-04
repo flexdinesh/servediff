@@ -231,7 +231,8 @@ such detail into a token. New layout spacing must use the scale.
   elements. Quiet frames use `--space-3` horizontal gutters on `CodeView` and
   Pierre-measured top/bottom padding and file gaps (12px by default), read from
   the sizing probe. Frame each file with `--radius-md`, `overflow: clip`, and a
-  1px `--border` outline inset by 1px. The frame adds no layout geometry; keep
+  1px outline at the edge, mixing 90% `--border` with `--fg` for subtle contrast
+  against the canvas in both themes. The frame adds no layout geometry; keep
   `itemMetrics` synchronized so virtual scrolling remains correct.
 - Keep `unsafeCSS` small and justified. Do not reconstruct syntax styling or
   broadly target internal shadow-DOM elements to make the library look like chrome.
@@ -252,7 +253,7 @@ such detail into a token. New layout spacing must use the scale.
 - `--shadow-overlay` is the single elevation treatment for drawers/dialogs.
   Use `--backdrop` for modal separation. Whitespace and surface changes do the
   grouping work in the rest of the app.
-- Quiet frames use small corners (`--radius-md`, 6px by default), a neutral inset
+- Quiet frames use small corners (`--radius-md`, 6px by default), a neutral
   outline, and measured gaps without an elevation shadow. The faint canvas dots
   use a 20px pitch and remain visible only outside file surfaces.
 
@@ -443,7 +444,7 @@ This audit records the starting points, not permission to reuse legacy values.
 | Leading/tracking | Browser defaults, 18/13 tree, 22/13 code, 1.5/1.6/1.7 prose; −0.6px and 1.1px tracking      | Explicit UI/copy leading, semantic tracking; preserve measured code leading                  |
 | Spacing          | Repeated 3/5/6/7/9/10/11/14/15/17/18/20/22px padding, margins, gaps mixed with 4/8/12/16/24 | 4px rhythm; documented optical exceptions only                                               |
 | Radii            | 3, 4, 5, 6, 7, 8, 10px plus circles                                                         | 3/6/12px roles; circles only for dots/checks                                                 |
-| Shadows          | Tiny button and segmented shadows; sidebar shadow; dialog backdrop                          | One overlay shadow; non-geometric inset file frames without elevation                        |
+| Shadows          | Tiny button and segmented shadows; sidebar shadow; dialog backdrop                          | One overlay shadow; non-geometric file outlines without elevation                            |
 | Geometry         | Header 58px, toolbar 40px; 24/28/30px icon controls and content-sized buttons               | 56/44px shell rhythm, 32px controls, 24px Pierre slots, 44px touch targets                   |
 | Width/gutters    | Competing 260/220/280px sidebar rules; 10/12/14/22/24px gutters; 680px dialog               | One user-owned sidebar width; shared shell gutters/reading width; measured 12px diff spacing |
 | Review           | Inline 12×14px padding versus sidebar/mobile 10px; 85px editor, 300px XML area              | Shared 12px comment inset, readable editor, viewport-bounded overlay                         |

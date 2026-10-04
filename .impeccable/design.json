@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-04T00:32:08.272Z",
+  "generatedAt": "2026-10-04T00:47:42.231Z",
   "title": "Design system: servediff",
   "extensions": {
     "colorMeta": {
@@ -68,7 +68,7 @@
       "kind": "custom",
       "description": "Separate file diffs on a faint dotted canvas without adding item height or elevation.",
       "html": "<div class=\"ds-diff-canvas\"><div class=\"ds-diff-frame\"><div class=\"ds-diff-frame-header\">src/example.ts</div><div class=\"ds-diff-frame-code\">File diff</div></div></div>",
-      "css": ".ds-diff-canvas { padding: var(--space-3); background: var(--diff-canvas); background-image: radial-gradient(circle, var(--diff-canvas-dot) 0.8px, transparent 0.9px); background-size: 20px 20px; background-position: 10px 10px; } .ds-diff-frame { border-radius: var(--radius-md); overflow: clip; outline: 1px solid var(--border); outline-offset: -1px; box-shadow: none; } .ds-diff-frame-header { height: calc(2 * var(--space-4) + var(--space-1)); display: flex; align-items: center; padding-inline: var(--space-4); background: var(--diff-file-header); color: var(--fg); font-family: var(--font-mono); box-shadow: inset 0 -1px var(--border); } .ds-diff-frame-code { padding: var(--space-4); background: var(--bg); color: var(--fg); font-family: var(--font-mono); }"
+      "css": ".ds-diff-canvas { padding: var(--space-3); background: var(--diff-canvas); background-image: radial-gradient(circle, var(--diff-canvas-dot) 0.8px, transparent 0.9px); background-size: 20px 20px; background-position: 10px 10px; } .ds-diff-frame { border-radius: var(--radius-md); overflow: clip; outline: 1px solid color-mix(in srgb, var(--border) 90%, var(--fg)); outline-offset: 0; box-shadow: none; } .ds-diff-frame-header { height: calc(2 * var(--space-4) + var(--space-1)); display: flex; align-items: center; padding-inline: var(--space-4); background: var(--diff-file-header); color: var(--fg); font-family: var(--font-mono); box-shadow: inset 0 -1px var(--border); } .ds-diff-frame-code { padding: var(--space-4); background: var(--bg); color: var(--fg); font-family: var(--font-mono); }"
     }
   ]
 }

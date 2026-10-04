@@ -16,7 +16,7 @@ Constraints: Pierre owns virtualization, sticky headers, wrapping, selection, an
 
 THESIS: Each file reads as a separate review object on a faint dotted canvas.
 
-OWN-WORLD: Existing neutral/violet system; white or deep charcoal canvas with faint dots, panel-colored toolbar and file headers, opaque code surfaces, thin neutral inset frame, small corners, no elevation shadow.
+OWN-WORLD: Existing neutral/violet system; white or deep charcoal canvas with faint dots, panel-colored toolbar and file headers, opaque code surfaces, thin neutral outline frame, small corners, no elevation shadow.
 
 STORY: Navigate a file, read its diff, mark reviewed, and leave anchored feedback with existing controls.
 
