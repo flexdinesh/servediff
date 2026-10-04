@@ -131,11 +131,16 @@ The dashboard queries `/api/v2/contexts`, selects a repository, then selects an
 observation identified by worktree, branch, source, run and time. Distinct
 content from the same worktree remains independently selectable; unchanged
 reviews reuse one context. Search supports repository, branch, worktree,
-hostname, source and run metadata. Filters cover Availability, Host, Changes,
+hostname, source and run metadata. Filters cover All / Latest / Stale, Host,
 Branch and Worktree, with OR within a multi-select filter and AND across
-filters. Filtering precedes repository grouping and counts. Available is the
-default; unavailable legacy entries are disabled and skipped by keyboard
-navigation. Selections persist while navigating the picker.
+filters. Filtering precedes repository grouping and counts. Latest snapshots
+with changes are the default; the right-aligned All checkbox also includes
+unavailable, empty and unknown-status entries. Unavailable legacy entries remain
+disabled and skipped by keyboard navigation. Selections persist while navigating
+the picker. New collections make older snapshots stale within the same owner,
+source, repository, checkout and branch; collection time wins over upload time,
+with arrival order breaking ties. Fresh deduplicated submissions can make an
+existing review latest again without changing its captured contents or metadata.
 
 Opening a context or switching scope loads its stored manifest, patches and
 available contents through scoped REST endpoints. MCP uses the same stored

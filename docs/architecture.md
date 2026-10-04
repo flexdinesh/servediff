@@ -64,8 +64,11 @@ not guaranteed current filesystem state.
 hostname, source and run filters. The browser chooses a repository, then an
 observation. `GET /api/v2/events` emits transient ingestion notifications;
 clients query durable catalog state after reconnecting. The picker filters
-availability, host, changes, branch and worktree before repository grouping.
-Available is the default; unavailable legacy entries are disabled when shown.
+freshness, host, branch and worktree before repository grouping. Latest snapshots
+with changes are the default; the All checkbox includes unavailable, empty and
+unknown-status entries. Unavailable legacy entries are disabled when shown.
+Freshness derives from submission history for the same owner, source, repository,
+checkout and branch, ordered by collection time with arrival order breaking ties.
 Notifications are not a queue or proof of delivery.
 
 ## Local and remote composition
