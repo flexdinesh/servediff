@@ -376,6 +376,7 @@ main {
 }
 .toolbar {
   display: flex;
+  background: var(--panel);
   align-items: center;
   min-height: calc(var(--control-small) + 2 * var(--space-1));
   flex-shrink: 0;

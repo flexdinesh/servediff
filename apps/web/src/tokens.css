@@ -12,8 +12,8 @@
   --border-strong: var(--border-control);
   --hover: #eeeef4;
   --diff-file-header: var(--panel);
-  --diff-canvas: #f3f4f6;
-  --diff-canvas-dot: #dadde3;
+  --diff-canvas: var(--bg);
+  --diff-canvas-dot: var(--border);
   --accent: #5957d2;
   --accent-hover: #514fc5;
   --accent-bg: #eeeeff;
@@ -89,8 +89,8 @@
   --border-control: #747985;
   --border-strong: var(--border-control);
   --hover: #282930;
-  --diff-canvas: #121316;
-  --diff-canvas-dot: #2b2d33;
+  --diff-canvas: #111216;
+  --diff-canvas-dot: #282a31;
   --accent: #aba7ff;
   --accent-hover: #bfbbff;
   --accent-bg: #2c2944;

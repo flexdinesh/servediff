@@ -2,10 +2,10 @@
 name: servediff
 description: Focused, compact, calm code review workspace
 colors:
-  diff-canvas: "#f3f4f6"
-  diff-canvas-dot: "#dadde3"
-  diff-canvas-dark: "#121316"
-  diff-canvas-dot-dark: "#2b2d33"
+  diff-canvas: "#ffffff"
+  diff-canvas-dot: "#e5e7ec"
+  diff-canvas-dark: "#111216"
+  diff-canvas-dot-dark: "#282a31"
 ---
 
 # Design system
@@ -124,6 +124,8 @@ measured elements or replace the application tokens with framework defaults.
   and code-theme surfaces. App status tokens govern the surrounding UI only.
 - Quiet frames use the light canvas/dot tokens or their dark equivalents from
   the frontmatter. Keep dots behind opaque code surfaces; they do not tint code.
+  Light mode uses the white primary surface and separator-colored dots; dark mode
+  uses a deeper charcoal canvas and softened dots. File headers retain `--panel`.
 
 ## Typography
 
@@ -197,6 +199,7 @@ such detail into a token. New layout spacing must use the scale.
   hide the path at 768–1011px and both below 768px. Group ghost Refresh/theme
   actions at the trailing edge; share `--hover` feedback with the trigger.
 - Status bar: `--statusbar-height` (28), with shortcuts shed before server metrics.
+- The diff display toolbar uses `--panel`, matching the header and status bar.
 - Desktop sidebar: `--sidebar-width` defaults to 330px. `use-sidebar.ts` owns
   the user's pixel width, bounded to 200–520px and available viewport space.
   Do not add competing CSS defaults or override a saved width at tablet sizes.
