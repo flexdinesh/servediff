@@ -389,6 +389,9 @@ export function DiffWorkspace() {
           }
         : {}),
       unsafeCSS: `
+        [data-diff], [data-code] {
+          padding-bottom: 0;
+        }
         [data-diffs-header] {
           height: calc(2 * var(--space-4) + var(--space-1));
           min-height: calc(2 * var(--space-4) + var(--space-1));
@@ -468,16 +471,13 @@ export function DiffWorkspace() {
         }
       `,
       stickyHeaders: true,
-      ...(lineHeight === undefined
-        ? {}
-        : {
-            // Keep file headers aligned with the compact navigation toolbar.
-            itemMetrics: {
-              lineHeight,
-              // Matches the header's 2 * --space-4 + --space-1 height.
-              diffHeaderHeight: fileSpacing * 3,
-            },
-          }),
+      itemMetrics: {
+        // Code fills the frame; keep virtual heights aligned with the CSS.
+        paddingBottom: 0,
+        ...(lineHeight === undefined ? {} : { lineHeight }),
+        // Matches the header's 2 * --space-4 + --space-1 height.
+        diffHeaderHeight: fileSpacing * 3,
+      },
       layout: {
         paddingTop: fileSpacing,
         paddingBottom: fileSpacing,

@@ -345,6 +345,30 @@ test("file frames preserve measured gutters, gaps, and virtual geometry", async 
   await expect(containers.first()).toHaveCSS("border-radius", "6px");
   await expect(containers.first()).toHaveCSS("outline-width", "1px");
   await expect(containers.first()).toHaveCSS("outline-offset", "0px");
+  const borderColors = await containers.first().evaluate((element) => {
+    const toolbar = document.querySelector(".toolbar");
+    if (!toolbar) throw new Error("Missing toolbar");
+    return {
+      frame: getComputedStyle(element).outlineColor,
+      shell: getComputedStyle(toolbar).borderBottomColor,
+    };
+  });
+  expect(borderColors.frame).toBe(borderColors.shell);
+  await expect
+    .poll(() =>
+      containers.evaluateAll((elements) =>
+        elements.slice(0, 4).map((element) => {
+          const lines = element.shadowRoot?.querySelectorAll("[data-line]");
+          const last = lines?.[lines.length - 1];
+          if (!last) throw new Error("Missing final diff row");
+          return Math.abs(
+            element.getBoundingClientRect().bottom -
+              last.getBoundingClientRect().bottom,
+          );
+        }),
+      ),
+    )
+    .toEqual([0, 0, 0, 0]);
   await expect(page.locator("#viewer")).toHaveCSS(
     "background-image",
     /radial-gradient/,

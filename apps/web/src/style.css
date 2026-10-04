@@ -481,7 +481,7 @@ main {
   /* Frame files without adding unmeasured height to Pierre's virtual layout. */
   border-radius: var(--radius-md);
   overflow: clip;
-  outline: 1px solid color-mix(in srgb, var(--border) 90%, var(--fg));
+  outline: 1px solid var(--border);
   outline-offset: 0;
 }
 .diff-collapse-gutter {

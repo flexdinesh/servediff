@@ -231,9 +231,11 @@ such detail into a token. New layout spacing must use the scale.
   elements. Quiet frames use `--space-3` horizontal gutters on `CodeView` and
   Pierre-measured top/bottom padding and file gaps (12px by default), read from
   the sizing probe. Frame each file with `--radius-md`, `overflow: clip`, and a
-  1px outline at the edge, mixing 90% `--border` with `--fg` for subtle contrast
-  against the canvas in both themes. The frame adds no layout geometry; keep
-  `itemMetrics` synchronized so virtual scrolling remains correct.
+  1px `--border` outline at the edge, matching shell separators in both themes.
+  Remove bottom padding from code and diff surfaces so the final row reaches
+  the frame; set `itemMetrics.paddingBottom` to 0 to match. The frame adds no
+  layout geometry; keep `itemMetrics` synchronized so virtual scrolling remains
+  correct.
 - Keep `unsafeCSS` small and justified. Do not reconstruct syntax styling or
   broadly target internal shadow-DOM elements to make the library look like chrome.
 - Changing code/header geometry requires validating navigation, sticky headers,
