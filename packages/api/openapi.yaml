@@ -1089,6 +1089,9 @@ components:
         availability:
           type: string
           enum: [unchecked, available, unavailable]
+        stale:
+          type: boolean
+          description: A newer collection superseded this snapshot for the same owner, source, repository, checkout, and branch. Collection time determines freshness; arrival order breaks ties. Freshness survives snapshot expiry and pruning. False for ungrouped captures and legacy contexts.
         capabilities:
           $ref: "#/components/schemas/Session/properties/capabilities"
         observation:

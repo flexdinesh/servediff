@@ -21,6 +21,13 @@ func initializeIngestion(tx *sql.Tx) error {
 		`CREATE TABLE IF NOT EXISTS observation_scopes (context_id TEXT NOT NULL REFERENCES observations(context_id) ON DELETE CASCADE, mode TEXT NOT NULL, diff_id TEXT NOT NULL UNIQUE REFERENCES diffs(id) ON DELETE CASCADE, version_id TEXT NOT NULL REFERENCES diff_versions(id) ON DELETE CASCADE, PRIMARY KEY(context_id,mode))`,
 		`CREATE TABLE IF NOT EXISTS observation_submissions (owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, source_id TEXT NOT NULL, submission_id TEXT NOT NULL, context_id TEXT NOT NULL REFERENCES observations(context_id) ON DELETE CASCADE, payload_hash TEXT NOT NULL, metadata TEXT NOT NULL, PRIMARY KEY(owner_id,source_id,submission_id))`,
 		`INSERT INTO observation_submissions(owner_id,source_id,submission_id,context_id,payload_hash,metadata) SELECT owner_id,source_id,submission_id,context_id,payload_hash,metadata FROM observations WHERE true ON CONFLICT DO NOTHING`,
+		// Stream heads outlive snapshot retention. Backfill newest arrivals first;
+		// an existing head must never regress when its snapshot has been pruned.
+		`CREATE TABLE IF NOT EXISTS observation_stream_heads (owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, source_id TEXT NOT NULL, repository_key TEXT NOT NULL, checkout_key TEXT NOT NULL, branch TEXT NOT NULL, context_id TEXT NOT NULL, collected_at INTEGER NOT NULL, PRIMARY KEY(owner_id,source_id,repository_key,checkout_key,branch))`,
+		`INSERT INTO observation_stream_heads(owner_id,source_id,repository_key,checkout_key,branch,context_id,collected_at)
+			SELECT owner_id,source_id,json_extract(metadata,'$.repositoryKey'),json_extract(metadata,'$.checkoutKey'),json_extract(metadata,'$.branch'),context_id,json_extract(metadata,'$.collectedAt')
+			FROM observation_submissions WHERE json_extract(metadata,'$.repositoryKey')<>'' AND json_extract(metadata,'$.checkoutKey')<>''
+			ORDER BY json_extract(metadata,'$.collectedAt') DESC,rowid DESC ON CONFLICT DO NOTHING`,
 		`CREATE TABLE IF NOT EXISTS observation_identities (owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, identity_hash TEXT NOT NULL, context_id TEXT NOT NULL REFERENCES observations(context_id) ON DELETE CASCADE, PRIMARY KEY(owner_id,identity_hash))`,
 		`CREATE INDEX IF NOT EXISTS observations_source ON observations(owner_id,source_id)`,
 		`CREATE INDEX IF NOT EXISTS observations_branch ON observations(owner_id,json_extract(metadata,'$.branch'))`,
@@ -209,6 +216,13 @@ func putObservationSubmission(tx *sql.Tx, ownerID, contextID, hash string, reque
 		return err
 	}
 	_, err = tx.Exec(`INSERT INTO observation_submissions(owner_id,source_id,submission_id,context_id,payload_hash,metadata) VALUES(?,?,?,?,?,?)`, ownerID, request.Metadata.SourceID, request.SubmissionID, contextID, hash, string(metadata))
+	if err != nil || request.Metadata.RepositoryKey == "" || request.Metadata.CheckoutKey == "" {
+		return err
+	}
+	// Equal collection times use arrival order. Retries bypass this write.
+	_, err = tx.Exec(`INSERT INTO observation_stream_heads(owner_id,source_id,repository_key,checkout_key,branch,context_id,collected_at) VALUES(?,?,?,?,?,?,?)
+		ON CONFLICT(owner_id,source_id,repository_key,checkout_key,branch) DO UPDATE SET context_id=excluded.context_id,collected_at=excluded.collected_at
+		WHERE excluded.collected_at>=observation_stream_heads.collected_at`, ownerID, request.Metadata.SourceID, request.Metadata.RepositoryKey, request.Metadata.CheckoutKey, request.Metadata.Branch, contextID, request.Metadata.CollectedAt)
 	return err
 }
 

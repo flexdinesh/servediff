@@ -1,16 +1,16 @@
 import type { ApiContext } from "@servediff/api";
 
 export type PickerFilters = {
-  availability: "all" | "available" | "unavailable";
-  changes: "all" | "changed" | "unchanged";
+  freshness: "all" | "latest" | "stale";
+  includeAll: boolean;
   hosts: string[];
   branches: string[];
   worktrees: string[];
 };
 
 export const defaultPickerFilters: PickerFilters = {
-  availability: "available",
-  changes: "all",
+  freshness: "latest",
+  includeAll: false,
   hosts: [],
   branches: [],
   worktrees: [],
@@ -38,18 +38,12 @@ export function pickerFilterOptions(contexts: ApiContext[]) {
 }
 
 function matchesFilters(context: ApiContext, filters: PickerFilters) {
+  if (!filters.includeAll && !contextHasChanges(context)) return false;
   if (
-    filters.availability !== "all" &&
-    context.availability !== filters.availability
-  )
-    return false;
-  if (
-    filters.changes !== "all" &&
-    (context.availability === "unavailable" ||
-      context.changedFileCount === null ||
-      (filters.changes === "changed"
-        ? context.changedFileCount === 0
-        : context.changedFileCount > 0))
+    filters.freshness !== "all" &&
+    (filters.freshness === "stale"
+      ? context.stale !== true
+      : context.stale === true)
   )
     return false;
   const values = pickerFilterValues(context);

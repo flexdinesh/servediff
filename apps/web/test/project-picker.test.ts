@@ -51,11 +51,68 @@ const clone: ApiContext = {
   repositoryId: "other-repo",
   root: "/other/servediff",
 };
+const allFilters = { ...defaultPickerFilters, includeAll: true };
+
+test("freshness and inclusion filters combine before search and repository grouping", () => {
+  const latest = {
+    ...observation("latest", "host", "run-new"),
+    changedFileCount: 2,
+  };
+  const stale = {
+    ...observation("stale", "host", "run-old"),
+    changedFileCount: 1,
+    stale: true,
+  };
+  const empty = {
+    ...observation("empty", "other", "run"),
+    changedFileCount: 0,
+  };
+  const unknown = { ...empty, id: "unknown", changedFileCount: null };
+  const unavailable: ApiContext = {
+    ...latest,
+    id: "unavailable",
+    availability: "unavailable",
+  };
+  const contexts = [latest, stale, empty, unknown, unavailable];
+  assert.deepEqual(pickerResults(contexts, ""), [latest]);
+  assert.deepEqual(
+    pickerResults(contexts, "", {
+      ...defaultPickerFilters,
+      freshness: "stale",
+    }),
+    [stale],
+  );
+  assert.deepEqual(
+    pickerResults(contexts, "", { ...defaultPickerFilters, freshness: "all" })
+      .map((context) => context.id)
+      .sort(),
+    ["latest", "stale"],
+  );
+  assert.deepEqual(
+    pickerResults(contexts, "", allFilters)
+      .map((context) => context.id)
+      .sort(),
+    ["empty", "latest", "unavailable", "unknown"],
+  );
+  assert.deepEqual(
+    pickerResults(contexts, "", { ...allFilters, freshness: "stale" }),
+    [stale],
+  );
+  assert.equal(
+    pickerResults(contexts, "", { ...allFilters, freshness: "all" }).length,
+    contexts.length,
+  );
+  assert.equal(pickerEntries(contexts, "run-old", "repo").length, 0);
+  const groups = pickerEntries(contexts, "", "");
+  const group = groups[0];
+  if (group?.kind !== "repository") throw new Error("Missing repository group");
+  assert.deepEqual(group.contexts, [latest]);
+});
 
 test("lists individual checkouts by recency without repository grouping", () => {
   const recentClone = { ...clone, lastSubmittedAt: 0, lastChangedAt: 3 };
   assert.deepEqual(
-    pickerResults([worktree, recentClone, main], "").map(
+    pickerResults([worktree, recentClone, main], "", allFilters).map(
       (context) => context.id,
     ),
     ["clone", "picker", "main"],
@@ -65,7 +122,7 @@ test("lists individual checkouts by recency without repository grouping", () => 
 test("repo name search includes all its checkouts and excludes other repos", () => {
   const other = { ...clone, name: "dotfiles", root: "/repos/dotfiles" };
   assert.deepEqual(
-    pickerResults([main, other, worktree], "servediff").map(
+    pickerResults([main, other, worktree], "servediff", allFilters).map(
       (context) => context.id,
     ),
     ["picker", "main"],
@@ -80,7 +137,9 @@ test("search matches repo, branch, worktree, and external paths with all query w
     "ftprpck",
   ]) {
     assert.deepEqual(
-      pickerResults([main, worktree], query).map((context) => context.id),
+      pickerResults([main, worktree], query, allFilters).map(
+        (context) => context.id,
+      ),
       ["picker"],
     );
   }
@@ -90,13 +149,16 @@ test("search matches repo, branch, worktree, and external paths with all query w
 test("search lists newest changes before stronger matches", () => {
   const exact = { ...clone, name: "picker", branch: "other" };
   assert.deepEqual(
-    pickerResults([main, exact, worktree], "picker").map(
+    pickerResults([main, exact, worktree], "picker", allFilters).map(
       (context) => context.id,
     ),
     ["picker", "clone"],
   );
   const tied = { ...exact, lastChangedAt: worktree.lastChangedAt };
-  assert.equal(pickerResults([worktree, tied], "picker")[0]?.id, tied.id);
+  assert.equal(
+    pickerResults([worktree, tied], "picker", allFilters)[0]?.id,
+    tied.id,
+  );
 });
 
 test("captures stay selectable", () => {
@@ -126,7 +188,7 @@ test("changed checkouts precede newer empty projects, including search results",
   const newerChanged = { ...clone, changedFileCount: 1, lastChangedAt: 4 };
   for (const query of ["", "servediff"]) {
     assert.deepEqual(
-      pickerResults([newerEmpty, changed, newerChanged], query).map(
+      pickerResults([newerEmpty, changed, newerChanged], query, allFilters).map(
         (context) => context.id,
       ),
       ["clone", "picker", "main"],
@@ -144,7 +206,7 @@ test("unknown and unavailable metadata is not treated as reviewable changes", ()
   };
   const changed = { ...worktree, changedFileCount: 1 };
   assert.equal(
-    pickerResults([unknown, unavailable, changed], "")[0]?.id,
+    pickerResults([unknown, unavailable, changed], "", allFilters)[0]?.id,
     changed.id,
   );
   assert.equal(contextChangeLabel(unknown), "Status unknown");
@@ -162,6 +224,7 @@ function observation(id: string, hostname: string, runId: string): ApiContext {
     ...main,
     id,
     kind: "observation",
+    changedFileCount: 1,
     observation: {
       sourceId: `source-${hostname}`,
       hostname,
@@ -214,21 +277,17 @@ test("repositories group observations without merging sources or repeated submis
   );
 });
 
-test("availability defaults to available and unavailable entries cannot be selected", () => {
+test("All includes unavailable entries without making them selectable", () => {
   const unavailable: ApiContext = { ...clone, availability: "unavailable" };
-  assert.deepEqual(pickerResults([main, unavailable], ""), [main]);
-  const all = pickerEntries([main, unavailable], "", "", {
-    ...defaultPickerFilters,
-    availability: "all",
-  });
+  assert.deepEqual(pickerResults([main, unavailable], ""), []);
+  const all = pickerEntries([main, unavailable], "", "", allFilters);
   assert.equal(all.length, 2);
   assert.equal(all.filter(pickerEntryAvailable).length, 1);
   assert.deepEqual(
-    pickerResults([main, unavailable], "", {
-      ...defaultPickerFilters,
-      availability: "unavailable",
-    }),
-    [unavailable],
+    pickerResults([main, unavailable], "servediff", allFilters)
+      .map((context) => context.id)
+      .sort(),
+    ["clone", "main"],
   );
 });
 
@@ -275,7 +334,7 @@ test("multi-value filters use OR within a filter and AND across filters before g
   });
 });
 
-test("changes filters exclude unknown and unavailable counts", () => {
+test("default inclusion excludes no changes, unknown and unavailable counts", () => {
   const changed = { ...main, id: "changed", changedFileCount: 2 };
   const unknown = { ...main, id: "unknown", changedFileCount: null };
   const unavailable: ApiContext = {
@@ -286,20 +345,14 @@ test("changes filters exclude unknown and unavailable counts", () => {
   };
   const contexts = [main, changed, unknown, unavailable];
   assert.deepEqual(
-    pickerResults(contexts, "", {
-      ...defaultPickerFilters,
-      availability: "all",
-      changes: "changed",
-    }).map((context) => context.id),
+    pickerResults(contexts, "").map((context) => context.id),
     ["changed"],
   );
   assert.deepEqual(
-    pickerResults(contexts, "", {
-      ...defaultPickerFilters,
-      availability: "all",
-      changes: "unchanged",
-    }).map((context) => context.id),
-    ["main"],
+    pickerResults(contexts, "", allFilters)
+      .map((context) => context.id)
+      .sort(),
+    ["changed", "main", "unavailable", "unknown"],
   );
 });
 
