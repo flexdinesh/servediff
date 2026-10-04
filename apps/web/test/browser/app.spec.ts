@@ -285,13 +285,14 @@ test("file frames preserve measured gutters, gaps, and virtual geometry", async 
   expect(collapseAlignment.every((offset) => Math.abs(offset) <= 0.5)).toBe(
     true,
   );
-  for (const spacing of [16, 20]) {
+  for (const fontSize of [16, 20]) {
+    const spacing = fontSize * 0.75;
     await page.locator("html").evaluate((element, size) => {
       element.style.fontSize = `${size}px`;
-    }, spacing);
+    }, fontSize);
     await expect(containers.first().locator("[data-diffs-header]")).toHaveCSS(
       "height",
-      `${spacing * 2.25}px`,
+      `${fontSize * 2.25}px`,
     );
     await expect
       .poll(() =>

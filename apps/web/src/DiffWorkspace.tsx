@@ -178,7 +178,7 @@ export function DiffWorkspace() {
     spacing: number;
   }>();
   const lineHeight = viewerMetrics?.lineHeight;
-  const fileSpacing = viewerMetrics?.spacing ?? 16;
+  const fileSpacing = viewerMetrics?.spacing ?? 12;
   const [selectionFeedback, setSelectionFeedback] = useState("");
   const workerPool = useWorkerPool();
   useEffect(() => {
@@ -475,7 +475,7 @@ export function DiffWorkspace() {
             itemMetrics: {
               lineHeight,
               // Matches the header's 2 * --space-4 + --space-1 height.
-              diffHeaderHeight: fileSpacing * 2.25,
+              diffHeaderHeight: fileSpacing * 3,
             },
           }),
       layout: {

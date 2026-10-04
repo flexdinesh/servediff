@@ -174,7 +174,7 @@ component internals; layout remains aligned to the 4px rhythm.
 | Label to input; heading to prose       | 8                                         |
 | Comment card/editor padding            | 12 in both sidebar and inline locations   |
 | Sidebar section inset                  | 16                                        |
-| Diff canvas gutters / file gaps        | 16; measured from `--space-4`             |
+| Diff canvas gutters / file gaps        | 12; measured from `--space-3`             |
 | Form groups / distinct sections        | 16 or 24                                  |
 | Dialog padding                         | 24                                        |
 | Large conceptual separation            | 32 or 48, rarely needed in review chrome  |
@@ -224,12 +224,12 @@ such detail into a token. New layout spacing must use the scale.
 - Set supported `--diffs-font-*` / `--diffs-line-height` properties on `#viewer`.
   Keep the sizing probe, `ResizeObserver`, and `itemMetrics` synchronized.
 - Pierre's header height is `2 * --space-4 + --space-1` (36px by default).
-  Measure it as file spacing × 2.25 so browser font scaling updates CSS and
+  Measure it as file spacing × 3 so browser font scaling updates CSS and
   `itemMetrics` together. Keep header-slot controls compact; do not apply global
   touch sizing to these slots.
 - Do not add outer margins, padding, or borders to virtualized `diffs-container`
-  elements. Quiet frames use `--space-4` horizontal gutters on `CodeView` and
-  Pierre-measured top/bottom padding and file gaps (16px by default), read from
+  elements. Quiet frames use `--space-3` horizontal gutters on `CodeView` and
+  Pierre-measured top/bottom padding and file gaps (12px by default), read from
   the sizing probe. Frame each file with `--radius-md`, `overflow: clip`, and a
   1px `--border` outline inset by 1px. The frame adds no layout geometry; keep
   `itemMetrics` synchronized so virtual scrolling remains correct.
@@ -445,7 +445,7 @@ This audit records the starting points, not permission to reuse legacy values.
 | Radii            | 3, 4, 5, 6, 7, 8, 10px plus circles                                                         | 3/6/12px roles; circles only for dots/checks                                                 |
 | Shadows          | Tiny button and segmented shadows; sidebar shadow; dialog backdrop                          | One overlay shadow; non-geometric inset file frames without elevation                        |
 | Geometry         | Header 58px, toolbar 40px; 24/28/30px icon controls and content-sized buttons               | 56/44px shell rhythm, 32px controls, 24px Pierre slots, 44px touch targets                   |
-| Width/gutters    | Competing 260/220/280px sidebar rules; 10/12/14/22/24px gutters; 680px dialog               | One user-owned sidebar width; shared shell gutters/reading width; measured 16px diff spacing |
+| Width/gutters    | Competing 260/220/280px sidebar rules; 10/12/14/22/24px gutters; 680px dialog               | One user-owned sidebar width; shared shell gutters/reading width; measured 12px diff spacing |
 | Review           | Inline 12×14px padding versus sidebar/mobile 10px; 85px editor, 300px XML area              | Shared 12px comment inset, readable editor, viewport-bounded overlay                         |
 | States           | Search removed input focus; textarea/select lacked shared focus; reviewed rows faded to 55% | Group/field focus, readable reviewed state, explicit destructive action                      |
 | Responsive       | 1000/760px breakpoints; toolbar wrapped only below 760px                                    | 1012px drawer, 768px compact chrome, unified narrow default                                  |

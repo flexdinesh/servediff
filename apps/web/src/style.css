@@ -468,13 +468,13 @@ main {
   --diff-gutter-divider-width: 2px;
 }
 .diff-code-view {
-  padding-inline: var(--space-4);
+  padding-inline: var(--space-3);
 }
 .diff-line-metric {
   position: absolute;
   visibility: hidden;
   pointer-events: none;
-  width: var(--space-4);
+  width: var(--space-3);
   height: var(--diffs-line-height);
 }
 #viewer diffs-container {

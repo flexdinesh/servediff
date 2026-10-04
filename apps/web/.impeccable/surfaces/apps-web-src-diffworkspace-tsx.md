@@ -20,7 +20,7 @@ OWN-WORLD: Existing neutral/violet system; white or deep charcoal canvas with fa
 
 STORY: Navigate a file, read its diff, mark reviewed, and leave anchored feedback with existing controls.
 
-FIRST VIEWPORT: Retained top bar, file sidebar, and display controls; toolbar surface matches the editor chrome. Remaining width shows file diffs with 16px gutters and measured 16px gaps. Dots stay behind the code surfaces.
+FIRST VIEWPORT: Retained top bar, file sidebar, and display controls; toolbar surface matches the editor chrome. Remaining width shows file diffs with 12px gutters and measured 12px gaps. Dots stay behind the code surfaces.
 
 FORM: User-selected Quiet frames; seed key user-selected/quiet-frames. Frame changes add no item height. Browser font scaling updates renderer metrics and spacing together.
 
