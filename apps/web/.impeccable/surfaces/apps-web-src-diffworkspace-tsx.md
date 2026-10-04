@@ -20,9 +20,9 @@ OWN-WORLD: Existing neutral/violet system; white or deep charcoal canvas with fa
 
 STORY: Navigate a file, read its diff, toggle Reviewed, and leave line or whole-file feedback. File-comment and toolbar icon actions carry descriptive hover titles; collapse/expand all lives next to View options. Compact controls share muted border tokens.
 
-FIRST VIEWPORT: Retained top bar, file sidebar, and display controls; toolbar surface matches the editor chrome. Remaining width shows file diffs with 12px gutters and measured 12px gaps. Dots stay behind the code surfaces.
+FIRST VIEWPORT: Retained top bar, file sidebar, and display controls; toolbar surface matches the editor chrome. Remaining width shows file diffs with 12px gutters and measured 12px gaps. Header and toolbar actions align with the trailing frame edge, including native scrollbar insets. Narrow header and toolbar share 48px heights and 32px action icons. Dots stay behind the code surfaces.
 
-FORM: User-selected Quiet frames; seed key user-selected/quiet-frames. Frame changes add no item height. Browser font scaling updates renderer metrics and spacing together.
+FORM: User-selected Quiet frames; seed key user-selected/quiet-frames. Frame changes add no item height. Native horizontal scrollbar tracks retain the final row's diff tone and their measured height feeds virtualization. Browser font scaling updates renderer metrics and spacing together.
 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
 

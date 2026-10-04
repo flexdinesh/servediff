@@ -1514,6 +1514,8 @@ test("mobile sidebar preserves accessible touch targets", async ({ page }) => {
     .getByRole("tab", { name: /Review/ })
     .boundingBox();
   const toolbarBox = await page.locator(".toolbar").boundingBox();
+  const headerBox = await page.locator(".topbar").boundingBox();
+  const themeBox = await page.locator("#theme").boundingBox();
   const viewOptionsBox = await page
     .getByRole("button", { name: "View options" })
     .boundingBox();
@@ -1524,9 +1526,9 @@ test("mobile sidebar preserves accessible touch targets", async ({ page }) => {
   expect(searchBox?.height ?? 0).toBeGreaterThanOrEqual(44);
   expect(filesTabBox?.height ?? 0).toBeGreaterThanOrEqual(44);
   expect(commentsTabBox?.height ?? 0).toBeGreaterThanOrEqual(44);
-  expect(toolbarBox?.height ?? 0).toBeGreaterThanOrEqual(52);
-  expect(viewOptionsBox?.width ?? 0).toBeGreaterThanOrEqual(44);
-  expect(viewOptionsBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+  expect(toolbarBox?.height).toBe(headerBox?.height);
+  expect(viewOptionsBox?.width).toBe(themeBox?.width);
+  expect(viewOptionsBox?.height).toBe(themeBox?.height);
 });
 
 test("file review comments save and reopen without selecting lines", async ({

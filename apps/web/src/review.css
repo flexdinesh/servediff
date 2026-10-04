@@ -778,8 +778,10 @@
   }
   #view-options,
   #toggle-all-files {
-    min-width: var(--touch-target);
-    min-height: var(--touch-target);
+    width: var(--control-height);
+    height: var(--control-height);
+    min-width: var(--control-height);
+    min-height: var(--control-height);
   }
   [data-slot="button"][data-size="icon"],
   .tree-control,

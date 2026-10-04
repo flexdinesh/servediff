@@ -68,6 +68,7 @@
     var(--text-xs) * var(--leading-ui) + 2 * var(--space-2) + 1px
   );
   --page-gutter: var(--space-6);
+  --diff-gutter: var(--space-3);
   --sidebar-width: 330px;
   --reading-width: 42.5rem;
   --layer-sidebar: 10;

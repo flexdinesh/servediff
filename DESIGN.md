@@ -179,8 +179,9 @@ component internals; layout remains aligned to the 4px rhythm.
 | Dialog padding                         | 24                                        |
 | Large conceptual separation            | 32 or 48, rarely needed in review chrome  |
 
-Use `--page-gutter` for header, toolbar, notices, and footer: 24 desktop, 16 below
-1012px, 12 below 768px. Do not independently center those regions.
+Use `--page-gutter` for notices and footer: 24 desktop, 16 below
+1012px, 12 below 768px. Header, toolbar, and file frames share `--diff-gutter`
+(12px). Their trailing actions account for the viewport's native scrollbar inset.
 Use explicit margins instead of relying on browser-default paragraph spacing.
 
 Custom values are acceptable only for documented optical or renderer geometry:
@@ -193,7 +194,8 @@ such detail into a token. New layout spacing must use the scale.
 - Use a full-width application shell, not a centered marketing container.
   The diff receives all width remaining after navigation.
 - Header: `--topbar-height` (56 desktop, 48 narrow). Toolbar and sidebar tabs: `--toolbar-height`
-  (44) as the desktop baseline; allow toolbar height to grow when controls wrap.
+  (44) as the desktop baseline. The narrow toolbar matches the 48px page header;
+  its icon buttons match the header theme button's 32px control height.
 - Header uses `--panel`, a quiet brand, and the repository trigger as its primary
   context. Keep the secondary scope heading and muted monospace path inline;
   hide the path at 768–1011px and both below 768px. Group ghost Refresh/theme
@@ -232,10 +234,11 @@ such detail into a token. New layout spacing must use the scale.
   Pierre-measured top/bottom padding and file gaps (12px by default), read from
   the sizing probe. Frame each file with `--radius-md`, `overflow: clip`, and a
   1px `--border` outline at the edge, matching shell separators in both themes.
-  Remove bottom padding from code and diff surfaces so the final row reaches
-  the frame; set `itemMetrics.paddingBottom` to 0 to match. The frame adds no
-  layout geometry; keep `itemMetrics` synchronized so virtual scrolling remains
-  correct.
+  Remove bottom padding from code and diff surfaces. Native horizontal scrollbar
+  tracks use the final row's addition/deletion color; other endings use the base
+  code surface. Set `itemMetrics.paddingBottom` to the measured native scrollbar
+  height for unwrapped code, or 0 when wrapped. The frame adds no layout geometry;
+  keep `itemMetrics` synchronized so virtual scrolling remains correct.
 - Keep `unsafeCSS` small and justified. Do not reconstruct syntax styling or
   broadly target internal shadow-DOM elements to make the library look like chrome.
 - Each file header shows a Reviewed toggle and, when comments are enabled, an
@@ -397,6 +400,8 @@ Do not add motion for decoration. New animation must honor
 - Hide redundant summary/shortcut detail before removing essential actions.
 - At mobile widths or coarse pointers, app-owned controls target 44px hit heights;
   icon controls also reach 44px width. Text-input sizing uses `--text-input-touch`.
+  The compact View options and collapse/expand icons match the theme control's
+  32px size within the narrow 48px toolbar, per the workspace alignment brief.
 - Pierre code rows and header slots retain measured geometry. Larger library
   gutter/header targets need a coordinated renderer-metric change, not a CSS override.
 - Preserve the desktop split/unified and wrap preferences. Default narrow screens

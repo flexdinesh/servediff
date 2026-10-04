@@ -103,7 +103,8 @@ kbd {
   align-items: center;
   border-bottom: 1px solid var(--border);
   background: var(--panel);
-  padding: 0 var(--page-gutter);
+  padding: 0 var(--diff-gutter);
+  padding-right: calc(var(--diff-gutter) + var(--diff-viewport-inset, 0px));
 }
 .brand {
   display: flex;
@@ -382,7 +383,8 @@ main {
   flex-shrink: 0;
   flex-wrap: wrap;
   gap: var(--space-1-5);
-  padding: var(--space-0-5) var(--page-gutter);
+  padding: var(--space-0-5) var(--diff-gutter);
+  padding-right: calc(var(--diff-gutter) + var(--diff-viewport-inset, 0px));
   border-bottom: 1px solid var(--border);
 }
 .segmented {
@@ -468,13 +470,13 @@ main {
   --diff-gutter-divider-width: 2px;
 }
 .diff-code-view {
-  padding-inline: var(--space-3);
+  padding-inline: var(--diff-gutter);
 }
 .diff-line-metric {
   position: absolute;
   visibility: hidden;
   pointer-events: none;
-  width: var(--space-3);
+  width: var(--diff-gutter);
   height: var(--diffs-line-height);
 }
 #viewer diffs-container {
@@ -698,7 +700,14 @@ h2 {
   }
   .toolbar {
     gap: var(--space-2);
-    min-height: calc(var(--touch-target) + 2 * var(--space-1));
+    height: var(--topbar-height);
+    min-height: var(--topbar-height);
+    padding-block: 0;
+  }
+  #view-options svg,
+  #toggle-all-files svg {
+    width: var(--icon-lg);
+    height: var(--icon-lg);
   }
   .toolbar-spacer {
     min-width: 0;

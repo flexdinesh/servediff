@@ -175,6 +175,8 @@ export function DiffWorkspace() {
   const contentsEnabled = capabilityEnabled(capabilities.files.contents);
   const refreshEnabled = capabilityEnabled(capabilities.diff.refresh);
   const lineMetric = useRef<HTMLSpanElement>(null);
+  const viewport = useRef<HTMLDivElement>(null);
+  const [scrollbarHeight, setScrollbarHeight] = useState(0);
   const [viewerMetrics, setViewerMetrics] = useState<{
     lineHeight: number;
     spacing: number;
@@ -195,6 +197,12 @@ export function DiffWorkspace() {
     const element = lineMetric.current;
     if (!element) return;
     const measure = () => {
+      const scroller = viewport.current;
+      if (scroller)
+        document.documentElement.style.setProperty(
+          "--diff-viewport-inset",
+          `${scroller.offsetWidth - scroller.clientWidth}px`,
+        );
       const { height, width } = element.getBoundingClientRect();
       setViewerMetrics((current) =>
         current?.lineHeight === height && current.spacing === width
@@ -205,7 +213,11 @@ export function DiffWorkspace() {
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(element);
-    return () => observer.disconnect();
+    if (viewport.current) observer.observe(viewport.current);
+    return () => {
+      observer.disconnect();
+      document.documentElement.style.removeProperty("--diff-viewport-inset");
+    };
   }, []);
   const versionFor = useMemo(itemVersions, []);
   const allFiles = repository?.files ?? [];
@@ -420,6 +432,13 @@ export function DiffWorkspace() {
         [data-diff], [data-code] {
           padding-bottom: 0;
         }
+        /* Native scrollbar tracks are part of the code surface. */
+        [data-code]:has(> [data-content] > :is([data-line], [data-no-newline]):last-child[data-line-type="change-addition"]) {
+          background-color: var(--diffs-bg-addition);
+        }
+        [data-code]:has(> [data-content] > :is([data-line], [data-no-newline]):last-child[data-line-type="change-deletion"]) {
+          background-color: var(--diffs-bg-deletion);
+        }
         [data-diffs-header] {
           height: calc(2 * var(--space-4) + var(--space-1));
           min-height: calc(2 * var(--space-4) + var(--space-1));
@@ -500,8 +519,8 @@ export function DiffWorkspace() {
       `,
       stickyHeaders: true,
       itemMetrics: {
-        // Code fills the frame; keep virtual heights aligned with the CSS.
-        paddingBottom: 0,
+        // Native scrollbar tracks consume height even with zero code padding.
+        paddingBottom: wrap ? 0 : scrollbarHeight,
         ...(lineHeight === undefined ? {} : { lineHeight }),
         // Matches the header's 2 * --space-4 + --space-1 height.
         diffHeaderHeight: fileSpacing * 3,
@@ -511,24 +530,40 @@ export function DiffWorkspace() {
         paddingBottom: fileSpacing,
         gap: fileSpacing,
       },
+      onPostRender(node, _instance, phase, context) {
+        if (phase === "unmount") return;
+        const columns = Array.from(
+          (node.shadowRoot ?? node).querySelectorAll<HTMLElement>(
+            "[data-code]",
+          ),
+        );
+        if (!wrap && columns.length > 0 && !context.item.collapsed) {
+          const height = Math.max(
+            ...columns.map(
+              (column) => column.offsetHeight - column.clientHeight,
+            ),
+          );
+          setScrollbarHeight((current) =>
+            current === height ? current : height,
+          );
+        }
+        if (!commentsEnabled || context.item.type !== "diff") return;
+        const currentDraft = actions.current.draft;
+        const ranges = (context.item.annotations ?? []).flatMap(
+          (annotation): CommentLineRange[] => {
+            if (annotation.metadata.kind === "saved")
+              return [annotation.metadata.comment];
+            return currentDraft && currentDraft.path === context.item.id
+              ? [currentDraft]
+              : [];
+          },
+        );
+        markCommentedLines(node.shadowRoot ?? node, ranges);
+      },
       ...(commentsEnabled
         ? {
             enableGutterUtility: true,
             lineHoverHighlight: "both",
-            onPostRender(node, _instance, phase, context) {
-              if (phase === "unmount" || context.item.type !== "diff") return;
-              const currentDraft = actions.current.draft;
-              const ranges = (context.item.annotations ?? []).flatMap(
-                (annotation): CommentLineRange[] => {
-                  if (annotation.metadata.kind === "saved")
-                    return [annotation.metadata.comment];
-                  return currentDraft && currentDraft.path === context.item.id
-                    ? [currentDraft]
-                    : [];
-                },
-              );
-              markCommentedLines(node.shadowRoot ?? node, ranges);
-            },
             onGutterUtilityClick(range, context) {
               if (context.item.type !== "diff") return;
               const current = actions.current;
@@ -569,6 +604,7 @@ export function DiffWorkspace() {
       wrap,
       lineHeight,
       fileSpacing,
+      scrollbarHeight,
       contentsEnabled,
       commentsEnabled,
     ],
@@ -622,6 +658,7 @@ export function DiffWorkspace() {
           />
           <CodeView
             className="diff-code-view"
+            containerRef={viewport}
             ref={viewer}
             items={items}
             options={options}
