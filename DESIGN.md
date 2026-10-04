@@ -98,7 +98,7 @@ measured elements or replace the application tokens with framework defaults.
 | Secondary text                | `--text-secondary`  | Supporting prose and available secondary actions                   |
 | Muted text                    | `--muted`           | Paths, counts, captions; still readable, never disabled by default |
 | Separator                     | `--border-muted`    | Pane dividers and low-emphasis grouping                            |
-| Control boundary              | `--border-control`  | Inputs, outlined buttons, and resting interactive boundaries       |
+| Control boundary              | `--border-control`  | Inputs and controls requiring stronger boundaries                  |
 | Emphasized boundary           | `--border-strong`   | Rare boundaries requiring emphasis beyond focus or error styling   |
 | Neutral hover                 | `--hover`           | Available controls under the pointer, compact count surfaces       |
 | Accent                        | `--accent`          | Selection, focus, navigation links, primary commit action          |
@@ -238,11 +238,18 @@ such detail into a token. New layout spacing must use the scale.
   correct.
 - Keep `unsafeCSS` small and justified. Do not reconstruct syntax styling or
   broadly target internal shadow-DOM elements to make the library look like chrome.
+- Each file header shows a Reviewed toggle and, when comments are enabled, an
+  icon titled "Leave review comment on file". File comments use explicit
+  `target: "file"`, appear in Pierre's lineNumber 0 annotation slot, and never
+  select code lines. Navigation targets the file header; export omits line context.
 - Changing code/header geometry requires validating navigation, sticky headers,
   annotations, expansion, wrapping, and browser font scaling together.
 
 ## Borders, radii, and shadows
 
+- Use the shared `outline-muted` Button variant (`--border-muted`) for compact
+  diff actions and reset reviewed. Segmented layout controls share this token.
+  Text, icons, hover and focus identify these actions; avoid per-button colors.
 - Use 1px `--border-muted` for separators and `--border-control` for interactive
   boundaries requiring 3:1 contrast. Reserve `--border-strong` for exceptional
   emphasis; focus and errors use their semantic tokens. Do not stack a card
@@ -378,8 +385,9 @@ Do not add motion for decoration. New animation must honor
 
 - Use 1012px for drawer navigation/tighter gutters and 768px for compact mobile
   chrome. Synchronize drawer behavior with `use-sidebar.ts`.
-- Keep scope and desktop layout choice visible. Put wrap, collapse-all, inline
-  detail, code theme, and narrow layout choice in View options.
+- Keep scope and desktop layout choice visible. View options and collapse/expand
+  all are adjacent icon buttons with action titles. Put wrap, inline detail,
+  code theme, and narrow layout choice in View options.
 - Mobile retains the project trigger's repository/branch context; truncate long
   labels and hide its shortcut hint. Hide the secondary heading/path and refresh
   text, preserving accessible labels and theme/sidebar controls.

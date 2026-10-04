@@ -523,3 +523,69 @@ test("reloads saved comments and rejects malformed storage without losing valid 
     [comment],
   );
 });
+
+test("persists whole-file comments without accepting zero-line line comments", () => {
+  const fileComment: ReviewComment = {
+    ...comment,
+    target: "file",
+    side: "additions",
+    start: 0,
+    end: 0,
+    code: "",
+  };
+  const lineComment: ReviewComment = { ...comment, target: "lines" };
+  assert.deepEqual(
+    parseComments(
+      JSON.stringify([
+        fileComment,
+        comment,
+        lineComment,
+        { ...fileComment, target: undefined },
+        { ...fileComment, target: "lines" },
+        { ...fileComment, target: "other" },
+        { ...fileComment, side: "deletions" },
+        { ...fileComment, start: 1, end: 1 },
+        { ...fileComment, code: "+ synthetic context" },
+      ]),
+    ),
+    [fileComment, comment, lineComment],
+  );
+});
+
+test("exports file selections without synthetic code or line anchors", () => {
+  const repository: RepositoryDiff = {
+    id: comment.diffId,
+    versionId: comment.versionId,
+    locationId: null,
+    repositoryId: null,
+    source: "stdin",
+    root: "",
+    name: "Piped diff",
+    branch: "",
+    head: null,
+    mode: comment.scope,
+    revision: "snapshot",
+    files: [{ ...file(comment.path), fingerprint: comment.fingerprint }],
+  };
+  const fileComment: ReviewComment = {
+    ...comment,
+    target: "file",
+    side: "additions",
+    start: 0,
+    end: 0,
+    code: "",
+    body: "Review <whole file>",
+  };
+  const output = formatComments([fileComment], false, [repository]);
+  assert.match(output, /selection="file"/);
+  assert.match(output, /applicability="anchored"/);
+  assert.match(output, /<body>Review &lt;whole file&gt;<\/body>/);
+  assert.doesNotMatch(output, / line=| end-line=| side=|<code>/);
+  const stale = { ...fileComment, fingerprint: "changed" };
+  assert.equal(commentApplicability(stale, repository), "stale");
+  assert.equal(formatComments([stale], false, [repository]), "");
+  assert.match(
+    formatComments([stale], true, [repository]),
+    /selection="file".*applicability="stale"/,
+  );
+});

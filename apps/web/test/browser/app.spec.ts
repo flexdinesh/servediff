@@ -567,7 +567,7 @@ test("reset reviewed clears file review marks and disables when empty", async ({
 
   const reset = page.getByRole("button", { name: "Reset reviewed" });
   await expect(reset).toBeDisabled();
-  await expect(reset).toHaveAttribute("data-variant", "outline");
+  await expect(reset).toHaveAttribute("data-variant", "outline-muted");
   await expect(reset).toHaveAttribute("data-size", "xs");
   await expect(reset).toHaveCSS("height", "24px");
 
@@ -1527,4 +1527,94 @@ test("mobile sidebar preserves accessible touch targets", async ({ page }) => {
   expect(toolbarBox?.height ?? 0).toBeGreaterThanOrEqual(52);
   expect(viewOptionsBox?.width ?? 0).toBeGreaterThanOrEqual(44);
   expect(viewOptionsBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+});
+
+test("file review comments save and reopen without selecting lines", async ({
+  page,
+}) => {
+  await page.goto("/");
+  for (const path of ["config/servediff.json", "docs/legacy.md"]) {
+    const file = page
+      .locator("#viewer diffs-container")
+      .filter({ hasText: path });
+    await file
+      .getByRole("button", {
+        name: `Leave review comment on file ${path}`,
+        exact: true,
+      })
+      .click();
+    const editor = file.locator(".comment-editor");
+    await expect(editor).toBeVisible();
+    await expect(editor.locator(".comment-editor-title")).toContainText(path);
+    await expect(editor.locator(".comment-editor-title")).not.toContainText(
+      ":0",
+    );
+    await expect(file.locator("[data-selected-line]")).toHaveCount(0);
+    await editor
+      .getByRole("textbox", { name: "Review comment" })
+      .fill(`Review entire ${path}`);
+    const saved = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        /\/comments$/.test(new URL(response.url()).pathname),
+    );
+    await editor.getByRole("button", { name: "Save comment" }).click();
+    const response = await saved;
+    expect(response.ok()).toBe(true);
+    expect(response.request().postDataJSON()).toMatchObject({
+      target: "file",
+      start: 0,
+      end: 0,
+    });
+    const card = file
+      .locator(".comment-card")
+      .filter({ hasText: `Review entire ${path}` });
+    await expect(card).toBeVisible();
+    await expect(card.locator(".comment-card-title")).toContainText("· file");
+  }
+  await page.reload();
+  const card = page
+    .locator("#viewer .comment-card")
+    .filter({ hasText: "Review entire config/servediff.json" });
+  await expect(card).toBeVisible();
+  await card.getByRole("button", { name: "Edit", exact: true }).click();
+  await expect(page.locator("#viewer .comment-editor")).toBeVisible();
+  await page
+    .locator("#viewer .comment-editor")
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  await card.getByRole("button", { name: "Resolve", exact: true }).click();
+  await expect(card).toContainText("Resolved");
+});
+
+test("file comments remain available without a text diff", async ({ page }) => {
+  await page.route("**/files/*/patch?*", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        patch: "",
+        message: "Binary file changed. No text preview available.",
+      }),
+    }),
+  );
+  await page.goto("/");
+  const file = page
+    .locator("#viewer diffs-container")
+    .filter({ hasText: "config/servediff.json" });
+  await expect(file).toContainText("No text preview available");
+  await file
+    .getByRole("button", {
+      name: "Leave review comment on file config/servediff.json",
+      exact: true,
+    })
+    .click();
+  const editor = file.locator(".comment-editor");
+  await expect(editor).toBeVisible();
+  await editor
+    .getByRole("textbox", { name: "Review comment" })
+    .fill("Review this binary asset");
+  await editor.getByRole("button", { name: "Save comment" }).click();
+  await expect(file.locator(".comment-card")).toContainText(
+    "Review this binary asset",
+  );
 });

@@ -87,6 +87,7 @@ type ReviewComment struct {
 	Path        string        `json:"path"`
 	Scope       DiffMode      `json:"scope"`
 	Fingerprint string        `json:"fingerprint"`
+	Target      string        `json:"target,omitempty"`
 	Side        string        `json:"side"`
 	Start       int           `json:"start"`
 	End         int           `json:"end"`
@@ -99,9 +100,14 @@ type ReviewComment struct {
 
 func (comment ReviewComment) Valid() bool {
 	_, modeError := ParseDiffMode(string(comment.Scope))
-	return modeError == nil &&
+	validSelection := (comment.Target == "" || comment.Target == "lines") &&
 		(comment.Side == "additions" || comment.Side == "deletions") &&
-		comment.Start > 0 && comment.End >= comment.Start && comment.End-comment.Start < 200 &&
+		comment.Start > 0 && comment.End >= comment.Start && comment.End-comment.Start < 200
+	if comment.Target == "file" {
+		validSelection = comment.Side == "additions" && comment.Start == 0 && comment.End == 0 && comment.Code == ""
+	}
+	return modeError == nil &&
+		validSelection &&
 		strings.TrimSpace(comment.Body) != "" && (comment.Status == "open" || comment.Status == "resolved") &&
 		!math.IsNaN(comment.CreatedAt) && !math.IsInf(comment.CreatedAt, 0) &&
 		(comment.Origin == nil || comment.Origin.Source == "local" || comment.Origin.Source == "stdin")

@@ -134,7 +134,9 @@ export function useFileNavigation({
         setTab("comments");
         showSidebar();
         setFeedback(
-          "This comment belongs to an earlier diff. Its original code context is preserved below.",
+          comment.target === "file"
+            ? "This file comment belongs to an earlier diff. Open it in the review sidebar."
+            : "This comment belongs to an earlier diff. Its original code context is preserved below.",
         );
         return;
       }
@@ -154,24 +156,38 @@ export function useFileNavigation({
       }
       revealFile(pendingComment.path);
       const frame = requestAnimationFrame(() => {
-        viewer.current?.scrollTo({
-          type: "range",
-          id: pendingComment.path,
-          range: {
+        if (pendingComment.target === "file") {
+          viewer.current?.scrollTo({
+            type: "item",
+            id: pendingComment.path,
+            align: "start",
+            behavior: "instant",
+          });
+          setNavigationTarget((previous) => ({
+            path: pendingComment.path,
+            sequence: previous.sequence + 1,
+          }));
+          setCommentNavigationTarget(null);
+        } else {
+          viewer.current?.scrollTo({
+            type: "range",
+            id: pendingComment.path,
+            range: {
+              start: pendingComment.start,
+              end: pendingComment.end,
+              side: pendingComment.side,
+            },
+            align: "center",
+            behavior: "instant",
+          });
+          setCommentNavigationTarget((previous) => ({
+            path: pendingComment.path,
+            side: pendingComment.side,
             start: pendingComment.start,
             end: pendingComment.end,
-            side: pendingComment.side,
-          },
-          align: "center",
-          behavior: "instant",
-        });
-        setCommentNavigationTarget((previous) => ({
-          path: pendingComment.path,
-          side: pendingComment.side,
-          start: pendingComment.start,
-          end: pendingComment.end,
-          sequence: (previous?.sequence ?? 0) + 1,
-        }));
+            sequence: (previous?.sequence ?? 0) + 1,
+          }));
+        }
         setPendingComment(null);
       });
       return () => cancelAnimationFrame(frame);

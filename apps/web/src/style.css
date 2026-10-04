@@ -390,7 +390,7 @@ main {
   min-width: 0;
   display: inline-flex;
   min-height: var(--control-small);
-  border: 1px solid var(--border-control);
+  border: 1px solid var(--border-muted);
   border-radius: var(--radius-control);
   /* Optical inset inside the shared compact control height. */
   padding: 1px;
@@ -530,6 +530,11 @@ main {
 }
 .copy-path[data-status="error"] .copy-path-feedback {
   color: var(--error);
+}
+.diff-file-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
 }
 .review-button {
   color: var(--muted);
@@ -699,9 +704,6 @@ h2 {
     min-width: 0;
   }
   .layout-control {
-    display: none;
-  }
-  .view-options-label {
     display: none;
   }
   .diff-metadata {

@@ -18,7 +18,7 @@ THESIS: Each file reads as a separate review object on a faint dotted canvas.
 
 OWN-WORLD: Existing neutral/violet system; white or deep charcoal canvas with faint dots, panel-colored toolbar and file headers, opaque code surfaces, thin neutral outline frame, small corners, no elevation shadow.
 
-STORY: Navigate a file, read its diff, mark reviewed, and leave anchored feedback with existing controls.
+STORY: Navigate a file, read its diff, toggle Reviewed, and leave line or whole-file feedback. File-comment and toolbar icon actions carry descriptive hover titles; collapse/expand all lives next to View options. Compact controls share muted border tokens.
 
 FIRST VIEWPORT: Retained top bar, file sidebar, and display controls; toolbar surface matches the editor chrome. Remaining width shows file diffs with 12px gutters and measured 12px gaps. Dots stay behind the code surfaces.
 

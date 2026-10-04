@@ -1150,6 +1150,27 @@ components:
     ReviewComment:
       type: object
       additionalProperties: false
+      if:
+        required: [target]
+        properties:
+          target:
+            const: file
+      then:
+        properties:
+          side:
+            const: additions
+          start:
+            const: 0
+          end:
+            const: 0
+          code:
+            const: ""
+      else:
+        properties:
+          start:
+            minimum: 1
+          end:
+            minimum: 1
       required:
         [
           id,
@@ -1179,15 +1200,19 @@ components:
           $ref: "#/components/schemas/DiffMode"
         fingerprint:
           type: string
+        target:
+          type: string
+          enum: [file, lines]
+          description: Omitted means a line comment. File comments use additions, zero start/end, and empty code.
         side:
           type: string
           enum: [additions, deletions]
         start:
           type: integer
-          minimum: 1
+          minimum: 0
         end:
           type: integer
-          minimum: 1
+          minimum: 0
         code:
           type: string
         body:
@@ -1202,6 +1227,27 @@ components:
     AgentReviewComment:
       type: object
       additionalProperties: false
+      if:
+        required: [target]
+        properties:
+          target:
+            const: file
+      then:
+        properties:
+          side:
+            const: additions
+          start:
+            const: 0
+          end:
+            const: 0
+          code:
+            const: ""
+      else:
+        properties:
+          start:
+            minimum: 1
+          end:
+            minimum: 1
       required:
         [
           id,
@@ -1233,15 +1279,19 @@ components:
           $ref: "#/components/schemas/DiffMode"
         fingerprint:
           type: string
+        target:
+          type: string
+          enum: [file, lines]
+          description: Omitted means a line comment. File comments use additions, zero start/end, and empty code.
         side:
           type: string
           enum: [additions, deletions]
         start:
           type: integer
-          minimum: 1
+          minimum: 0
         end:
           type: integer
-          minimum: 1
+          minimum: 0
         code:
           type: string
         body:
@@ -1271,6 +1321,27 @@ components:
     CreateComment:
       type: object
       additionalProperties: false
+      if:
+        required: [target]
+        properties:
+          target:
+            const: file
+      then:
+        properties:
+          side:
+            const: additions
+          start:
+            const: 0
+          end:
+            const: 0
+          code:
+            const: ""
+      else:
+        properties:
+          start:
+            minimum: 1
+          end:
+            minimum: 1
       required:
         [diffId, versionId, fileId, scope, fileVersion, side, start, end, body]
       properties:
@@ -1284,15 +1355,19 @@ components:
           $ref: "#/components/schemas/DiffMode"
         fileVersion:
           type: string
+        target:
+          type: string
+          enum: [file, lines]
+          description: Omitted means a line comment. File comments use additions and zero start/end.
         side:
           type: string
           enum: [additions, deletions]
         start:
           type: integer
-          minimum: 1
+          minimum: 0
         end:
           type: integer
-          minimum: 1
+          minimum: 0
         body:
           type: string
     UpdateComment:

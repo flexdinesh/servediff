@@ -776,7 +776,8 @@
   .copy-comments-menu-trigger {
     min-width: var(--touch-target);
   }
-  #view-options {
+  #view-options,
+  #toggle-all-files {
     min-width: var(--touch-target);
     min-height: var(--touch-target);
   }

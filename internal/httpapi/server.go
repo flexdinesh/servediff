@@ -562,6 +562,7 @@ type createCommentRequest struct {
 	FileID      string          `json:"fileId"`
 	Scope       review.DiffMode `json:"scope"`
 	FileVersion string          `json:"fileVersion"`
+	Target      string          `json:"target,omitempty"`
 	Side        string          `json:"side"`
 	Start       int             `json:"start"`
 	End         int             `json:"end"`
@@ -573,7 +574,11 @@ func (handler *Handler) createComment(response http.ResponseWriter, request *htt
 	if err := decodeBody(response, request, &body); err != nil {
 		return err
 	}
-	if _, err := review.ParseDiffMode(string(body.Scope)); err != nil || (body.Side != "additions" && body.Side != "deletions") || body.Start < 1 || body.End < 1 || strings.TrimSpace(body.Body) == "" {
+	validSelection := (body.Target == "" || body.Target == "lines") && (body.Side == "additions" || body.Side == "deletions") && body.Start > 0 && body.End > 0
+	if body.Target == "file" {
+		validSelection = body.Side == "additions" && body.Start == 0 && body.End == 0
+	}
+	if _, err := review.ParseDiffMode(string(body.Scope)); err != nil || !validSelection || strings.TrimSpace(body.Body) == "" {
 		return diffsource.Error(400, "Invalid comment")
 	}
 	if !handler.session.Capabilities.Diff.Scopes.Allows(body.Scope) {
@@ -583,20 +588,24 @@ func (handler *Handler) createComment(response http.ResponseWriter, request *htt
 	if err != nil {
 		return err
 	}
-	preview, err := handler.session.Source.Patch(request.Context(), body.Scope, file, snapshot.Head)
-	if err != nil {
-		return err
-	}
-	code, ok := diffsource.PatchContext(preview.Patch, body.Side, body.Start, body.End)
-	if !ok && preview.Contents != nil {
-		contents := preview.Contents.After
-		if body.Side == "deletions" {
-			contents = preview.Contents.Before
+	code := ""
+	if body.Target != "file" {
+		preview, err := handler.session.Source.Patch(request.Context(), body.Scope, file, snapshot.Head)
+		if err != nil {
+			return err
 		}
-		code, ok = contentContext(contents, body.Start, body.End)
-	}
-	if !ok {
-		return diffsource.Error(400, "Select up to 200 visible lines on one side")
+		var ok bool
+		code, ok = diffsource.PatchContext(preview.Patch, body.Side, body.Start, body.End)
+		if !ok && preview.Contents != nil {
+			contents := preview.Contents.After
+			if body.Side == "deletions" {
+				contents = preview.Contents.Before
+			}
+			code, ok = contentContext(contents, body.Start, body.End)
+		}
+		if !ok {
+			return diffsource.Error(400, "Select up to 200 visible lines on one side")
+		}
 	}
 	start, end := body.Start, body.End
 	if start > end {
@@ -611,7 +620,7 @@ func (handler *Handler) createComment(response http.ResponseWriter, request *htt
 	}
 	comment := review.ReviewComment{
 		ID: id, DiffID: snapshot.ID, VersionID: snapshot.VersionID, Path: file.Path, Scope: body.Scope, Fingerprint: file.Fingerprint,
-		Side: body.Side, Start: start, End: end, Code: code, Body: strings.TrimSpace(body.Body), Status: "open", CreatedAt: float64(time.Now().UnixMilli()),
+		Target: body.Target, Side: body.Side, Start: start, End: end, Code: code, Body: strings.TrimSpace(body.Body), Status: "open", CreatedAt: float64(time.Now().UnixMilli()),
 		Origin: &review.ReviewOrigin{DiffID: snapshot.ID, VersionID: snapshot.VersionID, Source: snapshot.Source, Repository: snapshot.Name, Branch: snapshot.Branch, Head: snapshot.Head, Revision: snapshot.Revision, File: review.ReviewFileOrigin{Status: file.Status, OldPath: file.OldPath}},
 	}
 	if err := handler.store.PutComment(handler.session.ContextID, comment); err != nil {

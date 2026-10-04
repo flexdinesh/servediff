@@ -41,6 +41,7 @@ import { CopyPathButton } from "./CopyPathButton.tsx";
 import { commentApplicability, type ReviewComment } from "./review-model.ts";
 
 function location(comment: ReviewComment) {
+  if (comment.target === "file") return comment.path;
   return `${comment.path}:${comment.start}${comment.end !== comment.start ? `–${comment.end}` : ""}`;
 }
 
@@ -145,8 +146,14 @@ export function CommentEditor({
           <CardTitle className="comment-editor-title">
             <small>{location(draft)}</small>
             <CopyPathButton
-              value={`${draft.path}:${draft.start}${draft.end !== draft.start ? `-${draft.end}` : ""}`}
-              label="Copy path and lines"
+              value={
+                draft.target === "file"
+                  ? draft.path
+                  : `${draft.path}:${draft.start}${draft.end !== draft.start ? `-${draft.end}` : ""}`
+              }
+              label={
+                draft.target === "file" ? "Copy path" : "Copy path and lines"
+              }
             />
           </CardTitle>
         </CardHeader>
@@ -276,8 +283,9 @@ export function CommentCard({
               <>
                 <strong>Review comment</strong>
                 <span>
-                  · line {comment.start}
-                  {comment.end !== comment.start ? `–${comment.end}` : ""}
+                  {comment.target === "file"
+                    ? "· file"
+                    : `· line ${comment.start}${comment.end !== comment.start ? `–${comment.end}` : ""}`}
                 </span>
               </>
             )}
@@ -313,14 +321,20 @@ export function CommentCard({
                     {applicability === "other-scope"
                       ? `From ${comment.scope} changes`
                       : applicability === "stale"
-                        ? "Stale — file changed; original code preserved"
-                        : "Original code preserved"}
+                        ? comment.target === "file"
+                          ? "Stale — file changed"
+                          : "Stale — file changed; original code preserved"
+                        : comment.target === "file"
+                          ? "File comment from an earlier diff"
+                          : "Original code preserved"}
                   </p>
                 )}
-                <details>
-                  <summary>Code context</summary>
-                  <pre>{comment.code}</pre>
-                </details>
+                {comment.target !== "file" && (
+                  <details>
+                    <summary>Code context</summary>
+                    <pre>{comment.code}</pre>
+                  </details>
+                )}
               </>
             )}
           </CardContent>

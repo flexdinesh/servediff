@@ -127,6 +127,14 @@ func FormatComments(comments []ReviewComment, includeResolved bool, repositories
 			lines = append(lines, `    <file path="`+attribute(file.path)+`"`+metadata+`>`)
 			for _, exported := range file.comments {
 				comment := exported.comment
+				if comment.Target == "file" {
+					lines = append(lines,
+						fmt.Sprintf(`      <comment id="%s" selection="file" scope="%s" status="%s" applicability="%s">`, exported.id, comment.Scope, comment.Status, Applicability(comment, repositoryFor(comment))),
+						"        <body>"+xml(comment.Body)+"</body>",
+						"      </comment>",
+					)
+					continue
+				}
 				selection := "range"
 				if comment.Start == comment.End {
 					selection = "single-line"

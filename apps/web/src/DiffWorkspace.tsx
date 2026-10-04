@@ -2,6 +2,7 @@ import type {
   CodeViewItem,
   DiffLineAnnotation,
   FileDiffMetadata,
+  LineAnnotation,
   SelectedLineRange,
 } from "@pierre/diffs";
 import {
@@ -9,6 +10,7 @@ import {
   type CodeViewReactOptions,
   useWorkerPool,
 } from "@pierre/diffs/react";
+import { MessageSquareIcon } from "lucide-react";
 import { api, errorDetail } from "@servediff/api";
 import type { RepositoryDiff } from "@servediff/shared";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -224,7 +226,10 @@ export function DiffWorkspace() {
               comment.id !== draft?.id,
           )
           .map((comment) => ({
-            side: comment.side,
+            side:
+              comment.target === "file" && file.status === "D"
+                ? "deletions"
+                : comment.side,
             lineNumber: comment.end,
             metadata: { kind: "saved", comment },
           }));
@@ -235,20 +240,42 @@ export function DiffWorkspace() {
           draft.fingerprint === file.fingerprint
         )
           annotations.push({
-            side: draft.side,
+            side:
+              draft.target === "file" && file.status === "D"
+                ? "deletions"
+                : draft.side,
             lineNumber: draft.end,
             metadata: { kind: "draft" },
           });
+        const state = {
+          collapsed: collapsed.has(file.path),
+          version: versionFor(
+            item,
+            `${collapsed.has(file.path)}:${JSON.stringify(annotations)}`,
+          ),
+        };
         return [
-          {
-            ...item,
-            ...(item.type === "diff" && commentsEnabled ? { annotations } : {}),
-            collapsed: collapsed.has(file.path),
-            version: versionFor(
-              item,
-              `${collapsed.has(file.path)}:${JSON.stringify(annotations)}`,
-            ),
-          },
+          item.type === "diff"
+            ? { ...item, ...state, ...(commentsEnabled ? { annotations } : {}) }
+            : {
+                ...item,
+                ...state,
+                ...(commentsEnabled
+                  ? {
+                      annotations: annotations
+                        .filter((annotation) => annotation.lineNumber === 0)
+                        .map(
+                          ({
+                            lineNumber,
+                            metadata,
+                          }): LineAnnotation<CommentAnnotation> =>
+                            metadata.kind === "saved"
+                              ? { lineNumber, metadata }
+                              : { lineNumber, metadata },
+                        ),
+                    }
+                  : {}),
+              },
         ];
       }),
     [
@@ -281,6 +308,7 @@ export function DiffWorkspace() {
   useLayoutEffect(() => {
     if (
       draft &&
+      draft.target !== "file" &&
       draft.scope === mode &&
       files.some(
         (file) =>
@@ -629,27 +657,51 @@ export function DiffWorkspace() {
             renderHeaderMetadata={(item) => {
               const file = allFiles.find((file) => file.path === item.id);
               return file ? (
-                <Button
-                  type="button"
-                  className="review-button"
-                  variant="outline"
-                  size="sm"
-                  aria-label={`Mark ${file.path} ${isReviewed(file) ? "unreviewed" : "reviewed"}`}
-                  aria-pressed={isReviewed(file)}
-                  disabled={pending.has(file.id) || pending.has("*")}
-                  aria-busy={pending.has(file.id)}
-                  onClick={() => toggleReviewed(file)}
-                >
-                  <svg
-                    className="review-checkbox"
-                    viewBox="0 0 16 16"
-                    aria-hidden="true"
+                <div className="diff-file-actions">
+                  <Button
+                    type="button"
+                    className="review-button"
+                    variant="outline-muted"
+                    size="sm"
+                    aria-label={`Mark ${file.path} ${isReviewed(file) ? "unreviewed" : "reviewed"}`}
+                    aria-pressed={isReviewed(file)}
+                    disabled={pending.has(file.id) || pending.has("*")}
+                    aria-busy={pending.has(file.id)}
+                    onClick={() => toggleReviewed(file)}
                   >
-                    <rect x="2" y="2" width="12" height="12" />
-                    {isReviewed(file) && <path d="m4.5 8 2.5 2.5 4.5-5" />}
-                  </svg>
-                  {isReviewed(file) ? "Reviewed" : "Mark reviewed"}
-                </Button>
+                    <svg
+                      className="review-checkbox"
+                      viewBox="0 0 16 16"
+                      aria-hidden="true"
+                    >
+                      <rect x="2" y="2" width="12" height="12" />
+                      {isReviewed(file) && <path d="m4.5 8 2.5 2.5 4.5-5" />}
+                    </svg>
+                    Reviewed
+                  </Button>
+
+                  {commentsEnabled && (
+                    <Button
+                      type="button"
+                      className="file-comment-button"
+                      variant="outline-muted"
+                      size="icon-sm"
+                      aria-label={`Leave review comment on file ${file.path}`}
+                      title="Leave review comment on file"
+                      onClick={() => {
+                        setCollapsed((previous) => {
+                          const next = new Set(previous);
+                          next.delete(file.path);
+                          return next;
+                        });
+                        if (draft) navigateComment(draft);
+                        else review.begin(file);
+                      }}
+                    >
+                      <MessageSquareIcon aria-hidden="true" />
+                    </Button>
+                  )}
+                </div>
               ) : null;
             }}
             renderAnnotation={(annotation) =>
