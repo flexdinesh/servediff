@@ -216,6 +216,8 @@ such detail into a token. New layout spacing must use the scale.
   Column gaps use the spacing scale. Do not turn every grouping into a card.
 - Keep overlays anchored to their owning region. Sidebar/resizer layering uses
   `--layer-sidebar` / `--layer-resizer`; modal dialogs use the native top layer.
+  The resize handle overlaps the divider fully and adds no layout width, so the
+  canvas's shared 12px gutter starts at the sidebar edge.
 
 ### Pierre boundary
 

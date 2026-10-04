@@ -1224,6 +1224,16 @@ test("sidebar resizer supports pointer dragging", async ({ page }) => {
     name: "Resize file sidebar",
   });
   await expect(resizer).toBeVisible();
+  const paneGap = () =>
+    page.locator("main").evaluate((element) => {
+      const sidebar = document.querySelector("#sidebar");
+      if (!sidebar) throw new Error("Missing sidebar");
+      return (
+        element.getBoundingClientRect().left -
+        sidebar.getBoundingClientRect().right
+      );
+    });
+  expect(await paneGap()).toBe(0);
   const box = await resizer.boundingBox();
   expect(box?.height ?? 0).toBeGreaterThan(100);
   const before = Number(await resizer.getAttribute("aria-valuenow"));
@@ -1235,6 +1245,7 @@ test("sidebar resizer supports pointer dragging", async ({ page }) => {
   await expect
     .poll(async () => Number(await resizer.getAttribute("aria-valuenow")))
     .toBeGreaterThan(before);
+  expect(await paneGap()).toBe(0);
 });
 
 test("copy dialog reports clipboard status and restores focus", async ({

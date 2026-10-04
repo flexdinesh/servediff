@@ -73,6 +73,10 @@ test("diff tracks fill frames and headers align with their gutters", async ({
       { width: 390, height: 844 },
     ]) {
       await page.setViewportSize(viewport);
+      const scroller = page.locator(".diff-code-view");
+      await scroller.evaluate((element) => {
+        element.scrollTop = 0;
+      });
       await expect
         .poll(() =>
           files.first().evaluate((element) => {
@@ -87,6 +91,43 @@ test("diff tracks fill frames and headers align with their gutters", async ({
           }),
         )
         .toBeLessThanOrEqual(0.5);
+      await expect
+        .poll(() =>
+          files.first().evaluate((element) => {
+            const scroller = document.querySelector(".diff-code-view");
+            const sidebar = document.querySelector("#sidebar");
+            if (!scroller || !sidebar)
+              throw new Error("Missing workspace panes");
+            const file = element.getBoundingClientRect();
+            const canvas = scroller.getBoundingClientRect();
+            const leftEdge =
+              sidebar.getBoundingClientRect().width > 0
+                ? sidebar.getBoundingClientRect().right
+                : canvas.left;
+            return {
+              top: file.top - canvas.top,
+              left: file.left - leftEdge,
+              right: canvas.left + scroller.clientWidth - file.right,
+            };
+          }),
+        )
+        .toEqual({ top: 12, left: 12, right: 12 });
+      await scroller.evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+      });
+      await expect
+        .poll(() =>
+          files.last().evaluate((element) => {
+            const scroller = document.querySelector(".diff-code-view");
+            if (!scroller) throw new Error("Missing diff scroller");
+            return (
+              scroller.getBoundingClientRect().top +
+              scroller.clientHeight -
+              element.getBoundingClientRect().bottom
+            );
+          }),
+        )
+        .toBe(12);
     }
     const header = await page.locator(".topbar").boundingBox();
     const toolbar = await page.locator(".toolbar").boundingBox();
