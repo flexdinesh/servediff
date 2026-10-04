@@ -34,30 +34,35 @@ func RepositoryWorktrees(ctx context.Context, root string) (string, []Worktree, 
 	return name, worktrees, nil
 }
 
-// WorktreeLastChangedAt reads commit and changed-path times without loading diffs.
-func WorktreeLastChangedAt(ctx context.Context, root, gitDir string) (int64, error) {
-	status, err := runGit(ctx, root, 16*1024*1024, "--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=none", "--no-renames")
+type WorktreeChangeSummary struct {
+	LastChangedAt    int64
+	ChangedFileCount int
+}
+
+// WorktreeChanges reads local change counts and times without loading diffs.
+func WorktreeChanges(ctx context.Context, root, gitDir string) (WorktreeChangeSummary, error) {
+	status, err := runGit(ctx, root, 16*1024*1024, "--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=none", "--renames")
 	if err != nil {
-		return 0, err
+		return WorktreeChangeSummary{}, err
 	}
 	var latest int64
 	commit, err := runGit(ctx, root, 1024, "log", "-1", "--format=%ct")
 	if err == nil {
 		seconds, parseErr := strconv.ParseInt(strings.TrimSpace(commit), 10, 64)
 		if parseErr != nil {
-			return 0, parseErr
+			return WorktreeChangeSummary{}, parseErr
 		}
 		latest = seconds * 1000
 	} else {
 		var failure *gitFailure
 		if !errors.As(err, &failure) {
-			return 0, err
+			return WorktreeChangeSummary{}, err
 		}
 	}
 	staged := false
 	for name, state := range parseStatus(status) {
 		if err := ctx.Err(); err != nil {
-			return 0, err
+			return WorktreeChangeSummary{}, err
 		}
 		staged = staged || (state.indexStatus != " " && state.indexStatus != "?")
 		changedPath := filepath.Join(root, filepath.FromSlash(name))
@@ -68,7 +73,7 @@ func WorktreeLastChangedAt(ctx context.Context, root, gitDir string) (int64, err
 				break
 			}
 			if !errors.Is(err, os.ErrNotExist) {
-				return 0, err
+				return WorktreeChangeSummary{}, err
 			}
 			if changedPath == root {
 				break
@@ -81,10 +86,26 @@ func WorktreeLastChangedAt(ctx context.Context, root, gitDir string) (int64, err
 		if info, err := os.Stat(filepath.Join(gitDir, "index")); err == nil {
 			latest = max(latest, info.ModTime().UnixMilli())
 		} else if !errors.Is(err, os.ErrNotExist) {
-			return 0, err
+			return WorktreeChangeSummary{}, err
 		}
 	}
-	return latest, nil
+	return WorktreeChangeSummary{LastChangedAt: latest, ChangedFileCount: changedFileCount(status)}, nil
+}
+
+func changedFileCount(status string) int {
+	paths := make(map[string]bool)
+	records := strings.Split(status, "\x00")
+	for index := 0; index < len(records); index++ {
+		record := records[index]
+		if len(record) < 3 {
+			continue
+		}
+		paths[record[3:]] = true
+		if strings.ContainsAny(record[:2], "RC") {
+			index++ // Renames/copies include a second record containing the old path.
+		}
+	}
+	return len(paths)
 }
 
 func parseWorktrees(raw string) []Worktree {

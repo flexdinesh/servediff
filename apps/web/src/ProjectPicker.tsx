@@ -17,7 +17,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { contextDetail, pickerResults } from "./project-picker.ts";
+import {
+  contextChangeLabel,
+  contextDetail,
+  contextHasChanges,
+  pickerResults,
+} from "./project-picker.ts";
 
 function ContextIcon({ context }: { context: ApiContext }) {
   const Icon = context.kind === "capture" ? SquareTerminalIcon : FolderGit2Icon;
@@ -248,11 +253,18 @@ export function ProjectPicker({
                   )}
                   {context.root ?? context.submittedFrom ?? "Piped diff"}
                 </span>
-                {context.availability === "unavailable" && (
-                  <span className="project-picker-unavailable">
-                    Unavailable
-                  </span>
-                )}
+              </span>
+              <span
+                className="project-picker-changes"
+                data-has-changes={contextHasChanges(context)}
+                data-availability={context.availability}
+                title={
+                  context.kind === "capture"
+                    ? "Changed files in this snapshot"
+                    : "Changed files across staged, unstaged, and untracked changes"
+                }
+              >
+                {contextChangeLabel(context)}
               </span>
               {context.id === selectedId && (
                 <span className="project-picker-current">

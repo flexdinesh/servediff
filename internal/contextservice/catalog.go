@@ -9,10 +9,11 @@ import (
 )
 
 type worktreeMetadata struct {
-	name          string
-	branch        string
-	worktreeName  *string
-	lastChangedAt int64
+	name             string
+	branch           string
+	worktreeName     *string
+	lastChangedAt    int64
+	changedFileCount *int
 }
 
 // Refresh lightweight Git metadata at most once per interval, never diff snapshots.
@@ -27,6 +28,7 @@ func (service *Service) refreshCatalog(ctx context.Context, force bool) error {
 		return err
 	}
 	seen := make(map[string]bool)
+	refreshed := make(map[string]bool)
 	for _, item := range items {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -57,19 +59,29 @@ func (service *Service) refreshCatalog(ctx context.Context, force bool) error {
 				folder := filepath.Base(root)
 				metadata.worktreeName = &folder
 			}
-			lastChangedAt, changeErr := diffsource.WorktreeLastChangedAt(ctx, root, key)
+			changes, changeErr := diffsource.WorktreeChanges(ctx, root, key)
 			service.mu.Lock()
 			metadata.lastChangedAt = service.metadata[id].lastChangedAt
 			if changeErr == nil {
-				metadata.lastChangedAt = lastChangedAt
+				metadata.lastChangedAt = changes.LastChangedAt
+				metadata.changedFileCount = &changes.ChangedFileCount
 			}
 			service.metadata[id] = metadata
 			service.mu.Unlock()
+			refreshed[id] = true
 		}
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	service.mu.Lock()
+	for _, item := range items {
+		if metadata, ok := service.metadata[item.ID]; ok && !refreshed[item.ID] {
+			metadata.changedFileCount = nil
+			service.metadata[item.ID] = metadata
+		}
+	}
+	service.mu.Unlock()
 	service.catalogUpdated = time.Now()
 	return nil
 }
