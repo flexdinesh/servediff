@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ApiContext } from "@servediff/api";
-import { contextChangeLabel, pickerResults } from "../src/project-picker.ts";
+import {
+  contextChangeLabel,
+  pickerResults,
+  pickerEntries,
+} from "../src/project-picker.ts";
 
 const main: ApiContext = {
   id: "main",
@@ -147,5 +151,62 @@ test("unknown and unavailable metadata is not treated as reviewable changes", ()
   assert.equal(
     contextChangeLabel({ ...changed, changedFileCount: 2 }),
     "2 changed files",
+  );
+});
+
+function observation(id: string, hostname: string, runId: string): ApiContext {
+  return {
+    ...main,
+    id,
+    kind: "observation",
+    observation: {
+      sourceId: `source-${hostname}`,
+      hostname,
+      runId,
+      agent: "agent",
+      trigger: "hook",
+      repositoryKey: "repository",
+      repositoryName: "servediff",
+      remoteUrl: "https://example.test/servediff.git",
+      checkoutKey: "checkout",
+      root: main.root ?? "",
+      worktreeName: "main-worktree",
+      branch: "main",
+      head: "head",
+      collectedAt: 1000,
+      collectorVersion: "test",
+    },
+  };
+}
+
+test("observation search distinguishes containers on the same branch and retains submissions", () => {
+  const contexts = [
+    observation("first", "container-a", "run-a"),
+    observation("second", "container-b", "run-b"),
+    observation("third", "container-a", "run-a"),
+  ];
+  assert.equal(pickerResults(contexts, "servediff main").length, 3);
+  assert.deepEqual(
+    pickerResults(contexts, "container-b run-b").map((context) => context.id),
+    ["second"],
+  );
+  assert.equal(pickerResults(contexts, "source-container-a").length, 2);
+});
+
+test("repositories group observations without merging sources or repeated submissions", () => {
+  const contexts = [
+    observation("first", "container-a", "run-a"),
+    observation("second", "container-b", "run-b"),
+  ];
+  const repositories = pickerEntries(contexts, "", "");
+  assert.equal(repositories.length, 1);
+  const repository = repositories[0];
+  assert.equal(repository?.kind, "repository");
+  if (repository?.kind !== "repository") throw new Error("Missing repository");
+  assert.equal(repository.contexts.length, 2);
+  assert.equal(pickerEntries(contexts, "", "repo").length, 2);
+  assert.deepEqual(
+    pickerEntries(contexts, "container-b", "repo").map((entry) => entry.id),
+    ["second"],
   );
 });

@@ -41,6 +41,13 @@ export function pickerResults(contexts: ApiContext[], query: string) {
         context.branch,
         context.worktreeName,
         context.root,
+        context.observation?.repositoryName,
+        context.observation?.remoteUrl,
+        context.observation?.hostname,
+        context.observation?.sourceId,
+        context.observation?.runId,
+        context.observation?.agent,
+        context.observation?.trigger,
       ]
         .filter((value) => typeof value === "string")
         .map((value) => value.toLowerCase());
@@ -67,4 +74,74 @@ export function pickerResults(contexts: ApiContext[], query: string) {
         left.context.id.localeCompare(right.context.id),
     )
     .map(({ context }) => context);
+}
+
+export function observationDetail(context: ApiContext) {
+  const observation = context.observation;
+  if (!observation)
+    return context.root ?? context.submittedFrom ?? "Piped diff";
+  const collected = new Date(observation.collectedAt).toLocaleString(
+    undefined,
+    {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    },
+  );
+  return [
+    observation.hostname || observation.sourceId,
+    observation.runId || observation.sourceId,
+    collected,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+export type PickerEntry =
+  | {
+      id: string;
+      kind: "repository";
+      context: ApiContext;
+      contexts: ApiContext[];
+    }
+  | { id: string; kind: "context"; context: ApiContext };
+
+export function pickerEntries(
+  contexts: ApiContext[],
+  query: string,
+  repositoryId: string,
+) {
+  const results = pickerResults(contexts, query);
+  if (repositoryId)
+    return results
+      .filter((context) => context.repositoryId === repositoryId)
+      .map((context): PickerEntry => ({
+        id: context.id,
+        kind: "context",
+        context,
+      }));
+  const entries: PickerEntry[] = [];
+  const repositories = new Map<string, PickerEntry>();
+  for (const context of results) {
+    if (context.kind !== "observation" || !context.repositoryId) {
+      entries.push({ id: context.id, kind: "context", context });
+      continue;
+    }
+    const existing = repositories.get(context.repositoryId);
+    if (existing?.kind === "repository") {
+      existing.contexts.push(context);
+    } else {
+      const entry: PickerEntry = {
+        id: `repository-${context.repositoryId}`,
+        kind: "repository",
+        context,
+        contexts: [context],
+      };
+      repositories.set(context.repositoryId, entry);
+      entries.push(entry);
+    }
+  }
+  return entries;
 }

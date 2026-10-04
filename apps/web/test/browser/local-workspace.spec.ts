@@ -197,7 +197,7 @@ test("rapid scopes ignore old diff responses and reviewed-file failures", async 
   );
 });
 
-test("draft survives scopes and forced refresh while polling pauses and resumes", async ({
+test("draft survives scopes and explicit reload without automatic diff polling", async ({
   page,
 }) => {
   await page.clock.install();
@@ -236,7 +236,7 @@ test("draft survives scopes and forced refresh while polling pauses and resumes"
   await sidebar.press("Escape");
   const requestsAfter = state.scopes.length;
   await page.clock.fastForward(3_000);
-  await expect.poll(() => state.scopes.length).toBeGreaterThan(requestsAfter);
+  expect(state.scopes).toHaveLength(requestsAfter);
   await page.keyboard.press("Alt+/");
   await expect(
     page.getByRole("searchbox", { name: "Filter files" }),
@@ -437,7 +437,7 @@ test("context switching isolates delayed repository responses and fixed captures
   await expect(page.locator("#changes-title")).toHaveText("Piped diff");
 });
 
-test("empty service explains how to register a repository or pipe", async ({
+test("empty service explains how to review a repository or pipe", async ({
   page,
 }) => {
   await page.route("**/api/v2/contexts?*", (route) =>
@@ -449,7 +449,7 @@ test("empty service explains how to register a repository or pipe", async ({
   ).toBeVisible();
   await expect(
     page.getByText(
-      "Run servediff . in a repository, or pipe a diff into servediff.",
+      "Run servediff review in a repository, or pipe a diff into servediff pipe.",
     ),
   ).toBeVisible();
 });
@@ -663,6 +663,9 @@ test("picker distinguishes unknown and unavailable status and refreshes change c
   await search.fill("Local");
   await expect(dialog.getByRole("option")).toHaveCount(1);
   changedFileCount = 2;
+  await page.evaluate(() =>
+    document.dispatchEvent(new Event("visibilitychange")),
+  );
   await expect(dialog.getByRole("option")).toContainText("2 changed files");
   await expect(search).toBeFocused();
   await expect(search).toHaveValue("Local");
@@ -670,4 +673,140 @@ test("picker distinguishes unknown and unavailable status and refreshes change c
     "aria-activedescendant",
     (await dialog.getByRole("option").getAttribute("id")) ?? "",
   );
+});
+
+test("observation picker drills into repositories and searches independent sources on the same branch", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    class IngestionEvents extends EventTarget {
+      notify = () =>
+        this.dispatchEvent(new MessageEvent("ingestion", { data: "{}" }));
+      constructor() {
+        super();
+        window.addEventListener("test-ingestion", this.notify);
+      }
+      close() {
+        window.removeEventListener("test-ingestion", this.notify);
+      }
+    }
+    Object.defineProperty(window, "EventSource", { value: IngestionEvents });
+  });
+  const state = await localWorkspace(page);
+  function observation(
+    id: string,
+    hostname: string,
+    runId: string,
+    collectedAt: number,
+  ): ApiContext {
+    return {
+      ...state.context,
+      id,
+      kind: "observation",
+      worktreeName: "main-checkout",
+      lastChangedAt: collectedAt,
+      observation: {
+        sourceId: `source-${hostname}`,
+        hostname,
+        runId,
+        agent: "test-agent",
+        trigger: "hook",
+        repositoryKey: "repo",
+        repositoryName: "Local review",
+        remoteUrl: "https://example.test/review.git",
+        checkoutKey: "checkout",
+        root: "/workspace/review",
+        worktreeName: "main-checkout",
+        branch: "main",
+        head: "head",
+        collectedAt,
+        collectorVersion: "test",
+      },
+      capabilities: {
+        ...state.context.capabilities,
+        diff: {
+          ...state.context.capabilities.diff,
+          refresh: { state: "unavailable" },
+        },
+      },
+    };
+  }
+  const contexts = [
+    observation("first", "container-a", "run-a", 1000),
+    observation("second", "container-b", "run-b", 2000),
+    observation("third", "container-a", "run-a", 3000),
+  ];
+  let catalogRequests = 0;
+  await page.route("**/api/v2/contexts?*", (route) => {
+    catalogRequests++;
+    return route.fulfill({ json: { contexts, nextCursor: null } });
+  });
+  await page.route("**/api/v2/contexts/*", (route) => {
+    const id = new URL(route.request().url()).pathname.split("/").at(-1);
+    return route.fulfill({
+      json: contexts.find((context) => context.id === id),
+    });
+  });
+  await page.route("**/api/v2/events", (route) => route.abort());
+  await page.clock.install();
+  await page.goto("/");
+  await ready(page);
+  await expect(
+    page.getByRole("button", { name: "Refresh changes" }),
+  ).toBeHidden();
+  await expect(page.locator("#changes-title")).toHaveText("Collected changes");
+  const requests = state.scopes.length;
+  const catalogReads = catalogRequests;
+  await page.clock.fastForward(9000);
+  expect(state.scopes).toHaveLength(requests);
+  expect(catalogRequests).toBe(catalogReads);
+  const trigger = page.getByRole("button", {
+    name: "Switch repository",
+    exact: true,
+  });
+  await trigger.click();
+  const dialog = page.getByRole("dialog", { name: "Switch repository" });
+  const search = dialog.getByRole("combobox", { name: "Search repositories" });
+  await expect(dialog.getByRole("option")).toHaveCount(1);
+  await expect(dialog.getByRole("option")).toContainText("3 snapshots");
+  await search.press("Enter");
+  await expect(
+    dialog.getByRole("listbox", { name: "Collected snapshots" }),
+  ).toBeVisible();
+  await expect(dialog.getByRole("option")).toHaveCount(3);
+  await expect(dialog.getByRole("option", { name: /container-a/ })).toHaveCount(
+    2,
+  );
+  await search.fill("main container-b run-b");
+  await expect(dialog.getByRole("option")).toHaveCount(1);
+  await dialog.getByRole("button", { name: "Back to repositories" }).click();
+  await expect(search).toBeFocused();
+  await expect(search).toHaveValue("main container-b run-b");
+  await expect(dialog.getByRole("option")).toContainText("1 snapshot");
+  await search.press("Enter");
+  await search.press("Enter");
+  await expect(page).toHaveURL(/\/contexts\/second$/);
+  await expect(trigger).toBeFocused();
+  await page.setViewportSize({ width: 360, height: 640 });
+  await trigger.click();
+  await search.press("Enter");
+  const bounds = await dialog.boundingBox();
+  if (!bounds) throw new Error("Missing picker bounds");
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(360);
+  await search.fill("not-a-source");
+  await expect(
+    dialog.getByText("No snapshots found", { exact: true }),
+  ).toBeVisible();
+  await search.fill("");
+  await search.press("ArrowLeft");
+  await expect(
+    dialog.getByRole("listbox", { name: "Repositories" }),
+  ).toBeVisible();
+  contexts.push(observation("fourth", "container-c", "run-c", 4000));
+  const diffReads = state.scopes.length;
+  await page.evaluate(() => window.dispatchEvent(new Event("test-ingestion")));
+  await expect(dialog.getByRole("option")).toContainText("4 snapshots");
+  await expect(page).toHaveURL(/\/contexts\/second$/);
+  expect(state.scopes).toHaveLength(diffReads);
 });

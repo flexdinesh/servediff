@@ -13,6 +13,7 @@ import (
 
 	"github.com/flexdinesh/servediff/internal/contextservice"
 	"github.com/flexdinesh/servediff/internal/diffsource"
+	"github.com/flexdinesh/servediff/internal/ingestion"
 )
 
 type contextService interface {
@@ -83,6 +84,30 @@ func (handler *handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	var result contextservice.Submission
 	var err error
 	switch {
+	case request.URL.Path == "/control/v1/ingestions":
+		ingestService, ok := handler.service.(interface {
+			Ingest(context.Context, ingestion.Request) (contextservice.Submission, error)
+		})
+		if !ok {
+			err = diffsource.Error(503, "Ingestion unavailable")
+			break
+		}
+		var input ingestion.Request
+		decoder := json.NewDecoder(http.MaxBytesReader(response, request.Body, ingestion.MaxRequestBytes))
+		decoder.DisallowUnknownFields()
+		if err = decoder.Decode(&input); err == nil {
+			var trailing interface{}
+			if tail := decoder.Decode(&trailing); tail != io.EOF {
+				err = diffsource.Error(400, "Trailing ingestion data")
+			} else {
+				result, err = ingestService.Ingest(request.Context(), input)
+			}
+		} else {
+			var max *http.MaxBytesError
+			if !errors.As(err, &max) {
+				err = diffsource.Error(400, "Malformed ingestion request")
+			}
+		}
 	case request.URL.Path == "/control/v1/worktrees":
 		var input struct {
 			SubmissionID string `json:"submissionId"`

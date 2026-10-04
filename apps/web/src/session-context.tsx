@@ -88,8 +88,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const controller = new AbortController();
     let busy = false;
+    let pending = false;
     async function loadCatalog() {
-      if (busy || document.hidden) return;
+      if (document.hidden) return;
+      if (busy) {
+        pending = true;
+        return;
+      }
       busy = true;
       try {
         const entries: ApiContext[] = [];
@@ -124,17 +129,25 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           setCatalogError(errorDetail(error, "Unable to list review contexts"));
       } finally {
         busy = false;
+        if (pending && !controller.signal.aborted) {
+          pending = false;
+          void loadCatalog();
+        }
       }
     }
     void loadCatalog();
-    const timer = setInterval(() => void loadCatalog(), 3000);
+    const events = new EventSource("/api/v2/events");
+    const updateCatalog = () => void loadCatalog();
+    events.addEventListener("message", updateCatalog);
+    events.addEventListener("ingestion", updateCatalog);
+    events.addEventListener("open", updateCatalog);
     const visible = () => {
       if (!document.hidden) void loadCatalog();
     };
     document.addEventListener("visibilitychange", visible);
     return () => {
       controller.abort();
-      clearInterval(timer);
+      events.close();
       document.removeEventListener("visibilitychange", visible);
     };
   }, [attempt]);
@@ -206,7 +219,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             </h1>
             <p>
               {empty
-                ? "Run servediff . in a repository, or pipe a diff into servediff."
+                ? "Run servediff review in a repository, or pipe a diff into servediff pipe."
                 : state.status === "error"
                   ? state.detail
                   : catalogError || "Reading review context…"}

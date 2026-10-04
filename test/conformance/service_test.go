@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -202,7 +203,7 @@ func createWorktree(t *testing.T, name string) string {
 	return directory
 }
 
-func TestDaemonConcurrentRegistration(t *testing.T) {
+func TestDaemonConcurrentIngestion(t *testing.T) {
 	harness := newServiceHarness(t)
 	first, second := createWorktree(t, "first"), createWorktree(t, "second")
 	type result struct {
@@ -212,7 +213,7 @@ func TestDaemonConcurrentRegistration(t *testing.T) {
 	results := make(chan result, 2)
 	for _, directory := range []string{first, second} {
 		go func() {
-			output, err := harness.run(nil, directory, "--state", harness.state, "--port", "0", "--no-browser")
+			output, err := harness.run(nil, "review", directory, "--state", harness.state, "--port", "0", "--no-browser")
 			results <- result{output: output, err: err}
 		}()
 	}
@@ -226,8 +227,8 @@ func TestDaemonConcurrentRegistration(t *testing.T) {
 		t.FailNow()
 	}
 	status := harness.status(t)
-	if status.Worktrees != 2 || status.Captures != 0 {
-		t.Fatalf("both short-lived clients must register with one daemon: %#v", status)
+	if status.Worktrees != 0 || status.Captures != 2 {
+		t.Fatalf("both short-lived collectors must publish to one daemon: %#v", status)
 	}
 	var catalog contextCatalog
 	requestJSON(t, status.URL+"/api/v2/contexts", &catalog)
@@ -235,7 +236,7 @@ func TestDaemonConcurrentRegistration(t *testing.T) {
 		t.Fatalf("distinct worktrees lost: %#v", catalog)
 	}
 	for _, entry := range catalog.Contexts {
-		if entry.Kind != "worktree" {
+		if entry.Kind != "observation" {
 			t.Fatalf("unexpected context kind: %#v", entry)
 		}
 		var diff currentDiff
@@ -244,9 +245,9 @@ func TestDaemonConcurrentRegistration(t *testing.T) {
 			t.Fatalf("worktree data unavailable after client exited: %#v", diff)
 		}
 	}
-	harness.requireRun(t, nil, first, "--no-browser")
-	if repeated := harness.status(t); repeated.InstanceID != status.InstanceID || repeated.Worktrees != 2 {
-		t.Fatalf("repeat registration must reuse daemon and context: %#v", repeated)
+	harness.requireRun(t, nil, "review", first, "--no-browser")
+	if repeated := harness.status(t); repeated.InstanceID != status.InstanceID || repeated.Captures != 3 {
+		t.Fatalf("repeat collection must reuse daemon and create another observation: %#v", repeated)
 	}
 }
 
@@ -258,7 +259,7 @@ func TestDaemonCaptureSurvivesRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	for range 2 {
-		harness.requireRun(t, patch, "--no-browser")
+		harness.requireRun(t, patch, "pipe", "--no-browser")
 	}
 	var catalog contextCatalog
 	requestJSON(t, before.URL+"/api/v2/contexts", &catalog)
@@ -267,7 +268,7 @@ func TestDaemonCaptureSurvivesRestart(t *testing.T) {
 	}
 	id := catalog.Contexts[0].ID
 	for _, entry := range catalog.Contexts {
-		if entry.Kind != "capture" {
+		if entry.Kind != "observation" {
 			t.Fatalf("pipe must be first-class capture: %#v", entry)
 		}
 	}
@@ -276,7 +277,7 @@ func TestDaemonCaptureSurvivesRestart(t *testing.T) {
 	if len(original.Files) != 12 || original.VersionID == "" {
 		t.Fatalf("unexpected captured fixture: %#v", original)
 	}
-	harness.requireRun(t, nil, "service", "restart")
+	harness.requireRun(t, nil, "service", "restart", "--state", harness.state, "--port", strconv.Itoa(before.Settings.Port))
 	after := harness.status(t)
 	if after.InstanceID == before.InstanceID || after.Captures != 2 || after.Settings != before.Settings || after.URL != before.URL {
 		t.Fatalf("restart must replace process and retain data/settings: before=%#v after=%#v", before, after)
@@ -286,9 +287,8 @@ func TestDaemonCaptureSurvivesRestart(t *testing.T) {
 	if restored.ID != original.ID || restored.VersionID != original.VersionID || len(restored.Files) != len(original.Files) {
 		t.Fatalf("captured diff changed across restart: original=%#v restored=%#v", original, restored)
 	}
-	harness.requireRun(t, nil, "--capture", id, "--no-browser")
-	if opened := harness.status(t); opened.Captures != 2 {
-		t.Fatalf("opening capture must not duplicate it: %#v", opened)
+	if queried := harness.status(t); queried.Captures != 2 {
+		t.Fatalf("querying an observation must not duplicate it: %#v", queried)
 	}
 }
 
@@ -296,7 +296,7 @@ func TestDaemonIgnoresInheritedGitRouting(t *testing.T) {
 	harness := newServiceHarness(t)
 	first, second := createWorktree(t, "environment-origin"), createWorktree(t, "requested")
 	harness.environment = append(harness.environment, "GIT_DIR="+filepath.Join(first, ".git"), "GIT_WORK_TREE="+first)
-	harness.requireRun(t, nil, second, "--state", harness.state, "--port", "0", "--no-browser")
+	harness.requireRun(t, nil, "review", second, "--state", harness.state, "--port", "0", "--no-browser")
 	status := harness.status(t)
 	var catalog contextCatalog
 	requestJSON(t, status.URL+"/api/v2/contexts", &catalog)
@@ -319,11 +319,11 @@ func TestDaemonExplicitConflictDoesNotRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	output, err := harness.run(patch, "--host", "0.0.0.0", "--no-browser")
+	output, err := harness.run(patch, "pipe", "--port", "4000", "--no-browser")
 	if err == nil || !strings.Contains(string(output), "restart") {
 		t.Fatalf("conflict should suggest explicit restart: err=%v output=%s", err, output)
 	}
-	output, err = harness.run(patch, "--state", filepath.Join(t.TempDir(), "other.db"), "--no-browser")
+	output, err = harness.run(patch, "pipe", "--state", filepath.Join(t.TempDir(), "other.db"), "--no-browser")
 	if err == nil {
 		t.Fatalf("different state path must fail before capture: %s", output)
 	}
@@ -387,7 +387,7 @@ func TestDaemonRetriesCommittedCaptureUsingRunningState(t *testing.T) {
 			http.Error(response, err.Error(), http.StatusBadGateway)
 			return
 		}
-		if request.URL.Path != "/control/v1/captures" || result.StatusCode != http.StatusOK {
+		if request.URL.Path != "/control/v1/ingestions" || result.StatusCode != http.StatusOK {
 			for name, values := range result.Header {
 				response.Header()[name] = values
 			}
@@ -433,7 +433,7 @@ func TestDaemonRetriesCommittedCaptureUsingRunningState(t *testing.T) {
 	}
 	// Omitted --state must reuse the running custom database, including
 	// recovery after the accepted response is lost.
-	harness.requireRun(t, patch, "--no-browser")
+	harness.requireRun(t, patch, "pipe", "--no-browser")
 	var accepted committedCapture
 	select {
 	case accepted = <-committed:

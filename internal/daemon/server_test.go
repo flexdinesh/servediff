@@ -19,6 +19,7 @@ import (
 	"github.com/flexdinesh/servediff/internal/mcpapi"
 	"github.com/flexdinesh/servediff/internal/review"
 	"github.com/flexdinesh/servediff/internal/reviewstore"
+	"github.com/flexdinesh/servediff/internal/serverapp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -187,7 +188,7 @@ func TestScopedMCPDoesNotShareReviewContext(t *testing.T) {
 	if err := store.PutComment(a.Context.ID, comment); err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(contextMCP(service, store, ""))
+	server := httptest.NewServer(serverapp.Handler(t.Context(), service, store, nil, ""))
 	defer server.Close()
 	response, err := http.Get(server.URL + "/mcp")
 	if err != nil {

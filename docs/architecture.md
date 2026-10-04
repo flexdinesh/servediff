@@ -1,107 +1,114 @@
 # Architecture
 
-servediff is a polyglot monorepo with a Go daemon and a React web application.
-Node is a frontend build and test dependency only. One daemon per user owns the
-database and serves independently addressed worktrees and piped captures.
+For system responsibilities, request flows and design decisions, see
+[system.md](system.md).
 
-## Runtime and data ownership
+servediff is a Go/React monorepo with two server composition roots and one
+Git-aware producer pipeline. Node is a frontend build/test dependency only.
 
-Ordinary CLI commands ensure the daemon, submit an absolute worktree path or a
-bounded raw patch, print/open the returned context URL, and exit. The daemon
-collects live Git changes, parses captures, and writes review state. `service`
-commands manage its lifetime; `serve` composes the same application in a
-foreground process for fixtures and supervision.
+## Collection and ingestion
 
-A context is a selectable review target. Worktree contexts produce updated
-all/staged/unstaged diffs; capture contexts contain one immutable patch/version.
-Both support editable reviews. Linked worktrees share repository grouping but
-have separate contexts. Repeated registration reuses a worktree; independent
-pipe invocations create independent captures with 14-day expiry. Captures have
-no automatic repository association.
+`servediff review` collects a checkout once. Agent plugins invoke that same
+command with `--trigger agent-hook`, or submit the same ingestion contract
+directly. `servediff pipe` collects a supplied patch and attaches Git metadata
+when its submission directory is a checkout. There is no watcher.
 
-The durable catalog survives restarts; runtime sources are reconstructed lazily.
-Catalog listing does not run Git. Missing repositories fail within their own
-context. Existing location, diff, version, and review IDs are preserved by the
-additive schema-2 migration. Unsupported older schemas fail without deletion.
+The producer captures repository, branch, HEAD, worktree, source, hostname,
+agent/run, trigger and collection metadata together with all/staged/unstaged
+snapshots and bounded file previews. Piped observations support only all scope.
+Git processes and filesystem access belong to collection, never server queries.
 
-Every REST/MCP operation resolves an explicit context once and verifies resource
-membership. There is no daemon-wide active repository. Browser selection is
-client state, represented by `/contexts/{id}`. Scoped REST routes live under
-`/api/v2/contexts/{id}`; scoped MCP uses `/mcp/contexts/{id}`. Legacy unscoped
-routes fail with an ambiguity error when daemon mode has multiple contexts.
+Collection precedes submission. A changed checkout during collection fails or
+is retried within the collection bound; a failed collection is not published as
+an empty diff. A successful empty snapshot records that there were no changes.
 
-Private lifecycle/registration traffic uses an authenticated loopback control
-listener, separate from the web listener. A private runtime descriptor carries
-discovery credentials and effective settings; it is not saved configuration.
-Lifecycle and lifetime locks prevent competing starts. Database ownership also
-protects foreground processes using the same state file. Old binaries must be
-stopped before migration because they do not honor these locks.
+Both local and remote ingestion validate the same versioned request, then
+atomically persist its observation, scopes, immutable previews, review bindings
+and retry identity. Acknowledgement means SQLite committed the observation.
+The REST endpoint is `POST /api/v2/ingestions`; local discovery uses authenticated
+loopback control with the same application operation.
 
-Service discovery returns authenticated status and its control connection
-together. Submissions stay bound to that instance; output uses its URLs. A lost
-acknowledgement permits one replay with the original submission ID, only after
-verifying the accepted settings and durable state identity (the existing user
-ID). Recovery cannot redirect input to a replaced database or restarted memory
-store. The complete operation has a two-minute deadline; discovery and recovery
-each have a 30-second bound. Ambiguous failures retain the original error and
-identify the database where submission may have committed.
+## Identity and stored state
 
-Git admission limits running and queued commands. Each command has a 20-second
-deadline including queue time, plus at most one second for pipe draining.
-Platform adapters own subprocess cleanup: process groups on Linux/macOS and
-jobs assigned during process creation on Windows. Cancellation reaps the Git
-process, cleans up its owned children, and releases admission.
+Each submission creates an independent observation. Replaying the same
+account/source/submission identity with identical payload returns the original
+result; reusing it with different content fails. Independent producers may
+submit the same checkout and branch. There are no producer ownership claims,
+precedence policies or automatic failover.
 
-The public REST/MCP trust model remains unauthenticated. Non-loopback binding
-exposes all registered contexts. Control authentication does not authenticate
-the web listener. No idle service shutdown or automatic conflicting-setting
-restart is performed.
+Repository grouping is separate from source and checkout identity. Paths and
+hostnames are captured labels, not global identities. Container sources can
+supply `--source-id` and `--run-id` so identical branch/path names remain
+distinguishable. User/account identity comes from trusted server composition,
+not an arbitrary ingestion field. Multi-account remote authentication is a
+future extension; the first remote deployment uses one configured account.
+
+An observation is an immutable review context, addressed at `/contexts/{id}`.
+Its branch/worktree metadata does not change when the producer switches branch.
+The API reads manifests, patches, available contents and review state from
+SQLite. Queries never invoke Git, refresh a checkout, or require its continued
+existence. Freshness is push-only: latest means latest received observation,
+not guaranteed current filesystem state.
+
+`GET /api/v2/contexts` supports metadata search and repository, branch, worktree,
+hostname, source and run filters. The browser chooses a repository, then an
+observation. `GET /api/v2/events` emits transient ingestion notifications;
+clients query durable catalog state after reconnecting. Notifications are not
+a queue or proof of delivery.
+
+## Local and remote composition
+
+`cmd/servediff` provides explicit collection commands and local service
+management. Local submission starts or reuses the per-user background server,
+prints the committed review/MCP URLs and exits. Service discovery, lifetime
+locks and database ownership prevent competing local instances. The private
+runtime descriptor is discovery state, not producer identity.
+
+`cmd/servediff-server` runs the remote server in the foreground with the same
+ingestion/query core and SQLite adapter. Bearer authentication protects API/MCP;
+browser access uses HTTP Basic with the configured account and token. Remote
+deployment supplies TLS through its hosting environment. The remote server
+requires no Git executable, repository mount or collector process. A configured
+remote endpoint never starts a local service.
+
+Remote auth, account resolution, future storage adapters and optional queue
+infrastructure belong at composition boundaries. A future queue must distinguish
+acceptance from durable publication rather than silently changing receipt
+semantics. There is no upstream relay or durable producer upload queue in this
+iteration. Network failures are reported; producers decide when to retry.
+
+## Migration
+
+SQLite migrations preserve historical comments, reviewed marks and captures.
+Legacy worktree contexts remain in the catalog but cannot load Git through the
+server; create a new observation with `servediff review`. Retained captures
+remain queryable with their existing IDs. Unsupported schemas fail without
+deleting existing data. Stop older binaries before upgrading because older
+processes may not honor current ownership locks.
 
 ## Project boundaries
 
-- `apps/web`: React/Vite UI. It consumes the REST contract, never Go packages.
-- `cmd/servediff`: Go composition root and CLI only.
-- `internal`: Go application behavior and private adapters shared by future Go commands.
-- `packages/api`: canonical OpenAPI contract, generated TypeScript client, and Go embedding shim.
-- `packages/shared`: TypeScript-only review and UI behavior; not a cross-language model package.
-- `test/fixtures`: serialized inputs shared across implementations.
-
-Go CLI, control HTTP, REST, and MCP compose shared application services over
-source and store packages. Transports must not call each other. Cross-language
-sharing happens through OpenAPI and serialized fixtures, not source imports.
-
-- `internal/contextservice`: durable catalog, registration, capture submissions,
-  and context resolution.
+- `apps/web`: React/Vite REST client and review dashboard.
+- `cmd/servediff`, `cmd/servediff-server`: local/remote composition roots.
+- `internal/ingestion`: producer/server wire contract and HTTP client.
+- `internal/collector`: Git-aware collection shared by manual/agent triggers.
+- `internal/contextservice`: ingestion orchestration and database-backed catalog.
 - `internal/reviewservice`: shared review operations.
-- `internal/reviewstore`: migrations, context identities, submission
-  deduplication, and review persistence.
-- `internal/httpapi`: public REST adapters and the shared context snapshot
-  manager, including coalescing and cache ownership.
-- `internal/daemon`: lifecycle coordination, discovery, detachment, and server
-  composition.
-- `internal/controlapi`: authenticated local control protocol and its client.
-- `internal/processlock`: platform locks for lifecycle and database ownership.
-- `internal/session`, `internal/diffsource`: runtime capability resolution and
-  Git/patch source behavior.
+- `internal/reviewstore`: SQLite migrations, atomic observations and review state.
+- `internal/httpapi`, `internal/mcp`: query/ingestion transport adapters.
+- `internal/daemon`, `internal/controlapi`: local lifecycle and private discovery.
+- `internal/diffsource`: producer-side Git/patch adapters and stored sources.
+- `packages/api`: canonical OpenAPI and generated TypeScript client.
+- `packages/shared`: TypeScript review/UI behavior.
 
-## Production builds
+Transports compose shared application operations; they do not call each other.
+Cross-language contracts use OpenAPI and serialized fixtures. Add storage or
+queue interfaces around actual application operations when a second backend
+exists, rather than introducing a generic backend framework.
 
-The build generates the API client, builds the web application, stages its
-output below `internal/webui`, then embeds it in `dist/servediff`. Node and pnpm
-are build dependencies, not binary runtime dependencies. Live repository mode
-still requires the Git executable.
+Sources advertise capabilities derived from stored scopes and available
+contents. Observation refresh is unavailable. The API and UI enforce those
+capabilities; provenance is not a substitute for capability checks.
 
-## Dependency rules
-
-- Deployable applications do not import other applications.
-- Go commands contain wiring only; reusable Go code stays in `internal`.
-- API wire types originate in OpenAPI.
-- Shared packages must have a specific purpose and a real second consumer.
-- Add another Go module only for an independently versioned/released component.
-
-## Capability-driven sessions
-
-Diff sources declare technical support; session resolution combines it with
-application policy. The API advertises the resulting capabilities, and both the
-server and web UI enforce them. Source kind is provenance and presentation
-metadata, never a behavioral feature check.
+Production builds generate the API client, build the frontend and embed staged
+assets in the binaries. Collectors require Git; servers and browsers do not.

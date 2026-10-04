@@ -23,6 +23,7 @@ import {
   capabilityEnabled,
   useSession,
 } from "./session-context.tsx";
+import { observationDetail } from "./project-picker.ts";
 import { readThemePreference, type ThemePreference } from "./theme.ts";
 
 function themeLabel(theme: ThemePreference) {
@@ -33,7 +34,8 @@ function themeLabel(theme: ThemePreference) {
 
 export function Header() {
   const { repository, piped, diff } = useDiffSource();
-  const { capabilities } = useSession();
+  const session = useSession();
+  const { capabilities, observation } = session;
   const { themePreference, setThemePreference } = useAppearance();
   const sidebar = useSidebarState();
   const refreshEnabled = capabilityEnabled(capabilities.diff.refresh);
@@ -62,14 +64,22 @@ export function Header() {
       <Separator className="header-divider" orientation="vertical" />
       <ContextSwitcher />
       <div className="header-heading">
-        <h1 id="changes-title">{piped ? "Piped diff" : "Local changes"}</h1>
+        <h1 id="changes-title">
+          {piped
+            ? "Piped diff"
+            : observation
+              ? "Collected changes"
+              : "Local changes"}
+        </h1>
         <p
           id="repo-path"
           title={piped ? "Re-run your command to update" : repository?.root}
         >
           {piped
             ? "From stdin · Git unchanged"
-            : (repository?.root ?? "Reading your repository…")}
+            : observation
+              ? observationDetail(session)
+              : (repository?.root ?? "Reading your repository…")}
         </p>
       </div>
       <div className="header-actions">
@@ -77,14 +87,22 @@ export function Header() {
           type="button"
           id="refresh"
           variant="ghost"
-          aria-label="Refresh changes"
-          title="Refresh changes (Alt+R)"
-          hidden={!refreshEnabled}
+          aria-label={
+            refreshEnabled ? "Refresh changes" : "Retry loading changes"
+          }
+          title={
+            refreshEnabled
+              ? "Refresh changes (Alt+R)"
+              : "Retry loading stored changes"
+          }
+          hidden={!refreshEnabled && !diff.notice}
           aria-busy={diff.busy}
           onClick={diff.refresh}
         >
           <RefreshCwIcon className="size-(--icon-base)" aria-hidden="true" />
-          <span className="refresh-label">Refresh</span>
+          <span className="refresh-label">
+            {refreshEnabled ? "Refresh" : "Retry"}
+          </span>
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger

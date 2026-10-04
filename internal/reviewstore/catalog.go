@@ -5,6 +5,8 @@ import (
 	"errors"
 	"time"
 
+	"encoding/json"
+	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/review"
 )
 
@@ -16,6 +18,7 @@ var (
 )
 
 type ContextInfo struct {
+	Metadata         *ingestion.Metadata
 	ID               string
 	Kind             string
 	Root             *string
@@ -156,20 +159,29 @@ func putSubmission(transaction *sql.Tx, ownerID, id, kind, hash, contextID strin
 	return err
 }
 
-const contextSelect = `SELECT c.id,c.kind,l.root,c.location_id,l.repository_id,r.common_dir,l.worktree_key,c.submitted_from,
+const contextSelect = `SELECT c.id,c.kind,COALESCE(l.root,json_extract(o.metadata,'$.root')),c.location_id,COALESCE(l.repository_id,o.repository_id),r.common_dir,COALESCE(l.worktree_key,json_extract(o.metadata,'$.checkoutKey')),c.submitted_from,
 	c.created_at,c.last_submitted_at,d.expires_at,
-	(SELECT json_array_length(v.manifest, '$.files') FROM diff_versions v WHERE v.diff_id=c.capture_id LIMIT 1)
+	(SELECT json_array_length(v.manifest, '$.files') FROM diff_versions v WHERE v.diff_id=c.capture_id LIMIT 1),o.metadata
 	FROM contexts c LEFT JOIN locations l ON l.id=c.location_id LEFT JOIN repositories r ON r.id=l.repository_id
-	LEFT JOIN diffs d ON d.id=c.capture_id`
+	LEFT JOIN diffs d ON d.id=c.capture_id LEFT JOIN observations o ON o.context_id=c.id`
 
 type scanner interface{ Scan(...any) error }
 
 func scanContext(row scanner) (ContextInfo, error) {
 	var item ContextInfo
+	var metadata *string
 	err := row.Scan(&item.ID, &item.Kind, &item.Root, &item.LocationID, &item.RepositoryID, &item.CommonDir, &item.WorktreeKey,
-		&item.SubmittedFrom, &item.CreatedAt, &item.LastSubmittedAt, &item.ExpiresAt, &item.ChangedFileCount)
+		&item.SubmittedFrom, &item.CreatedAt, &item.LastSubmittedAt, &item.ExpiresAt, &item.ChangedFileCount, &metadata)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ContextInfo{}, ErrNotFound
+	}
+	if err == nil && metadata != nil {
+		var decoded ingestion.Metadata
+		if err := json.Unmarshal([]byte(*metadata), &decoded); err != nil {
+			return ContextInfo{}, err
+		}
+		item.Metadata = &decoded
+		item.Kind = "observation"
 	}
 	return item, err
 }
@@ -277,6 +289,9 @@ func bindingFor(db queryer, ownerID, id string, now time.Time) (Binding, error) 
 		return Binding{}, ErrExpired
 	}
 	binding := Binding{ContextID: item.ID, LocationID: item.LocationID, RepositoryID: item.RepositoryID, DiffIDs: make(map[review.DiffMode]string)}
+	if item.Kind == "observation" {
+		return observationBinding(db, ownerID, id)
+	}
 	if item.Kind == "capture" {
 		if err := db.QueryRow(`SELECT id FROM diff_versions WHERE diff_id=?`, id).Scan(&binding.VersionID); err != nil {
 			return Binding{}, err

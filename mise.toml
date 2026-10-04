@@ -32,6 +32,7 @@ depends = ["web:stage"]
 run = [
   "node -e \"require('node:fs').mkdirSync('dist', { recursive: true })\"",
   "go build -trimpath -o dist/servediff ./cmd/servediff",
+  "go build -trimpath -o dist/servediff-server ./cmd/servediff-server",
 ]
 
 [tasks.install]

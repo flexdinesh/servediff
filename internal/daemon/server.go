@@ -14,23 +14,21 @@ import (
 	osuser "os/user"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/flexdinesh/servediff/internal/contextservice"
 	"github.com/flexdinesh/servediff/internal/controlapi"
-	"github.com/flexdinesh/servediff/internal/diffsource"
-	"github.com/flexdinesh/servediff/internal/httpapi"
-	"github.com/flexdinesh/servediff/internal/mcpapi"
+	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/processlock"
-	"github.com/flexdinesh/servediff/internal/reviewservice"
 	"github.com/flexdinesh/servediff/internal/reviewstore"
+	"github.com/flexdinesh/servediff/internal/serverapp"
 	buildversion "github.com/flexdinesh/servediff/internal/version"
 	"github.com/flexdinesh/servediff/internal/webui"
 )
 
 // InitialInput is acquired by a foreground CLI, never by the daemon's stdin.
 type InitialInput struct {
+	Ingestion     *ingestion.Request
 	Kind          string
 	Path          string
 	Raw           []byte
@@ -145,11 +143,7 @@ func runServer(ctx context.Context, cancel context.CancelFunc, settings Settings
 		value.Worktrees, value.Captures, err = service.Count(ctx)
 		return value, err
 	}
-	mux := http.NewServeMux()
-	mux.Handle("/mcp", contextMCP(service, store, defaultContextID))
-	mux.Handle("/mcp/", contextMCP(service, store, defaultContextID))
-	mux.Handle("/control/", http.NotFoundHandler())
-	mux.Handle("/", httpapi.NewMultiWithContext(ctx, service, store, assets, defaultContextID))
+	mux := serverapp.Handler(ctx, service, store, assets, defaultContextID)
 	webServer := &http.Server{Handler: publicRequests(mux, settings), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second, ErrorLog: logger}
 	servers := []*http.Server{webServer}
 	serverErrors := make(chan error, 2)
@@ -217,6 +211,9 @@ func runServer(ctx context.Context, cancel context.CancelFunc, settings Settings
 }
 
 func initialSubmission(ctx context.Context, service *contextservice.Service, input InitialInput) (contextservice.Submission, error) {
+	if input.Ingestion != nil {
+		return service.Ingest(ctx, *input.Ingestion)
+	}
 	switch input.Kind {
 	case "worktree":
 		return service.Register(ctx, rand.Text(), input.Path)
@@ -247,49 +244,9 @@ func listenWeb(settings Settings) (net.Listener, error) {
 	return nil, errors.New("no available servediff port (7981-7990); choose --port")
 }
 
-func contextMCP(service *contextservice.Service, store *reviewstore.Store, defaultID string) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id := defaultID
-		if strings.HasPrefix(r.URL.Path, "/mcp/contexts/") {
-			id = strings.TrimPrefix(r.URL.Path, "/mcp/contexts/")
-			if id == "" || strings.Contains(id, "/") {
-				http.NotFound(w, r)
-				return
-			}
-		} else if r.URL.Path != "/mcp" {
-			http.NotFound(w, r)
-			return
-		}
-		if id == "" {
-			page, err := service.List(r.Context(), 2, "")
-			if err != nil {
-				publicProblem(w, 503, "context_unavailable", err.Error())
-				return
-			}
-			if len(page.Contexts) != 1 {
-				publicProblem(w, 409, "context_required", "Use /mcp/contexts/{contextId}")
-				return
-			}
-			id = page.Contexts[0].ID
-		}
-		active, err := service.Resolve(r.Context(), id)
-		if err != nil {
-			status := 404
-			var requestError *diffsource.RequestError
-			if errors.As(err, &requestError) {
-				status = requestError.Status
-			}
-			publicProblem(w, status, "context_unavailable", err.Error())
-			return
-		}
-		handler := mcpapi.New(reviewservice.New(active, store), active.Capabilities.Review.Comments.Enabled(), buildversion.String())
-		handler.ServeHTTP(w, r)
-	})
-}
-
 func publicRequests(next http.Handler, settings Settings) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if origin := r.Header.Get("Origin"); origin != "" && origin != "http://"+r.Host {
+		if origin := r.Header.Get("Origin"); origin != "" && origin != "http://"+r.Host && origin != "https://"+r.Host {
 			publicProblem(w, 403, "cross_origin", "Cross-origin access denied")
 			return
 		}

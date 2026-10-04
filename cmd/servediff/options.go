@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strings"
 )
 
@@ -28,17 +29,37 @@ type options struct {
 	json          bool
 	noBrowser     bool
 	version       bool
+	server        string
+	serverSet     bool
+	token         string
+	tokenSet      bool
+	trigger       string
+	agent         string
+	runID         string
+	sourceID      string
+	pathSet       bool
+	config        string
 }
 
 func parseOptions(arguments []string, stderr io.Writer) (options, error) {
 	return parseOptionsMode(arguments, stderr, false)
 }
 
-func parseOptionsMode(arguments []string, stderr io.Writer, internal bool) (options, error) {
+func parseOptionsMode(arguments []string, stderr io.Writer, internal bool, foreground ...bool) (options, error) {
 	flags := flag.NewFlagSet("servediff", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	values := options{host: "127.0.0.1", directory: "."}
-	flags.StringVar(&values.host, "host", values.host, "IP address to bind")
+	values := options{host: "127.0.0.1", directory: ".", trigger: "manual"}
+	flags.StringVar(&values.directory, "path", ".", "checkout path to collect")
+	flags.StringVar(&values.server, "server", values.server, "ingestion server URL; defaults to local service")
+	flags.StringVar(&values.token, "token", values.token, "ingestion token; prefer SERVEDIFF_TOKEN")
+	flags.StringVar(&values.trigger, "trigger", values.trigger, "collection trigger: manual or agent-hook")
+	flags.StringVar(&values.agent, "agent", "", "agent name recorded with the observation")
+	flags.StringVar(&values.runID, "run-id", "", "agent or container run identity")
+	flags.StringVar(&values.sourceID, "source-id", "", "source identity; defaults to persistent local identity")
+	if internal || (len(foreground) > 0 && foreground[0]) {
+		flags.StringVar(&values.host, "host", values.host, "IP address to bind (foreground/internal only)")
+	}
+	flags.StringVar(&values.config, "config", "", "JSON settings override for service start/restart")
 	flags.IntVar(&values.port, "port", 0, "HTTP port; defaults to the first available port from 7981 to 7990")
 	flags.IntVar(&values.port, "p", 0, "HTTP port; defaults to the first available port from 7981 to 7990")
 	flags.StringVar(&values.fixture, "fixture", "", "read a Git patch fixture")
@@ -52,8 +73,10 @@ func parseOptionsMode(arguments []string, stderr io.Writer, internal bool) (opti
 	flags.BoolVar(&values.noBrowser, "no-browser", false, "do not open a browser")
 	flags.BoolVar(&values.version, "version", false, "print version and exit")
 	flags.Usage = func() {
-		fmt.Fprintln(stderr, "  Usage: servediff [directory | - | --capture ID] [options]")
+		fmt.Fprintln(stderr, "  Usage: servediff review [--path DIRECTORY] [options]")
+		fmt.Fprintln(stderr, "         servediff pipe [--path DIRECTORY] [options]")
 		fmt.Fprintln(stderr, "         servediff service {start|stop|restart|status} [options]")
+		fmt.Fprintln(stderr, "         servediff service config {set KEY VALUE|get KEY|remove KEY}")
 		fmt.Fprintln(stderr, "         servediff serve [directory | - | --fixture FILE] [options]")
 		flags.PrintDefaults()
 	}
@@ -78,9 +101,27 @@ func parseOptionsMode(arguments []string, stderr io.Writer, internal bool) (opti
 	if flags.NArg() > 1 {
 		return options{}, errors.New("expected at most one repository directory")
 	}
+	flags.Visit(func(value *flag.Flag) {
+		switch value.Name {
+		case "path":
+			values.pathSet, values.repositorySet = true, true
+		case "server":
+			values.serverSet = true
+		case "token":
+			values.tokenSet = true
+		}
+	})
+	if !values.serverSet {
+		values.server = os.Getenv("SERVEDIFF_SERVER_URL")
+	}
+	if !values.tokenSet {
+		values.token = os.Getenv("SERVEDIFF_TOKEN")
+	}
 	if flags.NArg() == 1 {
-		values.directory = flags.Arg(0)
-		values.repositorySet = true
+		if values.pathSet {
+			return options{}, errors.New("path cannot be combined with a positional directory")
+		}
+		values.directory, values.repositorySet = flags.Arg(0), true
 	}
 	if values.capture != "" && (values.repositorySet || values.fixture != "") {
 		return options{}, errors.New("capture cannot be combined with a directory or fixture")
@@ -105,6 +146,7 @@ func parseOptionsMode(arguments []string, stderr io.Writer, internal bool) (opti
 func normalizeArguments(arguments []string) []string {
 	valueOptions := map[string]bool{
 		"-p": true, "--port": true, "--host": true, "--fixture": true,
+		"--config": true, "--path": true, "--server": true, "--token": true, "--trigger": true, "--agent": true, "--run-id": true, "--source-id": true,
 		"--state": true, "--web-dir": true, "--capture": true, "--runtime-dir": true,
 	}
 	options, positionals := make([]string, 0, len(arguments)), make([]string, 0, 1)

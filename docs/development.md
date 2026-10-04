@@ -89,8 +89,9 @@ Start the fixture server with built web assets:
 mise run dev:server -- --no-browser
 ```
 
-`serve` stays in the foreground and does not use the personal daemon. Ordinary
-repo/pipe commands submit to the background service and exit. Use isolated
+`serve` collects its fixture before starting in the foreground and does not use
+the personal daemon. `review` and `pipe` collect once, submit to the configured
+server and exit. Use isolated
 runtime directories (`SERVEDIFF_RUNTIME_DIR`) and in-memory state for lifecycle tests; fixture processes
 must not register inputs in the personal service. `SERVEDIFF_EXIT_ON_STDIN_CLOSE`
 is a foreground development-process lifecycle hook.
@@ -104,8 +105,9 @@ contexts from persistent state. Memory state lasts only for one process.
 
 The production build generates API types, builds the web application, stages the
 Vite output under `internal/webui`, and embeds those assets into the Go binary.
-The resulting `dist/servediff` executable has no Node runtime dependency. Live
-repository mode still requires Git.
+The resulting `dist/servediff` and `dist/servediff-server` executables have no
+Node runtime dependency. Git is required only for producer-side checkout
+collection. Local/remote server queries read SQLite and never invoke Git.
 
 The OpenAPI contract in `packages/api/openapi.yaml` is the frontend/server
 boundary. After changing it, run:
@@ -124,15 +126,14 @@ geometry, and Pierre's measured rendering boundary.
 `App.tsx` composes page sections. `AppProvider` composes appearance, sidebar,
 and workspace owners. Consumers subscribe through domain hooks for diff source,
 navigation, draft, review, reviewed files, and collapse state. One draft persists
-across scopes and pauses diff polling. Context selection uses the top-bar
-popup picker (also Cmd/Ctrl+K) and scopes every request. Registering a repository
-discovers its Git worktrees at any path. Catalog reads reuse metadata for
-10 seconds without loading diffs; registration refreshes discovery immediately.
-Discovery preserves existing review identities and submission order.
-The picker shows changed-file counts across staged, unstaged, and untracked
-changes. Changed checkouts come first, ordered within each group by latest commit
-or working-tree change, including search results. Captures use their fixed
-snapshot count; unknown metadata is distinct from an empty checkout.
+across scopes. Context selection uses the top-bar popup picker (also Cmd/Ctrl+K)
+and scopes every request. The picker first selects a repository, then an immutable
+observation, with branch, worktree, source/run, and collection-time metadata.
+Search includes repository, branch, worktree, hostname, and source/run labels.
+Catalog reads query stored metadata only; ingestion events, reconnect, and tab
+visibility reload the catalog without replacing the selected observation.
+Opening a review never discovers worktrees or reads Git. Changed observations
+come first, ordered by collection time; counts describe their fixed snapshots.
 Switching disposes the previous workspace's request ownership and resets transient
 state.
 `DiffWorkspace.tsx` owns Pierre rendering,

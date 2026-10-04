@@ -14,6 +14,7 @@ import (
 
 	"github.com/flexdinesh/servediff/internal/contextservice"
 	"github.com/flexdinesh/servediff/internal/controlapi"
+	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/processlock"
 )
 
@@ -431,4 +432,8 @@ func logTail(dir string) string {
 	}
 	data, _ := io.ReadAll(file)
 	return strings.TrimSpace(string(data))
+}
+
+func (connection *Connection) Ingest(ctx context.Context, input ingestion.Request) (contextservice.Submission, error) {
+	return connection.control.Ingest(ctx, input)
 }

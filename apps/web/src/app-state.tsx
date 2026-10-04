@@ -56,7 +56,7 @@ function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [mode, setMode] = useState<DiffMode>("all");
   const [draft, setDraft] = useState<ReviewComment | null>(null);
   const [collapsed, setCollapsed] = useState(new Set<string>());
-  const diff = useDiff(contextId, mode, draft !== null, refreshEnabled);
+  const diff = useDiff(contextId, mode);
   const repository = diff.repository;
   const review = useReview(
     contextId,
@@ -90,7 +90,7 @@ function WorkspaceProvider({ children }: { children: ReactNode }) {
   });
   const piped = repository?.source === "stdin";
   useEffect(() => {
-    document.title = `servediff · ${piped ? "Piped diff" : "Local diff"}`;
+    document.title = `servediff · ${piped ? "Piped diff" : "Git diff"}`;
   }, [piped]);
   const source = useMemo(
     () => ({ diff, repository, mode, piped, changeMode }),

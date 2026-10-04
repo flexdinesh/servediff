@@ -1,7 +1,8 @@
 # MCP
 
 servediff exposes review comments to coding agents through MCP at
-`/mcp/contexts/{id}`. Each endpoint is bound to one worktree or piped capture.
+`/mcp/contexts/{id}`. Each endpoint is bound to one immutable observation or
+retained capture.
 It uses stateless Streamable HTTP and supports MCP protocol `2026-07-28` only.
 Clients that use an older `initialize` flow cannot connect.
 
@@ -10,7 +11,8 @@ The browser does not need to remain open while an MCP client works.
 
 ## Connect
 
-Run servediff for the target worktree or capture and use its printed MCP URL.
+Run `servediff review` for the target checkout, or submit a patch with
+`servediff pipe`, and use its printed MCP URL.
 For example:
 
 ```text
@@ -107,14 +109,17 @@ Use `include_resolved: true` for review-history or auditing workflows.
 
 ## Security and scope
 
-The endpoint is unauthenticated. Anyone who can reach the servediff server can
-read and resolve its comments. Keep the default loopback binding, or expose the
-server only on a trusted network. Browser origin checks do not authenticate MCP
-clients.
+The local endpoint is unauthenticated. Anyone who can reach the local server can
+read and resolve its comments. Keep its default loopback binding, or expose it
+only on a trusted network. Browser origin checks do not authenticate MCP clients.
+The remote `servediff-server` requires `Authorization: Bearer TOKEN` for MCP;
+configure that header in the MCP client. Its first deployment represents one
+configured account, not a multi-user authorization system.
 
 Each scoped endpoint represents one context, regardless of browser selection
 or subsequent CLI submissions. Changing the browser's selected repository does
-not redirect an agent's MCP operations. Authentication remains deferred.
+not redirect an agent's MCP operations. New ingestions create new scoped
+endpoints; they do not refresh the snapshot of an existing endpoint.
 
 Protocol details: [MCP `2026-07-28` transport
 specification](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports)

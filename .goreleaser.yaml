@@ -23,6 +23,19 @@ builds:
         -X github.com/flexdinesh/servediff/internal/version.Date={{.Date}}
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
+  - id: servediff-server
+    main: ./cmd/servediff-server
+    binary: servediff-server
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - >-
+        -s -w
+        -X github.com/flexdinesh/servediff/internal/version.Version={{.Version}}
+        -X github.com/flexdinesh/servediff/internal/version.Commit={{.Commit}}
+        -X github.com/flexdinesh/servediff/internal/version.Date={{.Date}}
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
 
 archives:
   - name_template: >-

@@ -10,14 +10,7 @@ import {
   type DiffMode,
   type RepositoryDiff,
 } from "@servediff/shared";
-import {
-  useCallback,
-  useEffect,
-  useEffectEvent,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CommentAnnotation } from "./review-model.ts";
 import { languageOverride } from "./display-options.ts";
 
@@ -63,46 +56,27 @@ const initialState: DiffState = {
   connected: false,
 };
 
-// Own polling and cancellation in one effect; drafts pause polling and scope changes
-// abort stale requests. Cached previews retain their identity between refreshes.
-export function useDiff(
-  contextId: string,
-  mode: DiffMode,
-  composing: boolean,
-  refreshEnabled: boolean,
-) {
+// Observations are immutable. Scope changes abort stale requests; retries reload
+// the same stored snapshot and preserve successfully loaded previews.
+export function useDiff(contextId: string, mode: DiffMode) {
   const [state, setState] = useState<DiffState>(initialState);
   const cache = useRef(new Map<string, Preview>());
-  const refreshRef = useRef<(force: boolean) => void>(() => {});
-  const paused = useEffectEvent(() => composing);
-  const refresh = useCallback(() => refreshRef.current(true), []);
+  const refreshRef = useRef<() => void>(() => {});
+  const refresh = useCallback(() => refreshRef.current(), []);
   useEffect(() => {
     let disposed = false;
-    let busy = false;
-    let retry = false;
-    let current: RepositoryDiff | null = null;
     let controller = new AbortController();
     cache.current.clear();
     setState(initialState);
-    async function load(force: boolean) {
-      if (disposed || (!force && (busy || paused() || !refreshEnabled))) return;
+    async function load() {
+      if (disposed) return;
       controller.abort();
       controller = new AbortController();
       const signal = controller.signal;
-      busy = true;
       setState((previous) => ({ ...previous, busy: true }));
       try {
         const data: RepositoryDiff = await getDiff(contextId, mode, signal);
         if (signal.aborted || disposed) return;
-        if (!force && !retry && current?.revision === data.revision) {
-          setState((previous) => ({
-            ...previous,
-            connected: true,
-            notice: "",
-          }));
-          return;
-        }
-        current = data;
         const paths = new Set(data.files.map((file) => file.path));
         for (const path of cache.current.keys())
           if (!paths.has(path)) cache.current.delete(path);
@@ -248,7 +222,6 @@ export function useDiff(
         }
         await Promise.all(Array.from({ length: 4 }, loadNext));
         if (signal.aborted || disposed) return;
-        retry = failed > 0;
         setState({
           repository: data,
           items,
@@ -270,28 +243,16 @@ export function useDiff(
         }));
       } finally {
         if (!signal.aborted && !disposed) {
-          busy = false;
           setState((previous) => ({ ...previous, busy: false }));
         }
       }
     }
-    refreshRef.current = (force) => {
-      if (!refreshEnabled) return;
-      void load(force);
-    };
-    void load(true);
-    const check = () => {
-      if (!document.hidden) void load(false);
-    };
-    const timer = refreshEnabled ? setInterval(check, 3000) : undefined;
-    if (refreshEnabled) document.addEventListener("visibilitychange", check);
+    refreshRef.current = () => void load();
+    void load();
     return () => {
       disposed = true;
       controller.abort();
-      if (timer !== undefined) clearInterval(timer);
-      if (refreshEnabled)
-        document.removeEventListener("visibilitychange", check);
     };
-  }, [contextId, mode, refreshEnabled]);
+  }, [contextId, mode]);
   return useMemo(() => ({ ...state, refresh }), [state, refresh]);
 }

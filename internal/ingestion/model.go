@@ -1,0 +1,52 @@
+// Package ingestion defines the producer-to-server snapshot contract.
+// It contains no filesystem, transport, or persistence behavior.
+package ingestion
+
+import "github.com/flexdinesh/servediff/internal/review"
+
+const ProtocolVersion = 1
+const MaxRequestBytes = 64 << 20
+
+// Metadata records facts at collection time. Paths and hostnames are labels,
+// not globally unique identities. Account identity comes from the server.
+type Metadata struct {
+	SourceID         string  `json:"sourceId"`
+	Hostname         string  `json:"hostname"`
+	RunID            string  `json:"runId"`
+	Agent            string  `json:"agent"`
+	Trigger          string  `json:"trigger"`
+	RepositoryKey    string  `json:"repositoryKey"`
+	RepositoryName   string  `json:"repositoryName"`
+	RemoteURL        string  `json:"remoteUrl"`
+	CheckoutKey      string  `json:"checkoutKey"`
+	Root             string  `json:"root"`
+	WorktreeName     string  `json:"worktreeName"`
+	Branch           string  `json:"branch"`
+	Head             *string `json:"head"`
+	CollectedAt      int64   `json:"collectedAt"`
+	CollectorVersion string  `json:"collectorVersion"`
+}
+
+type Scope struct {
+	Snapshot review.RepositoryDiff       `json:"snapshot"`
+	Patches  map[string]review.FilePatch `json:"patches"`
+}
+
+// Request is one immutable observation. Replays retain the submission ID;
+// separate observations remain separate even when their content is identical.
+type Request struct {
+	ProtocolVersion int      `json:"protocolVersion"`
+	SubmissionID    string   `json:"submissionId"`
+	Metadata        Metadata `json:"metadata"`
+	Scopes          []Scope  `json:"scopes"`
+}
+
+type Filter struct {
+	Query      string
+	Repository string
+	Branch     string
+	Worktree   string
+	Hostname   string
+	SourceID   string
+	RunID      string
+}
