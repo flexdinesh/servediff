@@ -251,6 +251,32 @@ func TestDaemonConcurrentIngestion(t *testing.T) {
 	}
 }
 
+func TestReviewPrintsURLForSubmittedObservation(t *testing.T) {
+	for _, host := range []string{"127.0.0.1", "0.0.0.0"} {
+		t.Run(host, func(t *testing.T) {
+			harness := newServiceHarness(t)
+			harness.requireRun(t, nil, "service", "config", "set", "host", host)
+			output := harness.requireRun(t, nil, "review", createWorktree(t, "review-url"), "--state", harness.state, "--port", "0", "--no-browser")
+			status := harness.status(t)
+			var catalog contextCatalog
+			requestJSON(t, status.BrowserURL+"/api/v2/contexts", &catalog)
+			if len(catalog.Contexts) != 1 || status.Settings.Host != host {
+				t.Fatalf("submission/listener: %#v %#v", catalog, status)
+			}
+			id := catalog.Contexts[0].ID
+			want := "http://localhost:" + strconv.Itoa(status.Settings.Port) + "/contexts/" + id
+			if !strings.Contains(string(output), "  url:                "+want+"\n") {
+				t.Fatalf("missing submitted observation URL %s: %s", want, output)
+			}
+			var diff currentDiff
+			requestJSON(t, "http://localhost:"+strconv.Itoa(status.Settings.Port)+"/api/v2/contexts/"+id+"/diffs/current?scope=all", &diff)
+			if len(diff.Files) != 1 || diff.Files[0].Path != "value.txt" {
+				t.Fatalf("URL selected wrong diff: %#v", diff)
+			}
+		})
+	}
+}
+
 func TestDaemonCaptureSurvivesRestart(t *testing.T) {
 	harness := newServiceHarness(t)
 	before := harness.start(t)

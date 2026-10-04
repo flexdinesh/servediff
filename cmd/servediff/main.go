@@ -261,7 +261,7 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 		connection = recovered
 	}
 	status := connection.Status()
-	url := status.BrowserURL + "/contexts/" + submitted.Context.ID
+	urls := browser.URLs(status.Settings.Host, status.Settings.Port, "/contexts/"+url.PathEscape(submitted.Context.ID))
 	if input.Ingestion != nil {
 		loaded := submissionInput(submitted, time.Since(started))
 		loaded.mode = "git"
@@ -270,11 +270,11 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 		}
 		loaded.directory = input.Ingestion.Metadata.Root
 		loaded.contextID, loaded.mcpURL, loaded.submitted = submitted.Context.ID, status.BrowserURL+"/mcp/contexts/"+submitted.Context.ID, true
-		writeStartup(stdout, loaded, url)
+		writeStartup(stdout, loaded, urls...)
 	} else {
-		writeSubmission(stdout, submitted, time.Since(started), url, status.BrowserURL+"/mcp/contexts/"+submitted.Context.ID)
+		writeSubmission(stdout, submitted, time.Since(started), urls[0], status.BrowserURL+"/mcp/contexts/"+submitted.Context.ID, urls[1:]...)
 	}
-	openBrowser(values, url, stderr)
+	openBrowser(values, urls[0], stderr)
 	return nil
 }
 

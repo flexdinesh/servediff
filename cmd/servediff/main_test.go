@@ -241,6 +241,21 @@ func TestSubmissionOutputExplainsDaemonLifetime(t *testing.T) {
 	}
 }
 
+func TestStartupPrintsEveryReviewURL(t *testing.T) {
+	var output bytes.Buffer
+	urls := []string{
+		"http://localhost:7981/contexts/observation",
+		"http://192.168.1.20:7981/contexts/observation",
+		"http://10.0.0.5:7981/contexts/observation",
+	}
+	writeStartup(&output, loadedInput{mode: "git", submitted: true}, urls...)
+	for _, url := range urls {
+		if !strings.Contains(output.String(), "  url:                "+url+"\n") {
+			t.Fatalf("missing review URL %q: %s", url, output.String())
+		}
+	}
+}
+
 func TestStoppedServiceStatusDoesNotStartService(t *testing.T) {
 	t.Setenv("SERVEDIFF_RUNTIME_DIR", t.TempDir())
 	var output bytes.Buffer

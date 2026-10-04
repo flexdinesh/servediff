@@ -46,6 +46,11 @@ server starts automatically when needed and stays running after the CLI exits.
 Bare `servediff` prints help. There is no watcher and opening the dashboard does
 not recollect Git data.
 
+`review` prints the observation's `/contexts/{id}` URL and opens it when a
+browser is available. SSH sessions and headless Linux sessions skip opening;
+`--no-browser` also disables it. Local URLs use `localhost` by default or the
+configured host IP. A `0.0.0.0` listener also prints each LAN IPv4 URL.
+
 Manage the local server explicitly:
 
 ```sh

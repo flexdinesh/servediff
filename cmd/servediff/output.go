@@ -53,7 +53,7 @@ func displayVersion() string {
 	return buildversion.Number()
 }
 
-func writeStartup(writer io.Writer, input loadedInput, url string) {
+func writeStartup(writer io.Writer, input loadedInput, urls ...string) {
 	color := terminalColors(writer)
 	files, additions, deletions, binaries := 0, 0, 0, 0
 	for _, file := range input.snapshot.Files {
@@ -69,7 +69,9 @@ func writeStartup(writer io.Writer, input loadedInput, url string) {
 		fmt.Fprintf(writer, "  %s  %s\n", color.paint(color.dim, "collected from:  "), input.directory)
 	}
 	fmt.Fprintf(writer, "  %s               %s\n", color.paint(color.dim, "mode:"), input.mode)
-	fmt.Fprintf(writer, "  %s                %s\n", color.paint(color.dim, "url:"), color.paint(color.green, url))
+	for _, url := range urls {
+		fmt.Fprintf(writer, "  %s                %s\n", color.paint(color.dim, "url:"), color.paint(color.green, url))
+	}
 	if input.captureID != "" {
 		fmt.Fprintf(writer, "  %s         %s\n", color.paint(color.dim, "capture ID:"), input.captureID)
 	}
@@ -98,10 +100,10 @@ func writeStartup(writer io.Writer, input loadedInput, url string) {
 	fmt.Fprintf(writer, "  %s\n", color.paint(color.dim, guidance))
 }
 
-func writeSubmission(writer io.Writer, submission contextservice.Submission, elapsed time.Duration, url, mcpURL string) {
+func writeSubmission(writer io.Writer, submission contextservice.Submission, elapsed time.Duration, url, mcpURL string, additionalURLs ...string) {
 	input := submissionInput(submission, elapsed)
 	input.contextID, input.mcpURL, input.submitted = submission.Context.ID, mcpURL, true
-	writeStartup(writer, input, url)
+	writeStartup(writer, input, append([]string{url}, additionalURLs...)...)
 }
 
 func writeServiceStatus(writer io.Writer, status controlapi.Status, asJSON bool) {
