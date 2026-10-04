@@ -93,7 +93,7 @@ func (handler *Handler) snapshot(request *http.Request, mode review.DiffMode, fr
 				snapshot.RepositoryID = handler.session.RepositoryID
 				if handler.session.VersionID != "" {
 					snapshot.VersionID = handler.session.VersionID
-				} else {
+				} else if snapshot.VersionID == "" {
 					snapshot.VersionID = reviewstore.VersionID(snapshot.ID, snapshot.Revision)
 				}
 			}
@@ -139,7 +139,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		handler.problem(response, err)
 		return
 	}
-	if handler.session.Source.Kind() == "stdin" && strings.HasPrefix(request.URL.Path, "/api/v1/") && request.URL.Path != "/api/v1/diffs/captures" && request.URL.Path != "/api/v1/metrics" {
+	if !handler.session.Stored && handler.session.Source.Kind() == "stdin" && strings.HasPrefix(request.URL.Path, "/api/v1/") && request.URL.Path != "/api/v1/diffs/captures" && request.URL.Path != "/api/v1/metrics" {
 		alive, err := handler.store.CaptureAlive(handler.session.User.ID, handler.session.ContextID, time.Now())
 		if err != nil {
 			handler.problem(response, err)
@@ -166,7 +166,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 }
 
 func (handler *Handler) checkRequest(request *http.Request) error {
-	if origin := request.Header.Get("Origin"); origin != "" && origin != "http://"+request.Host {
+	if origin := request.Header.Get("Origin"); origin != "" && origin != "http://"+request.Host && origin != "https://"+request.Host {
 		return diffsource.Error(403, "Cross-origin access denied")
 	}
 	if request.Header.Get("Sec-Fetch-Site") == "cross-site" {

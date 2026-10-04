@@ -1,0 +1,333 @@
+// Package collector produces Git-aware ingestion requests. It has no server
+// or database dependency; CLI and agent hooks use the same collection entrypoint.
+package collector
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"net/url"
+	"os"
+	"path"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/flexdinesh/servediff/internal/diffsource"
+	"github.com/flexdinesh/servediff/internal/ingestion"
+	"github.com/flexdinesh/servediff/internal/review"
+	"github.com/google/uuid"
+)
+
+const previewBudget = 16 << 20
+
+type Options struct {
+	SourceID         string
+	Hostname         string
+	RunID            string
+	Agent            string
+	Trigger          string
+	CollectorVersion string
+	SubmissionID     string
+}
+
+func Collect(ctx context.Context, directory string, options Options) (ingestion.Request, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	source, err := diffsource.OpenRepository(ctx, directory)
+	if err != nil {
+		return ingestion.Request{}, err
+	}
+	options, err = defaults(options)
+	if err != nil {
+		return ingestion.Request{}, err
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		request, err := collectRepository(ctx, source, options)
+		if err == nil || !errors.Is(err, errChanged) {
+			return request, err
+		}
+	}
+	return ingestion.Request{}, errChanged
+}
+
+var errChanged = errors.New("checkout changed during collection; retry when edits have stopped")
+
+func collectRepository(ctx context.Context, source diffsource.Source, options Options) (ingestion.Request, error) {
+	facts, err := diffsource.Metadata(ctx, source.Root())
+	if err != nil {
+		return ingestion.Request{}, err
+	}
+	snapshots := make([]review.RepositoryDiff, 0, len(source.Support().Scopes))
+	for _, mode := range source.Support().Scopes {
+		snapshot, err := source.Snapshot(ctx, mode)
+		if err != nil {
+			return ingestion.Request{}, err
+		}
+		if len(snapshots) > 0 && (snapshot.Branch != snapshots[0].Branch || !sameHead(snapshot.Head, snapshots[0].Head)) {
+			return ingestion.Request{}, errChanged
+		}
+		snapshots = append(snapshots, snapshot)
+	}
+	remaining := previewBudget
+	scopes := make([]ingestion.Scope, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		scope, err := collectScope(ctx, source, snapshot, &remaining)
+		if err != nil {
+			if isChanged(err) {
+				return ingestion.Request{}, errChanged
+			}
+			return ingestion.Request{}, err
+		}
+		scopes = append(scopes, scope)
+	}
+	for _, snapshot := range snapshots {
+		latest, err := source.Snapshot(ctx, snapshot.Mode)
+		if err != nil {
+			return ingestion.Request{}, err
+		}
+		if latest.Revision != snapshot.Revision {
+			return ingestion.Request{}, errChanged
+		}
+	}
+	latestFacts, err := diffsource.Metadata(ctx, source.Root())
+	if err != nil {
+		return ingestion.Request{}, err
+	}
+	if latestFacts != facts {
+		return ingestion.Request{}, errChanged
+	}
+	metadata := repositoryMetadata(source.Root(), facts, snapshots[0], options)
+	return request(metadata, scopes, options), nil
+}
+
+func collectScope(ctx context.Context, source diffsource.Source, snapshot review.RepositoryDiff, remaining *int) (ingestion.Scope, error) {
+	patches := make(map[string]review.FilePatch, len(snapshot.Files))
+	for _, file := range snapshot.Files {
+		if err := ctx.Err(); err != nil {
+			return ingestion.Scope{}, err
+		}
+		if *remaining == 0 {
+			patches[file.ID] = review.FilePatch{Message: diffsource.Message("Snapshot exceeds the 16 MiB aggregate preview limit.")}
+			continue
+		}
+		patch, err := source.Patch(ctx, snapshot.Mode, file, snapshot.Head)
+		if err != nil {
+			return ingestion.Scope{}, err
+		}
+		if source.Support().FileContents && patch.Contents == nil && !file.Binary && file.Status != "U" && !nonTextPreview(patch) {
+			contents, err := source.Contents(ctx, snapshot.Mode, file, snapshot.Head)
+			if err == nil {
+				patch.Contents = &contents
+				patch.Message = nil
+			} else if diffsource.PreviewUnavailable(err) {
+				if err := ctx.Err(); err != nil {
+					return ingestion.Scope{}, err
+				}
+				if patch.Message == nil {
+					patch.Message = diffsource.Message("Full contents unavailable: file is binary or exceeds the preview limit.")
+				}
+			} else {
+				return ingestion.Scope{}, err
+			}
+		} else if !source.Support().FileContents && patch.Message == nil {
+			patch.Message = diffsource.Message("Full contents unavailable for piped diffs.")
+		}
+		applyBudget(&patch, remaining)
+		patches[file.ID] = patch
+	}
+	return ingestion.Scope{Snapshot: snapshot, Patches: patches}, nil
+}
+
+func applyBudget(patch *review.FilePatch, remaining *int) {
+	size := len(patch.Patch)
+	if patch.Contents != nil {
+		size += len(patch.Contents.Before) + len(patch.Contents.After)
+	}
+	if size > *remaining {
+		patch.Contents = nil
+		patch.Message = diffsource.Message("Full contents unavailable: snapshot exceeds the 16 MiB aggregate preview limit.")
+		size = len(patch.Patch)
+		if size > *remaining {
+			patch.Patch = ""
+			patch.Message = diffsource.Message("Snapshot exceeds the 16 MiB aggregate preview limit.")
+			size = 0
+		}
+	}
+	*remaining -= size
+}
+
+func nonTextPreview(patch review.FilePatch) bool {
+	if patch.Message == nil {
+		return false
+	}
+	return strings.HasPrefix(*patch.Message, "Submodule or directory") || strings.HasPrefix(*patch.Message, "Special file") || strings.HasPrefix(*patch.Message, "File exceeds")
+}
+
+// CollectPatch attaches current Git provenance when available. Piped content
+// is immutable input; it never substitutes current checkout contents for it.
+func CollectPatch(ctx context.Context, raw, directory string, options Options) (ingestion.Request, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return ingestion.Request{}, err
+	}
+	source, err := diffsource.OpenPatch(raw)
+	if err != nil {
+		return ingestion.Request{}, err
+	}
+	if options.Trigger == "" {
+		options.Trigger = "pipe"
+	}
+	options, err = defaults(options)
+	if err != nil {
+		return ingestion.Request{}, err
+	}
+	snapshot, err := source.Snapshot(ctx, review.DiffAll)
+	if err != nil {
+		return ingestion.Request{}, err
+	}
+	metadata := baseMetadata(options)
+	if directory != "" {
+		repository, err := diffsource.OpenRepository(ctx, directory)
+		if err == nil {
+			facts, err := diffsource.Metadata(ctx, repository.Root())
+			if err != nil {
+				return ingestion.Request{}, err
+			}
+			state, err := repository.Snapshot(ctx, review.DiffAll)
+			if err != nil {
+				return ingestion.Request{}, err
+			}
+			metadata = repositoryMetadata(repository.Root(), facts, state, options)
+			snapshot.Root, snapshot.Name, snapshot.Branch, snapshot.Head = state.Root, state.Name, state.Branch, state.Head
+		} else if !errors.Is(err, diffsource.ErrNotRepository) {
+			return ingestion.Request{}, err
+		}
+	}
+	remaining := previewBudget
+	scope, err := collectScope(ctx, source, snapshot, &remaining)
+	if err != nil {
+		return ingestion.Request{}, err
+	}
+	return request(metadata, []ingestion.Scope{scope}, options), nil
+}
+
+func request(metadata ingestion.Metadata, scopes []ingestion.Scope, options Options) ingestion.Request {
+	return ingestion.Request{ProtocolVersion: ingestion.ProtocolVersion, SubmissionID: options.SubmissionID, Metadata: metadata, Scopes: scopes}
+}
+
+func defaults(options Options) (Options, error) {
+	if options.SourceID == "" {
+		id, err := SourceID()
+		if err != nil {
+			return Options{}, err
+		}
+		options.SourceID = id
+	}
+	if options.Hostname == "" {
+		hostname, err := os.Hostname()
+		if err != nil {
+			return Options{}, err
+		}
+		options.Hostname = hostname
+	}
+	if options.SubmissionID == "" {
+		options.SubmissionID = uuid.NewString()
+	}
+	if options.Trigger == "" {
+		options.Trigger = "manual"
+	}
+	return options, nil
+}
+
+func baseMetadata(options Options) ingestion.Metadata {
+	return ingestion.Metadata{SourceID: options.SourceID, Hostname: options.Hostname, RunID: options.RunID, Agent: options.Agent, Trigger: options.Trigger, CollectorVersion: options.CollectorVersion, CollectedAt: time.Now().UnixMilli()}
+}
+
+func repositoryMetadata(root string, facts diffsource.RepositoryMetadata, snapshot review.RepositoryDiff, options Options) ingestion.Metadata {
+	metadata := baseMetadata(options)
+	metadata.Root, metadata.WorktreeName = root, filepath.Base(root)
+	metadata.Branch, metadata.Head = snapshot.Branch, snapshot.Head
+	metadata.RemoteURL = facts.RemoteURL
+	metadata.RepositoryName = filepath.Base(filepath.Dir(facts.CommonDir))
+	metadata.RepositoryKey = hash("repository", options.SourceID, facts.CommonDir)
+	if facts.RemoteURL != "" {
+		metadata.RepositoryKey = hash("remote", facts.RemoteURL)
+		remotePath := facts.RemoteURL
+		if parsed, err := url.Parse(facts.RemoteURL); err == nil && parsed.Scheme != "" {
+			remotePath = parsed.Path
+		} else if _, suffix, ok := strings.Cut(facts.RemoteURL, ":"); ok {
+			remotePath = suffix
+		}
+		if name := strings.TrimSuffix(path.Base(strings.TrimRight(remotePath, "/")), ".git"); name != "" && name != "." && name != "/" {
+			metadata.RepositoryName = name
+		}
+	}
+	metadata.CheckoutKey = hash("checkout", options.SourceID, facts.GitDir)
+	return metadata
+}
+
+func hash(parts ...string) string {
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	return hex.EncodeToString(sum[:])
+}
+
+func sameHead(left, right *string) bool {
+	return left == nil && right == nil || left != nil && right != nil && *left == *right
+}
+
+func isChanged(err error) bool {
+	var request *diffsource.RequestError
+	return errors.Is(err, os.ErrNotExist) || errors.As(err, &request) && request.Status == 409
+}
+
+// SourceID identifies this installation independently of its hostname/path.
+// Ephemeral environments can provide SERVEDIFF_SOURCE_ID explicitly.
+func SourceID() (string, error) {
+	if id := strings.TrimSpace(os.Getenv("SERVEDIFF_SOURCE_ID")); id != "" {
+		return id, nil
+	}
+	config, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	directory := filepath.Join(config, "servediff")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return "", err
+	}
+	filename := filepath.Join(directory, "source-id")
+	if raw, err := os.ReadFile(filename); err == nil {
+		if id := strings.TrimSpace(string(raw)); id != "" {
+			return id, nil
+		}
+		return "", fmt.Errorf("source identity file is empty: %s", filename)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	id := uuid.NewString()
+	// Publish a complete file atomically without replacing another process's ID.
+	file, err := os.CreateTemp(directory, ".source-id-")
+	if err != nil {
+		return "", err
+	}
+	defer os.Remove(file.Name())
+	_, writeErr := file.WriteString(id + "\n")
+	closeErr := file.Close()
+	if err := errors.Join(writeErr, closeErr); err != nil {
+		return "", err
+	}
+	if err := os.Link(file.Name(), filename); err != nil && !errors.Is(err, os.ErrExist) {
+		return "", err
+	}
+	raw, err := os.ReadFile(filename)
+	if err != nil {
+		return "", err
+	}
+	if id := strings.TrimSpace(string(raw)); id != "" {
+		return id, nil
+	}
+	return "", fmt.Errorf("source identity file is empty: %s", filename)
+}

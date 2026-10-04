@@ -15,12 +15,14 @@ import (
 	"time"
 
 	"github.com/flexdinesh/servediff/internal/diffsource"
+	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/review"
 	"github.com/flexdinesh/servediff/internal/reviewstore"
 	"github.com/flexdinesh/servediff/internal/session"
 )
 
 type Context struct {
+	Observation      *ingestion.Metadata  `json:"observation,omitempty"`
 	ID               string               `json:"id"`
 	Kind             string               `json:"kind"`
 	Name             string               `json:"name"`
@@ -50,23 +52,19 @@ type Submission struct {
 }
 
 type Service struct {
-	store           *reviewstore.Store
-	user            reviewstore.User
-	mu              sync.Mutex
-	availability    map[string]string
-	catalogMu       sync.Mutex
-	catalogUpdated  time.Time
-	metadata        map[string]worktreeMetadata
-	sources         map[string]*cachedSource
-	loading         map[string]*sourceLoad
-	generation      map[string]uint64
-	identityChanged map[string]bool
-	sourceBytes     int
-	parseSlots      chan struct{}
-	background      context.Context
-	cancel          context.CancelFunc
-	loaders         sync.WaitGroup
-	closing         bool
+	events      events
+	store       *reviewstore.Store
+	user        reviewstore.User
+	mu          sync.Mutex
+	sources     map[string]*cachedSource
+	loading     map[string]*sourceLoad
+	generation  map[string]uint64
+	sourceBytes int
+	parseSlots  chan struct{}
+	background  context.Context
+	cancel      context.CancelFunc
+	loaders     sync.WaitGroup
+	closing     bool
 }
 
 func New(store *reviewstore.Store, user reviewstore.User) *Service {
@@ -75,10 +73,9 @@ func New(store *reviewstore.Store, user reviewstore.User) *Service {
 
 func NewWithContext(ctx context.Context, store *reviewstore.Store, user reviewstore.User) *Service {
 	background, cancel := context.WithCancel(ctx)
-	return &Service{store: store, user: user, availability: make(map[string]string),
-		metadata: make(map[string]worktreeMetadata),
-		sources:  make(map[string]*cachedSource), loading: make(map[string]*sourceLoad),
-		generation: make(map[string]uint64), identityChanged: make(map[string]bool), parseSlots: make(chan struct{}, 2),
+	return &Service{store: store, user: user,
+		sources: make(map[string]*cachedSource), loading: make(map[string]*sourceLoad),
+		generation: make(map[string]uint64), parseSlots: make(chan struct{}, 2),
 		background: background, cancel: cancel}
 }
 
@@ -98,33 +95,7 @@ func (service *Service) Register(ctx context.Context, requestID, path string) (S
 	if err := validateRequest(ctx, requestID); err != nil {
 		return Submission{}, err
 	}
-	source, err := diffsource.OpenRepository(ctx, path)
-	if err != nil {
-		return Submission{}, diffsource.Error(400, "Could not register worktree: %v", err)
-	}
-	commonDir, worktreeKey, err := diffsource.RepositoryIdentity(ctx, source.Root())
-	if err != nil {
-		return Submission{}, diffsource.Error(400, "Could not identify worktree: %v", err)
-	}
-	snapshot, err := source.Snapshot(ctx, review.DiffAll)
-	if err != nil {
-		return Submission{}, diffsource.Error(503, "source_unavailable: %v", err)
-	}
-	binding, err := service.store.RegisterGitSubmission(service.user.ID, requestID, payloadHash("worktree", source.Root(), commonDir, worktreeKey), source.Root(), commonDir, worktreeKey)
-	if err != nil {
-		return Submission{}, requestError(err)
-	}
-	service.invalidateSource(binding.ContextID)
-	service.cacheSource(binding.ContextID, newWorktreeCache(source, commonDir, worktreeKey), 0)
-	service.setAvailability(binding.ContextID, "available")
-	if err := service.refreshCatalog(ctx, true); err != nil {
-		return Submission{}, err
-	}
-	item, err := service.Get(ctx, binding.ContextID)
-	if err != nil {
-		return Submission{}, err
-	}
-	return Submission{Context: item, Snapshot: bindSnapshot(snapshot, binding)}, nil
+	return Submission{}, diffsource.Error(410, "Path registration removed; collect and ingest using servediff review")
 }
 
 func (service *Service) Capture(ctx context.Context, requestID, raw, submittedFrom string) (Submission, error) {
@@ -176,7 +147,7 @@ func (service *Service) OpenCapture(ctx context.Context, id string) (Submission,
 	if err != nil {
 		return Submission{}, err
 	}
-	if item.Kind != "capture" {
+	if item.Kind != "capture" && item.Kind != "observation" {
 		return Submission{}, diffsource.Error(404, "Capture not found")
 	}
 	resolved, err := service.Resolve(ctx, id)
@@ -207,11 +178,23 @@ func (service *Service) Resolve(ctx context.Context, id string) (session.Session
 	if err != nil {
 		return session.Session{}, requestError(err)
 	}
-	source, err := service.sourceFor(ctx, item)
+	var source diffsource.Source
+	if item.Kind == "observation" {
+		snapshot, readErr := service.store.ObservationSnapshot(service.user.ID, id, review.DiffAll)
+		if readErr != nil {
+			return session.Session{}, requestError(readErr)
+		}
+		source = &storedSource{store: service.store, ownerID: service.user.ID, id: id, metadata: *item.Metadata, binding: binding, kind: snapshot.Source}
+	} else if item.Kind == "worktree" {
+		source = &unavailableSource{root: valueOrEmpty(item.Root)}
+	} else {
+		source, err = service.sourceFor(ctx, item)
+	}
 	if err != nil {
 		return session.Session{}, err
 	}
 	resolved := session.Resolve(source, session.Policies{})
+	resolved.Stored = item.Kind == "observation"
 	resolved.User = session.User{ID: service.user.ID, Name: service.user.Name}
 	resolved.ContextID = binding.ContextID
 	resolved.LocationID = binding.LocationID
@@ -229,13 +212,6 @@ func (service *Service) Get(ctx context.Context, id string) (Context, error) {
 	if err != nil {
 		return Context{}, requestError(err)
 	}
-	if err := service.refreshCatalog(ctx, false); err != nil {
-		return Context{}, err
-	}
-	item, err = service.store.Context(service.user.ID, id, time.Now())
-	if err != nil {
-		return Context{}, requestError(err)
-	}
 	return service.present(item), nil
 }
 
@@ -245,6 +221,10 @@ type cursorValue struct {
 }
 
 func (service *Service) List(ctx context.Context, limit int, cursor string) (Page, error) {
+	return service.ListFiltered(ctx, limit, cursor, ingestion.Filter{})
+}
+
+func (service *Service) ListFiltered(ctx context.Context, limit int, cursor string, filter ingestion.Filter) (Page, error) {
 	if err := ctx.Err(); err != nil {
 		return Page{}, err
 	}
@@ -261,10 +241,13 @@ func (service *Service) List(ctx context.Context, limit int, cursor string) (Pag
 			return Page{}, diffsource.Error(400, "Invalid context cursor")
 		}
 	}
-	if err := service.refreshCatalog(ctx, false); err != nil {
-		return Page{}, err
+	var items []reviewstore.ContextInfo
+	var err error
+	if filter != (ingestion.Filter{}) {
+		items, err = service.store.ObservationContexts(service.user.ID, limit+1, before.Time, before.ID, filter)
+	} else {
+		items, err = service.store.Contexts(service.user.ID, limit+1, before.Time, before.ID, time.Now())
 	}
-	items, err := service.store.Contexts(service.user.ID, limit+1, before.Time, before.ID, time.Now())
 	if err != nil {
 		return Page{}, err
 	}
@@ -293,6 +276,23 @@ func (service *Service) Count(ctx context.Context) (int, int, error) {
 }
 
 func (service *Service) present(item reviewstore.ContextInfo) Context {
+	if item.Kind == "observation" && item.Metadata != nil {
+		m := item.Metadata
+		binding, err := service.store.ContextBinding(service.user.ID, item.ID, time.Now())
+		scopes := []review.DiffMode{}
+		if err == nil {
+			for _, mode := range []review.DiffMode{review.DiffAll, review.DiffStaged, review.DiffUnstaged} {
+				if _, ok := binding.DiffIDs[mode]; ok {
+					scopes = append(scopes, mode)
+				}
+			}
+		}
+		name := m.RepositoryName
+		if name == "" {
+			name = "Piped diff"
+		}
+		return Context{ID: item.ID, Kind: "observation", Name: name, Root: &m.Root, RepositoryID: item.RepositoryID, CreatedAt: item.CreatedAt, LastSubmittedAt: item.LastSubmittedAt, LastChangedAt: m.CollectedAt, ChangedFileCount: item.ChangedFileCount, SubmittedFrom: item.SubmittedFrom, Observation: m, Branch: &m.Branch, WorktreeName: &m.WorktreeName, Availability: "available", Capabilities: storedCapabilities(scopes, observationContents(service.store, service.user.ID, item.ID))}
+	}
 	var branch, worktreeName *string
 	lastChangedAt := item.LastSubmittedAt
 	changedFileCount := item.ChangedFileCount
@@ -301,32 +301,15 @@ func (service *Service) present(item reviewstore.ContextInfo) Context {
 	if item.Kind == "worktree" {
 		lastChangedAt = 0
 		changedFileCount = nil
-		availability = "unchecked"
+		availability = "unavailable"
 		if item.Root != nil {
 			name = filepath.Base(*item.Root)
 		}
-		service.mu.Lock()
-		if metadata, ok := service.metadata[item.ID]; ok {
-			name = metadata.name
-			branch = &metadata.branch
-			worktreeName = metadata.worktreeName
-			lastChangedAt = metadata.lastChangedAt
-			changedFileCount = metadata.changedFileCount
-		}
-		if known, ok := service.availability[item.ID]; ok {
-			availability = known
-		}
-		service.mu.Unlock()
+
 	}
 	return Context{ID: item.ID, Kind: item.Kind, Name: name, Branch: branch, WorktreeName: worktreeName, Root: item.Root, LocationID: item.LocationID,
 		RepositoryID: item.RepositoryID, CreatedAt: item.CreatedAt, LastSubmittedAt: item.LastSubmittedAt, LastChangedAt: lastChangedAt, ChangedFileCount: changedFileCount,
 		ExpiresAt: item.ExpiresAt, SubmittedFrom: item.SubmittedFrom, Capabilities: capabilities(item.Kind), Availability: availability}
-}
-
-func (service *Service) setAvailability(id, state string) {
-	service.mu.Lock()
-	service.availability[id] = state
-	service.mu.Unlock()
 }
 
 func capabilities(kind string) session.Capabilities {
@@ -356,7 +339,9 @@ func bindSnapshot(snapshot review.RepositoryDiff, binding reviewstore.Binding) r
 	snapshot.ID = binding.DiffIDs[snapshot.Mode]
 	snapshot.LocationID = binding.LocationID
 	snapshot.RepositoryID = binding.RepositoryID
-	snapshot.VersionID = binding.VersionID
+	if binding.VersionID != "" {
+		snapshot.VersionID = binding.VersionID
+	}
 	if snapshot.VersionID == "" {
 		snapshot.VersionID = reviewstore.VersionID(snapshot.ID, snapshot.Revision)
 	}
@@ -401,7 +386,7 @@ type unavailableSource struct{ root string }
 func (source *unavailableSource) Root() string { return source.root }
 func (source *unavailableSource) Kind() string { return "local" }
 func worktreeSupport() diffsource.Support {
-	return diffsource.Support{Scopes: []review.DiffMode{review.DiffAll, review.DiffStaged, review.DiffUnstaged}, Refresh: true, StagingMetadata: true, FileContents: true}
+	return diffsource.Support{Scopes: []review.DiffMode{review.DiffAll, review.DiffStaged, review.DiffUnstaged}, Refresh: false, StagingMetadata: true, FileContents: false}
 }
 func (source *unavailableSource) Support() diffsource.Support { return worktreeSupport() }
 func (source *unavailableSource) Snapshot(context.Context, review.DiffMode) (review.RepositoryDiff, error) {

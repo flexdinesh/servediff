@@ -7,11 +7,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
-	"slices"
 	"testing"
-	"time"
 
+	"github.com/flexdinesh/servediff/internal/collector"
 	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/review"
 	"github.com/flexdinesh/servediff/internal/reviewstore"
@@ -113,61 +111,6 @@ func TestInvalidCaptureDoesNotRegister(t *testing.T) {
 	assertStatus(t, err, 400)
 }
 
-func TestWorktreeRegistrationAndUnavailableIsolation(t *testing.T) {
-	service := testService(t)
-	ctx := context.Background()
-	root := testRepo(t)
-	first, err := service.Register(ctx, "one", root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	subdir := filepath.Join(root, "sub")
-	if err := os.Mkdir(subdir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	second, err := service.Register(ctx, "two", subdir)
-	if err != nil || first.Context.ID != second.Context.ID || first.Snapshot.ID != second.Snapshot.ID {
-		t.Fatalf("same worktree identity: %#v, %v", second, err)
-	}
-	item := first.Context
-	if item.Kind != "worktree" || item.Root == nil || item.LocationID == nil || item.RepositoryID == nil ||
-		!item.Capabilities.Diff.Refresh.Enabled() || !item.Capabilities.Diff.Scopes.Allows(review.DiffStaged) {
-		t.Fatalf("worktree metadata: %#v", item)
-	}
-	otherRoot := testRepo(t)
-	other, err := service.Register(ctx, "three", otherRoot)
-	if err != nil || other.Context.ID == item.ID || other.Snapshot.ID == first.Snapshot.ID {
-		t.Fatalf("different worktree identity: %#v, %v", other, err)
-	}
-	if err := os.RemoveAll(root); err != nil {
-		t.Fatal(err)
-	}
-	resolved, err := service.Resolve(ctx, item.ID)
-	if err != nil || resolved.ContextID != item.ID {
-		t.Fatalf("missing worktree lost binding: %#v, %v", resolved, err)
-	}
-	_, err = resolved.Source.Snapshot(ctx, review.DiffAll)
-	assertStatus(t, err, 503)
-	unavailable, err := service.Get(ctx, item.ID)
-	if err != nil || unavailable.Availability != "unavailable" {
-		t.Fatalf("unavailable metadata: %#v, %v", unavailable, err)
-	}
-	healthy, err := service.Resolve(ctx, other.Context.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := healthy.Source.Snapshot(ctx, review.DiffAll); err != nil {
-		t.Fatalf("one unavailable source broke another: %v", err)
-	}
-	restarted := New(service.store, service.user)
-	unchecked, err := restarted.Get(ctx, item.ID)
-	if err != nil || unchecked.Availability != "unchecked" {
-		t.Fatalf("reconstructed catalog: %#v, %v", unchecked, err)
-	}
-	_, err = service.OpenCapture(ctx, item.ID)
-	assertStatus(t, err, 404)
-}
-
 func TestCatalogOwnershipAndCancelledSubmission(t *testing.T) {
 	service := testService(t)
 	ctx := context.Background()
@@ -193,80 +136,6 @@ func TestCatalogOwnershipAndCancelledSubmission(t *testing.T) {
 	_, captures, err := service.Count(ctx)
 	if err != nil || captures != 1 {
 		t.Fatalf("cancelled capture persisted: %d, %v", captures, err)
-	}
-}
-
-func TestResolveReusesSourcesWhileLiveDiffsStillChange(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Git invocation counter uses a Unix executable shim")
-	}
-	service := testService(t)
-	ctx := context.Background()
-	root := testRepo(t)
-	realGit, err := exec.LookPath("git")
-	if err != nil {
-		t.Fatal(err)
-	}
-	shimDir := t.TempDir()
-	countPath := filepath.Join(shimDir, "calls")
-	shim := []byte("#!/bin/sh\nprintf . >> \"$SERVEDIFF_TEST_GIT_COUNT\"\nexec \"$SERVEDIFF_TEST_REAL_GIT\" \"$@\"\n")
-	if err := os.WriteFile(filepath.Join(shimDir, "git"), shim, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("SERVEDIFF_TEST_REAL_GIT", realGit)
-	t.Setenv("SERVEDIFF_TEST_GIT_COUNT", countPath)
-	t.Setenv("PATH", shimDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	submitted, err := service.Register(ctx, "request", root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	before, err := os.ReadFile(countPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for range 8 {
-		if _, err := service.Resolve(ctx, submitted.Context.ID); err != nil {
-			t.Fatal(err)
-		}
-	}
-	after, err := os.ReadFile(countPath)
-	if err != nil || len(after) != len(before) {
-		t.Fatalf("cached Resolve reran Git: %d -> %d, %v", len(before), len(after), err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "file"), []byte("updated\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	resolved, err := service.Resolve(ctx, submitted.Context.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	current, err := resolved.Source.Snapshot(ctx, review.DiffAll)
-	if err != nil || current.Revision == submitted.Snapshot.Revision {
-		t.Fatalf("source cache froze live diff: %#v, %v", current, err)
-	}
-	// A different Git directory at the same path must require registration.
-	if err := os.Rename(filepath.Join(root, ".git"), filepath.Join(root, ".old-git")); err != nil {
-		t.Fatal(err)
-	}
-	command := exec.Command(realGit, "init", "--quiet", root)
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("replace Git directory: %s, %v", output, err)
-	}
-	unavailable, err := service.Resolve(ctx, submitted.Context.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = unavailable.Source.Snapshot(ctx, review.DiffAll)
-	assertStatus(t, err, 503)
-	if _, err := service.Register(ctx, "register-replacement", root); err != nil {
-		t.Fatal(err)
-	}
-	restored, err := service.Resolve(ctx, submitted.Context.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := restored.Source.Snapshot(ctx, review.DiffAll); err != nil {
-		t.Fatalf("explicit registration did not restore source: %v", err)
 	}
 }
 
@@ -306,156 +175,142 @@ func TestCaptureCacheReusesParseAndEvictionPreservesVersion(t *testing.T) {
 	}
 }
 
-// The shim blocks Git before it has spawned children, so cancellation must
-// terminate the shared subprocess rather than waiting for an unrelated child.
-func TestBlockingGitShimHelper(t *testing.T) {
-	if os.Getenv("SERVEDIFF_TEST_BLOCKING_GIT") != "1" {
-		return
-	}
-	started := os.Getenv("SERVEDIFF_TEST_GIT_STARTED")
-	released := os.Getenv("SERVEDIFF_TEST_GIT_RELEASED")
-	if err := os.WriteFile(started, []byte("started"), 0o600); err != nil {
-		os.Exit(2)
-	}
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if _, err := os.Stat(released); err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			os.Exit(3)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	separator := slices.Index(os.Args, "--")
-	if separator < 0 {
-		os.Exit(4)
-	}
-	command := exec.Command(os.Getenv("SERVEDIFF_TEST_REAL_GIT"), os.Args[separator+1:]...)
-	command.Stdout = os.Stdout
-	command.Stderr = os.Stderr
-	command.Stdin = os.Stdin
-	if err := command.Run(); err != nil {
-		var exitError *exec.ExitError
-		if errors.As(err, &exitError) {
-			os.Exit(exitError.ExitCode())
-		}
-		os.Exit(5)
-	}
-	os.Exit(0)
-}
-
-func installBlockingGit(t *testing.T) (started, released string) {
-	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("Git shim uses Unix executable dispatch")
-	}
-	realGit, err := exec.LookPath("git")
-	if err != nil {
-		t.Fatal(err)
-	}
-	executable, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	directory := t.TempDir()
-	started, released = filepath.Join(directory, "started"), filepath.Join(directory, "released")
-	shim := []byte("#!/bin/sh\nexec \"$SERVEDIFF_TEST_EXECUTABLE\" -test.run=TestBlockingGitShimHelper -- \"$@\"\n")
-	if err := os.WriteFile(filepath.Join(directory, "git"), shim, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("SERVEDIFF_TEST_BLOCKING_GIT", "1")
-	t.Setenv("SERVEDIFF_TEST_REAL_GIT", realGit)
-	t.Setenv("SERVEDIFF_TEST_EXECUTABLE", executable)
-	t.Setenv("SERVEDIFF_TEST_GIT_STARTED", started)
-	t.Setenv("SERVEDIFF_TEST_GIT_RELEASED", released)
-	t.Setenv("PATH", directory+string(os.PathListSeparator)+os.Getenv("PATH"))
-	return started, released
-}
-
-func awaitGitStart(t *testing.T, path string) {
-	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for {
-		if _, err := os.Stat(path); err == nil {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("shared Git load did not start")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-}
-
-func TestCloseCancelsAndDrainsSourceLoading(t *testing.T) {
+func TestPathRegistrationRemoved(t *testing.T) {
 	service := testService(t)
-	ctx := context.Background()
-	submitted, err := service.Register(ctx, "register", testRepo(t))
+	_, err := service.Register(t.Context(), "request", "/does-not-exist")
+	assertStatus(t, err, 410)
+	page, err := service.List(t.Context(), 100, "")
+	if err != nil || len(page.Contexts) != 0 {
+		t.Fatalf("removed registration persisted: %#v, %v", page, err)
+	}
+}
+
+func TestObservationStoredOnlyAfterCheckoutChangesAndRemoval(t *testing.T) {
+	service := testService(t)
+	root := testRepo(t)
+	collected, err := collector.Collect(t.Context(), root, collector.Options{SourceID: "source", SubmissionID: "request"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	service.invalidateSource(submitted.Context.ID)
-	started, _ := installBlockingGit(t)
-	result := make(chan error, 1)
-	go func() { _, err := service.Resolve(ctx, submitted.Context.ID); result <- err }()
-	awaitGitStart(t, started)
-	began := time.Now()
+	submitted, err := service.Ingest(t.Context(), collected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if submitted.Context.Kind != "observation" || submitted.Context.Observation == nil || submitted.Context.Capabilities.Diff.Refresh.Enabled() || !submitted.Context.Capabilities.Diff.Scopes.Allows(review.DiffStaged) {
+		t.Fatalf("observation contract: %#v", submitted.Context)
+	}
+	retry, err := service.Ingest(t.Context(), collected)
+	if err != nil || retry.Context.ID != submitted.Context.ID {
+		t.Fatalf("retry: %#v, %v", retry, err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "file"), []byte("changed after collection\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	catalogGit(t, root, "symbolic-ref", "HEAD", "refs/heads/other-branch")
+	t.Setenv("PATH", t.TempDir()) // Queries must work without a Git executable.
+	assertStored := func(service *Service) {
+		t.Helper()
+		active, err := service.Resolve(t.Context(), submitted.Context.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !active.Stored || active.Capabilities.Diff.Refresh.Enabled() {
+			t.Fatalf("stored session: %#v", active)
+		}
+		snapshot, err := active.Source.Snapshot(t.Context(), review.DiffAll)
+		if err != nil || snapshot.Revision != submitted.Snapshot.Revision || snapshot.Branch != submitted.Snapshot.Branch {
+			t.Fatalf("snapshot changed without ingestion: %#v, %v", snapshot, err)
+		}
+		preview, err := active.Source.Patch(t.Context(), review.DiffAll, snapshot.Files[0], nil)
+		if err != nil || preview.Contents == nil || preview.Contents.After != "new\n" {
+			t.Fatalf("stored preview: %#v, %v", preview, err)
+		}
+		item, err := service.Get(t.Context(), submitted.Context.ID)
+		if err != nil || item.Availability != "available" || item.LastChangedAt != collected.Metadata.CollectedAt {
+			t.Fatalf("stored metadata: %#v, %v", item, err)
+		}
+	}
+	assertStored(service)
+	if err := os.RemoveAll(root); err != nil {
+		t.Fatal(err)
+	}
+	assertStored(service)
+	restarted := New(service.store, service.user)
+	t.Cleanup(func() { _ = restarted.Close() })
+	assertStored(restarted)
+	collected.Metadata.Agent = "conflict"
+	_, err = service.Ingest(t.Context(), collected)
+	assertStatus(t, err, 409)
+}
+
+func TestLegacyWorktreeDoesNotReadFilesystem(t *testing.T) {
+	service := testService(t)
+	root := testRepo(t)
+	binding, err := service.store.RegisterGit(service.user.ID, root, filepath.Join(root, ".git"), filepath.Join(root, ".git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", t.TempDir())
+	item, err := service.Get(t.Context(), binding.ContextID)
+	if err != nil || item.Availability != "unavailable" || item.Capabilities.Diff.Refresh.Enabled() {
+		t.Fatalf("legacy catalog: %#v, %v", item, err)
+	}
+	active, err := service.Resolve(t.Context(), binding.ContextID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = active.Source.Snapshot(t.Context(), review.DiffAll)
+	assertStatus(t, err, 503)
+}
+
+func TestClosedServiceRejectsStoredSourceResolution(t *testing.T) {
+	service := testService(t)
+	input, err := collector.CollectPatch(t.Context(), testPatch, "", collector.Options{SourceID: "source", SubmissionID: "request"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	submitted, err := service.Ingest(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := service.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if time.Since(began) > time.Second {
-		t.Fatal("Close waited for blocked Git instead of cancelling it")
-	}
-	select {
-	case err := <-result:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("pending load result: %v", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("Close left a caller waiting for source loading")
-	}
-	if _, err := service.Resolve(ctx, submitted.Context.ID); !errors.Is(err, context.Canceled) {
-		t.Fatalf("closed service accepted new load: %v", err)
+	_, err = service.Resolve(t.Context(), submitted.Context.ID)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("closed service resolved source: %v", err)
 	}
 }
 
-func TestCallerCancellationDoesNotCancelSharedSourceLoading(t *testing.T) {
+func TestObservationOwnershipAndCancelledIngestion(t *testing.T) {
 	service := testService(t)
-	ctx := context.Background()
-	submitted, err := service.Register(ctx, "register", testRepo(t))
+	input, err := collector.CollectPatch(t.Context(), testPatch, "", collector.Options{SourceID: "source", SubmissionID: "request"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	service.invalidateSource(submitted.Context.ID)
-	started, released := installBlockingGit(t)
-	caller, cancel := context.WithCancel(ctx)
-	first := make(chan error, 1)
-	go func() { _, err := service.Resolve(caller, submitted.Context.ID); first <- err }()
-	awaitGitStart(t, started)
-	second := make(chan error, 1)
-	go func() { _, err := service.Resolve(ctx, submitted.Context.ID); second <- err }()
-	cancel()
-	select {
-	case err := <-first:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("cancelled caller: %v", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("cancelled caller still waiting")
-	}
-	if err := os.WriteFile(released, []byte("continue"), 0o600); err != nil {
+	submitted, err := service.Ingest(t.Context(), input)
+	if err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case err := <-second:
-		if err != nil {
-			t.Fatalf("one cancellation affected another caller: %v", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("shared load did not complete")
+	otherUser, err := service.store.User("other-observation-user", "other")
+	if err != nil {
+		t.Fatal(err)
 	}
-	available, err := service.Get(ctx, submitted.Context.ID)
-	if err != nil || available.Availability != "available" {
-		t.Fatalf("cancelled load poisoned availability: %#v, %v", available, err)
+	other := New(service.store, otherUser)
+	t.Cleanup(func() { _ = other.Close() })
+	_, err = other.Get(t.Context(), submitted.Context.ID)
+	assertStatus(t, err, 404)
+	_, err = other.Resolve(t.Context(), submitted.Context.ID)
+	assertStatus(t, err, 404)
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+	input.SubmissionID = "cancelled"
+	_, err = service.Ingest(cancelled, input)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled ingestion accepted: %v", err)
+	}
+	page, err := service.List(t.Context(), 100, "")
+	if err != nil || len(page.Contexts) != 1 {
+		t.Fatalf("cancelled ingestion persisted: %#v, %v", page, err)
 	}
 }

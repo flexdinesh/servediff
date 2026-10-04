@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: servediff API
   version: 1.0.0
-  description: Local diff review API.
+  description: Push-only diff ingestion and review API, shared by local and remote servers.
 servers:
   - url: /
 paths:
@@ -375,10 +375,71 @@ paths:
           description: Review mark deleted.
         default:
           $ref: "#/components/responses/Problem"
+  /api/v2/ingestions:
+    post:
+      operationId: ingestSnapshot
+      description: Commit an immutable Git-aware observation. Retrying the same submission ID and payload returns its original receipt; independent submissions remain distinct.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IngestionRequest"
+      responses:
+        "200":
+          description: Snapshot committed or an identical submission replayed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestionReceipt"
+        default:
+          $ref: "#/components/responses/Problem"
+  /api/v2/events:
+    get:
+      operationId: watchIngestions
+      description: Server-sent ingestion notifications. Event data contains contextId; query the catalog for durable state after reconnecting.
+      responses:
+        "200":
+          description: Server-sent events named ingestion, with JSON data containing contextId.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        default:
+          $ref: "#/components/responses/Problem"
   /api/v2/contexts:
     get:
       operationId: listContexts
       parameters:
+        - name: q
+          in: query
+          description: Search observation metadata.
+          schema:
+            type: string
+        - name: repository
+          in: query
+          schema:
+            type: string
+        - name: branch
+          in: query
+          schema:
+            type: string
+        - name: worktree
+          in: query
+          schema:
+            type: string
+        - name: hostname
+          in: query
+          schema:
+            type: string
+        - name: sourceId
+          in: query
+          schema:
+            type: string
+        - name: runId
+          in: query
+          schema:
+            type: string
         - name: limit
           in: query
           schema:
@@ -392,7 +453,7 @@ paths:
             type: string
       responses:
         "200":
-          description: Worktrees discovered from registered repositories and retained captures, with cached Git metadata.
+          description: Stored observations and retained legacy contexts. Listing never accesses a checkout or runs Git.
           content:
             application/json:
               schema:
@@ -848,6 +909,107 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
   schemas:
+    ObservationMetadata:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          sourceId,
+          hostname,
+          runId,
+          agent,
+          trigger,
+          repositoryKey,
+          repositoryName,
+          remoteUrl,
+          checkoutKey,
+          root,
+          worktreeName,
+          branch,
+          head,
+          collectedAt,
+          collectorVersion,
+        ]
+      properties:
+        sourceId:
+          type: string
+          description: Producer-provided source identity, independent of hostname and path.
+        hostname:
+          type: string
+        runId:
+          type: string
+        agent:
+          type: string
+        trigger:
+          type: string
+        repositoryKey:
+          type: string
+        repositoryName:
+          type: string
+        remoteUrl:
+          type: string
+        checkoutKey:
+          type: string
+        root:
+          type: string
+          description: Source-local path; the server does not access it.
+        worktreeName:
+          type: string
+        branch:
+          type: string
+        head:
+          type: [string, "null"]
+        collectedAt:
+          type: integer
+          format: int64
+          description: Producer collection time in Unix milliseconds.
+        collectorVersion:
+          type: string
+    IngestionScope:
+      type: object
+      additionalProperties: false
+      required: [snapshot, patches]
+      properties:
+        snapshot:
+          $ref: "#/components/schemas/RepositoryDiff"
+        patches:
+          type: object
+          description: File previews keyed by snapshot file ID.
+          additionalProperties:
+            $ref: "#/components/schemas/FilePatch"
+    IngestionRequest:
+      type: object
+      additionalProperties: false
+      required: [protocolVersion, submissionId, metadata, scopes]
+      properties:
+        protocolVersion:
+          type: integer
+          const: 1
+        submissionId:
+          type: string
+          minLength: 1
+          description: Retry identity. Reusing it with different content fails.
+        metadata:
+          $ref: "#/components/schemas/ObservationMetadata"
+        scopes:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items:
+            $ref: "#/components/schemas/IngestionScope"
+    IngestionReceipt:
+      type: object
+      additionalProperties: false
+      required: [contextId, reviewUrl, mcpUrl, snapshot]
+      properties:
+        contextId:
+          type: string
+        reviewUrl:
+          type: string
+        mcpUrl:
+          type: string
+        snapshot:
+          $ref: "#/components/schemas/RepositoryDiff"
     ContextPage:
       type: object
       additionalProperties: false
@@ -886,7 +1048,7 @@ components:
           type: string
         kind:
           type: string
-          enum: [worktree, capture]
+          enum: [worktree, capture, observation]
         name:
           type: string
         branch:
@@ -925,6 +1087,8 @@ components:
           enum: [unchecked, available, unavailable]
         capabilities:
           $ref: "#/components/schemas/Session/properties/capabilities"
+        observation:
+          $ref: "#/components/schemas/ObservationMetadata"
     ServerMetrics:
       type: object
       additionalProperties: false

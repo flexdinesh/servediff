@@ -66,7 +66,7 @@ func writeStartup(writer io.Writer, input loadedInput, url string) {
 	}
 	fmt.Fprintf(writer, "  %s\n", color.paint(color.bold+color.cyan, "servediff "+displayVersion()))
 	if input.directory != "" {
-		fmt.Fprintf(writer, "  %s  %s\n", color.paint(color.dim, "serving directory:"), input.directory)
+		fmt.Fprintf(writer, "  %s  %s\n", color.paint(color.dim, "collected from:  "), input.directory)
 	}
 	fmt.Fprintf(writer, "  %s               %s\n", color.paint(color.dim, "mode:"), input.mode)
 	fmt.Fprintf(writer, "  %s                %s\n", color.paint(color.dim, "url:"), color.paint(color.green, url))
@@ -90,7 +90,9 @@ func writeStartup(writer io.Writer, input loadedInput, url string) {
 	}
 	fmt.Fprintln(writer, "  ")
 	guidance := "ctrl-c to stop."
-	if input.submitted {
+	if input.remote {
+		guidance = "snapshot submitted to remote server."
+	} else if input.submitted {
 		guidance = "servediff service stop to stop the daemon."
 	}
 	fmt.Fprintf(writer, "  %s\n", color.paint(color.dim, guidance))
@@ -117,7 +119,7 @@ func writeServiceStatus(writer io.Writer, status controlapi.Status, asJSON bool)
 	fmt.Fprintf(writer, "  protocol:           %d\n", status.ProtocolVersion)
 	fmt.Fprintf(writer, "  PID:                %d\n", status.PID)
 	fmt.Fprintf(writer, "  state:              %s\n", status.Settings.State)
-	fmt.Fprintf(writer, "  contexts:           %d worktrees, %d captures\n", status.Worktrees, status.Captures)
+	fmt.Fprintf(writer, "  contexts:           %d legacy worktrees, %d snapshots\n", status.Worktrees, status.Captures)
 }
 
 func plural(count int, singular, plural string) string {

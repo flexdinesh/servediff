@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"fmt"
+	"github.com/flexdinesh/servediff/internal/collector"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -139,7 +140,7 @@ func TestMultiGlobalRoutesWithoutContext(t *testing.T) {
 	response.Body.Close()
 }
 
-func TestMultiWorktreesAndRetainedFiles(t *testing.T) {
+func TestMultiObservationsAndRetainedFilesWithoutCheckout(t *testing.T) {
 	store, err := reviewstore.Open("")
 	if err != nil {
 		t.Fatal(err)
@@ -154,6 +155,8 @@ func TestMultiWorktreesAndRetainedFiles(t *testing.T) {
 	targets := make([]contextservice.Submission, 0, 2)
 	for index, root := range roots {
 		gitCommand(t, root, "init")
+		gitCommand(t, root, "symbolic-ref", "HEAD", "refs/heads/shared")
+		gitCommand(t, root, "remote", "add", "origin", "https://example.com/acme/shared.git")
 		if err := os.WriteFile(filepath.Join(root, "file.txt"), []byte("before\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -162,7 +165,11 @@ func TestMultiWorktreesAndRetainedFiles(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(root, "file.txt"), []byte("after\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		target, err := provider.Register(t.Context(), fmt.Sprintf("worktree-%d", index), root)
+		input, err := collector.Collect(t.Context(), root, collector.Options{SourceID: fmt.Sprintf("container-%d", index), SubmissionID: "submission"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		target, err := provider.Ingest(t.Context(), input)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -170,24 +177,29 @@ func TestMultiWorktreesAndRetainedFiles(t *testing.T) {
 	}
 	server := httptest.NewServer(NewMulti(provider, store, fstest.MapFS{"index.html": {Data: []byte("web")}}, ""))
 	defer server.Close()
+	page := decode[contextservice.Page](t, request(t, server.Client(), http.MethodGet, server.URL+"/api/v2/contexts?repository=shared&branch=shared", nil))
+	if len(page.Contexts) != 2 || page.Contexts[0].Observation == nil || page.Contexts[1].Observation == nil || page.Contexts[0].Observation.SourceID == page.Contexts[1].Observation.SourceID {
+		t.Fatalf("same branch source catalog: %#v", page)
+	}
+	filtered := decode[contextservice.Page](t, request(t, server.Client(), http.MethodGet, server.URL+"/api/v2/contexts?sourceId=container-0", nil))
+	if len(filtered.Contexts) != 1 || filtered.Contexts[0].ID != targets[0].Context.ID {
+		t.Fatalf("source filter: %#v", filtered)
+	}
+	absent := decode[contextservice.Page](t, request(t, server.Client(), http.MethodGet, server.URL+"/api/v2/contexts?q=absent-source", nil))
+	if len(absent.Contexts) != 0 {
+		t.Fatalf("search: %#v", absent)
+	}
 	first := targets[0]
 	firstBase := server.URL + "/api/v2/contexts/" + first.Context.ID
 	secondBase := server.URL + "/api/v2/contexts/" + targets[1].Context.ID
 	snapshot := first.Snapshot
-	active, err := provider.Resolve(t.Context(), first.Context.ID)
-	if err != nil {
-		t.Fatal(err)
+	complete, err := store.VersionComplete(snapshot.VersionID, len(snapshot.Files))
+	if err != nil || !complete {
+		t.Fatalf("ingestion did not persist previews: %v,%v", complete, err)
 	}
-	previews := make(map[string]review.FilePatch)
-	for _, file := range snapshot.Files {
-		preview, err := active.Source.Patch(t.Context(), snapshot.Mode, file, snapshot.Head)
-		if err != nil {
-			t.Fatal(err)
-		}
-		previews[file.ID] = preview
-	}
-	if err := store.PinVersion(snapshot, previews); err != nil {
-		t.Fatal(err)
+	staged := decode[review.RepositoryDiff](t, request(t, server.Client(), http.MethodGet, firstBase+"/diffs/current?scope=staged", nil))
+	if staged.Mode != review.DiffStaged || staged.ID == snapshot.ID || staged.VersionID == snapshot.VersionID {
+		t.Fatalf("scope identities: %#v", staged)
 	}
 	response := request(t, server.Client(), http.MethodGet, secondBase+"/diffs/"+snapshot.ID+"/versions/"+snapshot.VersionID, nil)
 	if response.StatusCode != http.StatusNotFound {
@@ -211,19 +223,24 @@ func TestMultiWorktreesAndRetainedFiles(t *testing.T) {
 	if err := os.RemoveAll(roots[0]); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("PATH", t.TempDir())
 	file := snapshot.Files[0]
 	response = request(t, server.Client(), http.MethodGet, firstBase+"/diffs/"+snapshot.ID+"/files/"+file.ID+"/patch?scope=all&versionId="+snapshot.VersionID+"&fileVersion="+file.Fingerprint, nil)
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("retained file of missing worktree: %d", response.StatusCode)
 	}
 	response.Body.Close()
-	response = request(t, server.Client(), http.MethodGet, firstBase+"/diffs/current?scope=all", nil)
-	if response.StatusCode != http.StatusServiceUnavailable {
-		t.Fatalf("missing worktree: %d", response.StatusCode)
+	contents := decode[review.FileContents](t, request(t, server.Client(), http.MethodGet, firstBase+"/diffs/"+snapshot.ID+"/files/"+file.ID+"/contents?scope=all&versionId="+snapshot.VersionID+"&fileVersion="+file.Fingerprint, nil))
+	if contents.Before != "before\n" || contents.After != "after\n" {
+		t.Fatalf("stored contents: %#v", contents)
 	}
-	problem := decode[map[string]any](t, response)
-	if problem["code"] != "source_unavailable" {
-		t.Fatalf("missing source problem: %#v", problem)
+	response = request(t, server.Client(), http.MethodGet, firstBase+"/diffs/current?scope=all", nil)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("stored observation after checkout deletion: %d", response.StatusCode)
+	}
+	retained := decode[review.RepositoryDiff](t, response)
+	if retained.VersionID != snapshot.VersionID || retained.Revision != snapshot.Revision {
+		t.Fatalf("stored observation changed: %#v", retained)
 	}
 	response = request(t, server.Client(), http.MethodGet, secondBase+"/diffs/current?scope=all", nil)
 	if response.StatusCode != http.StatusOK {

@@ -627,18 +627,18 @@ export function DiffWorkspace() {
         ? "No file changes in this input"
         : mode === "staged"
           ? "Nothing staged"
-          : "Working tree is clean";
+          : "No changes in this snapshot";
   const emptyDescription = !repository
     ? diff.notice
       ? "Check that the server is running, then refresh."
-      : "Your working tree, in focus."
+      : "Reading stored changes…"
     : filter
       ? "Try a different filename or clear the filter."
       : piped
-        ? "Run a command that emits a Git patch, then pipe it into servediff."
+        ? "Run a command that emits a Git patch, then pipe it into servediff pipe."
         : mode === "staged"
-          ? "Stage changes with Git to review them here."
-          : "Changes will appear here as you edit. Ignored files stay hidden.";
+          ? "No staged changes were collected in this snapshot."
+          : "No changes in this snapshot. Run servediff review to submit another.";
   return (
     <main>
       <DiffToolbar />

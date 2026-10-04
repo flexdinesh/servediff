@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/flexdinesh/servediff/internal/contextservice"
+	"github.com/flexdinesh/servediff/internal/ingestion"
 )
 
 type Client struct {
@@ -128,4 +129,17 @@ func (client *Client) do(ctx context.Context, method, path string, body io.Reade
 		return fmt.Errorf("invalid service response: %w", err)
 	}
 	return nil
+}
+
+func (client *Client) Ingest(ctx context.Context, input ingestion.Request) (contextservice.Submission, error) {
+	raw, err := json.Marshal(input)
+	if err != nil {
+		return contextservice.Submission{}, err
+	}
+	if len(raw) > ingestion.MaxRequestBytes {
+		return contextservice.Submission{}, fmt.Errorf("snapshot exceeds 64 MiB ingestion limit")
+	}
+	var result contextservice.Submission
+	err = client.do(ctx, http.MethodPost, "/control/v1/ingestions", bytes.NewReader(raw), http.Header{"Content-Type": []string{"application/json"}}, &result)
+	return result, err
 }

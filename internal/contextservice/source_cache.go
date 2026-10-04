@@ -3,8 +3,6 @@ package contextservice
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/flexdinesh/servediff/internal/diffsource"
@@ -16,22 +14,12 @@ const (
 	maxCachedSources   = 128
 	maxSourceBytes     = 64 * 1024 * 1024
 	sourceIdleLifetime = 10 * time.Minute
-	unavailableRetry   = time.Second
 )
 
-type fileIdentity struct {
-	path     string
-	info     os.FileInfo
-	optional bool
-	routing  bool
-}
-
 type cachedSource struct {
-	source           diffsource.Source
-	checks           []fileIdentity
-	bytes            int
-	lastUsed         time.Time
-	unavailableUntil time.Time
+	source   diffsource.Source
+	bytes    int
+	lastUsed time.Time
 }
 
 type sourceLoad struct {
@@ -47,36 +35,6 @@ func newCaptureCache(source diffsource.Source, raw string, snapshot review.Repos
 	return &cachedSource{source: source, bytes: 3*len(raw) + 512*len(snapshot.Files), lastUsed: time.Now()}
 }
 
-func newWorktreeCache(source diffsource.Source, commonDir, worktreeDir string) *cachedSource {
-	entry := &cachedSource{source: source, lastUsed: time.Now()}
-	for _, path := range []string{source.Root(), commonDir, worktreeDir, filepath.Join(source.Root(), ".git"), filepath.Join(worktreeDir, "commondir")} {
-		info, err := os.Stat(path)
-		entry.checks = append(entry.checks, fileIdentity{path: path, info: info, optional: errors.Is(err, os.ErrNotExist), routing: info != nil && info.Mode().IsRegular()})
-	}
-	return entry
-}
-
-func (entry *cachedSource) valid() (bool, bool) {
-	for _, check := range entry.checks {
-		info, err := os.Stat(check.path)
-		if check.optional && errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		if err != nil || check.info == nil {
-			return false, errors.Is(err, os.ErrNotExist) && !check.routing && !check.optional
-		}
-		if !os.SameFile(info, check.info) {
-			// Replaced directories must be explicitly registered again before
-			// their new data can inherit an existing review context.
-			return false, !check.routing
-		}
-		if check.routing && (info.Size() != check.info.Size() || !info.ModTime().Equal(check.info.ModTime())) {
-			return false, false
-		}
-	}
-	return true, false
-}
-
 func (service *Service) invalidateSource(id string) {
 	service.mu.Lock()
 	defer service.mu.Unlock()
@@ -85,7 +43,6 @@ func (service *Service) invalidateSource(id string) {
 		delete(service.sources, id)
 	}
 	service.generation[id]++
-	delete(service.identityChanged, id)
 }
 
 func (service *Service) cacheSource(id string, entry *cachedSource, generation uint64) {
@@ -137,32 +94,15 @@ func (service *Service) cached(id string) (diffsource.Source, bool) {
 		service.mu.Unlock()
 		return nil, false
 	}
-	now := time.Now()
-	if now.Sub(entry.lastUsed) > sourceIdleLifetime || (!entry.unavailableUntil.IsZero() && !now.Before(entry.unavailableUntil)) {
+	if time.Since(entry.lastUsed) > sourceIdleLifetime {
 		service.sourceBytes -= entry.bytes
 		delete(service.sources, id)
 		service.mu.Unlock()
 		return nil, false
 	}
-	entry.lastUsed = now
+	entry.lastUsed = time.Now()
 	service.mu.Unlock()
-	if !entry.unavailableUntil.IsZero() {
-		return entry.source, true
-	}
-	valid, changedIdentity := entry.valid()
-	if valid {
-		return entry.source, true
-	}
-	service.mu.Lock()
-	if service.sources[id] == entry {
-		service.sourceBytes -= entry.bytes
-		delete(service.sources, id)
-		if changedIdentity {
-			service.identityChanged[id] = true
-		}
-	}
-	service.mu.Unlock()
-	return nil, false
+	return entry.source, true
 }
 
 func (service *Service) sourceFor(ctx context.Context, item reviewstore.ContextInfo) (diffsource.Source, error) {
@@ -184,9 +124,8 @@ func (service *Service) sourceFor(ctx context.Context, item reviewstore.ContextI
 	if load == nil {
 		load = &sourceLoad{done: make(chan struct{}), generation: service.generation[item.ID]}
 		service.loading[item.ID] = load
-		identityChanged := service.identityChanged[item.ID]
 		service.loaders.Add(1)
-		go service.loadSource(item, load, identityChanged)
+		go service.loadSource(item, load)
 	}
 	service.mu.Unlock()
 	select {
@@ -197,7 +136,7 @@ func (service *Service) sourceFor(ctx context.Context, item reviewstore.ContextI
 	}
 }
 
-func (service *Service) loadSource(item reviewstore.ContextInfo, load *sourceLoad, identityChanged bool) {
+func (service *Service) loadSource(item reviewstore.ContextInfo, load *sourceLoad) {
 	defer service.loaders.Done()
 	ctx, cancel := context.WithTimeout(service.background, 30*time.Second)
 	defer cancel()
@@ -232,29 +171,8 @@ func (service *Service) loadSource(item reviewstore.ContextInfo, load *sourceLoa
 				}
 			}
 		}
-	} else if item.Root == nil || item.CommonDir == nil || item.WorktreeKey == nil {
-		err = errors.New("incomplete worktree identity")
 	} else {
-		if identityChanged {
-			err = errors.New("registered worktree directory replaced")
-		} else {
-			source, err = diffsource.OpenRepository(ctx, *item.Root)
-			if err == nil {
-				var commonDir, worktreeKey string
-				commonDir, worktreeKey, err = diffsource.RepositoryIdentity(ctx, source.Root())
-				if err == nil && (commonDir != *item.CommonDir || worktreeKey != *item.WorktreeKey) {
-					err = errors.New("registered worktree identity changed")
-				}
-				if err == nil {
-					entry = newWorktreeCache(source, commonDir, worktreeKey)
-				}
-			}
-		}
-		if err != nil && ctx.Err() == nil {
-			source = &unavailableSource{root: *item.Root}
-			entry = &cachedSource{source: source, lastUsed: time.Now(), unavailableUntil: time.Now().Add(unavailableRetry)}
-			err = nil
-		}
+		err = errors.New("only retained captures can load a patch source")
 	}
 	if ctx.Err() != nil {
 		err = ctx.Err()
@@ -263,13 +181,6 @@ func (service *Service) loadSource(item reviewstore.ContextInfo, load *sourceLoa
 	service.mu.Lock()
 	if !service.closing && load.generation == service.generation[item.ID] && entry != nil {
 		service.cacheSourceLocked(item.ID, entry)
-		if item.Kind == "worktree" {
-			availability := "available"
-			if !entry.unavailableUntil.IsZero() {
-				availability = "unavailable"
-			}
-			service.availability[item.ID] = availability
-		}
 	}
 	load.source, load.err = source, err
 	if service.loading[item.ID] == load {

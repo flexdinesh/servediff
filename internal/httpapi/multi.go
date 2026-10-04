@@ -12,6 +12,7 @@ import (
 
 	"github.com/flexdinesh/servediff/internal/contextservice"
 	"github.com/flexdinesh/servediff/internal/diffsource"
+	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/processmetrics"
 	"github.com/flexdinesh/servediff/internal/reviewservice"
 	"github.com/flexdinesh/servediff/internal/reviewstore"
@@ -165,7 +166,17 @@ func (multi *Multi) ServeHTTP(response http.ResponseWriter, request *http.Reques
 			}
 			limit = parsed
 		}
-		page, err := multi.provider.List(request.Context(), limit, request.URL.Query().Get("cursor"))
+		var page contextservice.Page
+		var err error
+		query := request.URL.Query()
+		filter := ingestion.Filter{Query: query.Get("q"), Repository: query.Get("repository"), Branch: query.Get("branch"), Worktree: query.Get("worktree"), Hostname: query.Get("hostname"), SourceID: query.Get("sourceId"), RunID: query.Get("runId")}
+		if provider, ok := multi.provider.(interface {
+			ListFiltered(context.Context, int, string, ingestion.Filter) (contextservice.Page, error)
+		}); ok {
+			page, err = provider.ListFiltered(request.Context(), limit, query.Get("cursor"), filter)
+		} else {
+			page, err = multi.provider.List(request.Context(), limit, query.Get("cursor"))
+		}
 		if err != nil {
 			base.problem(response, err)
 			return

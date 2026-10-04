@@ -78,6 +78,7 @@ type Policies struct {
 }
 
 type Session struct {
+	Stored       bool
 	ID           string
 	User         User
 	ContextID    string

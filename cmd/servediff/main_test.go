@@ -49,7 +49,7 @@ func TestNormalizeArgumentsAllowsFlagsAfterPath(t *testing.T) {
 }
 
 func TestOptionsDefaultToLocalhostAndAutomaticPort(t *testing.T) {
-	values, err := parseOptions([]string{".", "--host", "192.0.2.1", "--port", "8123"}, io.Discard)
+	values, err := parseOptionsMode([]string{".", "--host", "192.0.2.1", "--port", "8123"}, io.Discard, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestStartupOutputSummarizesDiff(t *testing.T) {
 	value := output.String()
 	for _, expected := range []string{
 		"  servediff ",
-		"  serving directory:  /work/repository",
+		"  collected from:    /work/repository",
 		"  mode:               git",
 		"  url:                http://127.0.0.1:7981",
 		"  diff statistics 37ms",
@@ -118,7 +118,7 @@ func TestOptionsTrackExplicitDefaults(t *testing.T) {
 	if omitted.hostSet || omitted.portSet || omitted.stateSet || omitted.webDirSet {
 		t.Fatalf("omitted settings marked explicit: %#v", omitted)
 	}
-	explicit, err := parseOptions([]string{".", "--host=127.0.0.1", "-p", "0", "--state=", "--web-dir="}, io.Discard)
+	explicit, err := parseOptionsMode([]string{".", "--host=127.0.0.1", "-p", "0", "--state=", "--web-dir="}, io.Discard, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}

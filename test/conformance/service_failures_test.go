@@ -1,8 +1,6 @@
 package conformance
 
 import (
-	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -11,9 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,7 +17,6 @@ import (
 	"time"
 
 	"github.com/flexdinesh/servediff/internal/daemon"
-	"github.com/flexdinesh/servediff/internal/processlock"
 )
 
 // A transition happens after the upstream authenticated response was received,
@@ -144,7 +139,7 @@ func TestDaemonSubmissionCannotFollowDiscoveryToDifferentDatabase(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	output, err := harness.run(patch, "--state", harness.state, "--no-browser")
+	output, err := harness.run(patch, "pipe", "--state", harness.state, "--no-browser")
 	awaitControlTransition(t, completed)
 	if err == nil {
 		t.Fatalf("replacement database must reject submission: %s", output)
@@ -179,7 +174,7 @@ func TestDaemonSubmissionRejectsListenerChangeAfterDiscovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	output, err := harness.run(patch, "--no-browser")
+	output, err := harness.run(patch, "pipe", "--no-browser")
 	awaitControlTransition(t, completed)
 	if err == nil {
 		t.Fatalf("changed listener must not produce stale success URL: %s", output)
@@ -204,7 +199,7 @@ func TestDaemonLostAcknowledgementRejectsChangedState(t *testing.T) {
 			if kind == "different database" {
 				replacementState = filepath.Join(t.TempDir(), "replacement.db")
 			}
-			completed := installControlTransition(t, harness, "/control/v1/captures", func(descriptor daemon.Descriptor) error {
+			completed := installControlTransition(t, harness, "/control/v1/ingestions", func(descriptor daemon.Descriptor) error {
 				var mutate func() error
 				if kind == "replaced database" {
 					mutate = func() error {
@@ -222,7 +217,7 @@ func TestDaemonLostAcknowledgementRejectsChangedState(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			output, err := harness.run(patch, "--no-browser")
+			output, err := harness.run(patch, "pipe", "--no-browser")
 			awaitControlTransition(t, completed)
 			if err == nil || !strings.Contains(string(output), "may have been") {
 				t.Fatalf("lost acknowledgement needs explicit uncertain outcome, without replay: err=%v output=%s", err, output)
@@ -244,7 +239,7 @@ func TestDaemonLostAcknowledgementRejectsChangedState(t *testing.T) {
 func TestDaemonCaptureValidationDoesNotRestart(t *testing.T) {
 	harness := newServiceHarness(t)
 	before := harness.start(t)
-	output, err := harness.run([]byte("not a Git patch\n"), "--no-browser")
+	output, err := harness.run([]byte("not a Git patch\n"), "pipe", "--no-browser")
 	if err == nil {
 		t.Fatalf("invalid patch must fail: %s", output)
 	}
@@ -254,165 +249,26 @@ func TestDaemonCaptureValidationDoesNotRestart(t *testing.T) {
 	}
 }
 
-const blockingGitSource = `package main
-import (
- "encoding/json"
- "net"
- "os"
- "os/exec"
-)
-func main() {
- if len(os.Args) > 1 && os.Args[1] == "__blocked_child" {
-  listener, err := net.Listen("tcp", "127.0.0.1:0")
-  if err != nil { panic(err) }
-  data, err := json.Marshal(struct {
-   Address string
-   ParentAddress string
-   PID int
-   ParentPID int
-  }{listener.Addr().String(), os.Getenv("SERVEDIFF_TEST_GIT_PARENT_ADDRESS"), os.Getpid(), os.Getppid()})
-  if err != nil { panic(err) }
-  if err := os.WriteFile(os.Getenv("SERVEDIFF_TEST_GIT_READY"), data, 0600); err != nil { panic(err) }
-  for { connection, err := listener.Accept(); if err != nil { return }; connection.Close() }
- }
- blocked := false
- if _, err := os.Stat(os.Getenv("SERVEDIFF_TEST_GIT_GATE")); err == nil {
-  for _, argument := range os.Args[1:] { if argument == "diff" { blocked = true } }
- }
- if blocked {
-  listener, err := net.Listen("tcp", "127.0.0.1:0")
-  if err != nil { panic(err) }
-  child := exec.Command(os.Args[0], "__blocked_child")
-  child.Env = append(os.Environ(), "SERVEDIFF_TEST_GIT_PARENT_ADDRESS="+listener.Addr().String())
-  child.Stdout, child.Stderr = os.Stdout, os.Stderr
-  if err := child.Start(); err != nil { panic(err) }
-  for { connection, err := listener.Accept(); if err != nil { return }; connection.Close() }
- }
- command := exec.Command(os.Getenv("SERVEDIFF_TEST_REAL_GIT"), os.Args[1:]...)
- command.Stdin, command.Stdout, command.Stderr = os.Stdin, os.Stdout, os.Stderr
- if err := command.Run(); err != nil {
-  if exit, ok := err.(*exec.ExitError); ok { os.Exit(exit.ExitCode()) }
-  panic(err)
- }
-}
-`
-
-func TestDaemonShutdownCancelsGitAndItsDescendants(t *testing.T) {
+func TestServerQueriesSurviveCheckoutRemoval(t *testing.T) {
 	harness := newServiceHarness(t)
-	worktree := createWorktree(t, "blocked-git")
-	realGit, err := exec.LookPath("git")
-	if err != nil {
-		t.Fatal(err)
-	}
-	directory := t.TempDir()
-	source := filepath.Join(directory, "helper.go")
-	if err := os.WriteFile(source, []byte(blockingGitSource), 0600); err != nil {
-		t.Fatal(err)
-	}
-	name := "git"
-	if runtime.GOOS == "windows" {
-		name += ".exe"
-	}
-	build := exec.Command("go", "build", "-o", filepath.Join(directory, name), source)
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build blocking Git helper: %v\n%s", err, output)
-	}
-	gate, ready := filepath.Join(directory, "block"), filepath.Join(directory, "ready.json")
-	for index, entry := range harness.environment {
-		key, value, _ := strings.Cut(entry, "=")
-		if strings.EqualFold(key, "PATH") {
-			harness.environment[index] = key + "=" + directory + string(os.PathListSeparator) + value
-		}
-	}
-	harness.environment = append(harness.environment,
-		"SERVEDIFF_TEST_REAL_GIT="+realGit,
-		"SERVEDIFF_TEST_GIT_GATE="+gate,
-		"SERVEDIFF_TEST_GIT_READY="+ready)
-	harness.requireRun(t, nil, worktree, "--state", harness.state, "--port", "0", "--no-browser")
+	worktree := createWorktree(t, "removed-checkout")
+	harness.requireRun(t, nil, "review", worktree, "--state", harness.state, "--port", "0", "--no-browser")
 	status := harness.status(t)
 	var catalog contextCatalog
 	requestJSON(t, status.URL+"/api/v2/contexts", &catalog)
 	if len(catalog.Contexts) != 1 {
-		t.Fatalf("missing registered worktree: %#v", catalog)
+		t.Fatalf("missing observation: %#v", catalog)
 	}
-	if err := os.WriteFile(gate, nil, 0600); err != nil {
+	endpoint := "/api/v2/contexts/" + catalog.Contexts[0].ID + "/diffs/current?scope=all"
+	var original currentDiff
+	requestJSON(t, status.URL+endpoint, &original)
+	if err := os.RemoveAll(worktree); err != nil {
 		t.Fatal(err)
 	}
-	requestDone := make(chan struct{})
-	go func() {
-		defer close(requestDone)
-		client := http.Client{Timeout: 15 * time.Second}
-		response, err := client.Get(status.URL + "/api/v2/contexts/" + catalog.Contexts[0].ID + "/diffs/current?scope=all")
-		if err == nil {
-			_ = response.Body.Close()
-		}
-	}()
-	var helper struct {
-		Address       string
-		ParentAddress string
-		PID           int
-		ParentPID     int
+	harness.requireRun(t, nil, "service", "restart", "--state", harness.state)
+	var restored currentDiff
+	requestJSON(t, harness.status(t).URL+endpoint, &restored)
+	if restored.ID != original.ID || restored.VersionID != original.VersionID || len(restored.Files) != len(original.Files) {
+		t.Fatalf("stored observation depended on deleted checkout: original=%#v restored=%#v", original, restored)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	for {
-		data, err := os.ReadFile(ready)
-		if err == nil && json.Unmarshal(data, &helper) == nil && helper.Address != "" {
-			break
-		}
-		select {
-		case <-ctx.Done():
-			t.Fatal("live diff did not enter blocked Git helper")
-		case <-time.After(10 * time.Millisecond):
-		}
-	}
-	// The subprocess belongs to this isolated fixture. Clean up explicitly if
-	// a regression leaves it alive, so a failed test does not leak processes.
-	t.Cleanup(func() {
-		for _, address := range []string{helper.Address, helper.ParentAddress} {
-			if connection, err := net.DialTimeout("tcp", address, 100*time.Millisecond); err == nil {
-				_ = connection.Close()
-				for _, pid := range []int{helper.PID, helper.ParentPID} {
-					if process, err := os.FindProcess(pid); err == nil {
-						_ = process.Kill()
-						_ = process.Release()
-					}
-				}
-			}
-		}
-	})
-	started := time.Now()
-	stopContext, stopCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer stopCancel()
-	stop := exec.CommandContext(stopContext, serviceBinary, "service", "stop")
-	stop.Env = harness.environment
-	if output, err := stop.CombinedOutput(); err != nil {
-		t.Fatalf("stop daemon with blocked Git: %v\n%s", err, output)
-	}
-	if elapsed := time.Since(started); elapsed > 10*time.Second {
-		t.Fatalf("service stop exceeded cleanup bound: %s", elapsed)
-	}
-	for _, address := range []string{helper.Address, helper.ParentAddress} {
-		if connection, err := net.DialTimeout("tcp", address, 100*time.Millisecond); err == nil {
-			_ = connection.Close()
-			t.Fatalf("Git process still running after service stop: %s", address)
-		}
-	}
-	lock, err := processlock.TryAcquire(harness.state + ".lock")
-	if err != nil {
-		t.Fatalf("shutdown retained database ownership: %v", err)
-	}
-	if err := lock.Close(); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case <-requestDone:
-	case <-time.After(time.Second):
-		t.Fatal("blocked snapshot request outlived completed shutdown")
-	}
-	if err := os.Remove(gate); err != nil {
-		t.Fatal(err)
-	}
-	harness.requireRun(t, nil, "service", "start", "--state", harness.state, "--port", "0")
-	requestJSON(t, harness.status(t).URL+"/api/v2/contexts/"+catalog.Contexts[0].ID+"/diffs/current?scope=all", &currentDiff{})
 }

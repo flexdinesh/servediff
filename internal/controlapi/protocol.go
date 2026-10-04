@@ -3,7 +3,7 @@ package controlapi
 
 import "github.com/flexdinesh/servediff/internal/diffsource"
 
-const ProtocolVersion = 2
+const ProtocolVersion = 3
 const MaxPatchBytes = diffsource.MaxInputBytes
 
 const submissionHeader = "X-Servediff-Submission"

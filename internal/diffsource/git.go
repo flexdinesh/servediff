@@ -19,6 +19,8 @@ import (
 
 var errOutputLimit = errors.New("git output exceeds limit")
 
+var ErrNotRepository = errors.New("not a Git working tree")
+
 var patchFormat = []string{
 	"--no-color",
 	"--src-prefix=a/",
@@ -269,7 +271,7 @@ func OpenRepository(ctx context.Context, directory string) (Source, error) {
 		if !errors.As(err, &failure) {
 			return nil, err
 		}
-		return nil, fmt.Errorf("not a Git working tree: %s", absolute)
+		return nil, fmt.Errorf("%w: %s", ErrNotRepository, absolute)
 	}
 	canonical, err := filepath.EvalSymlinks(strings.TrimSuffix(root, "\n"))
 	if err != nil {

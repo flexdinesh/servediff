@@ -31,115 +31,131 @@ go install github.com/flexdinesh/servediff/cmd/servediff@main
 
 ## Usage
 
-Run from a Git repository:
+Collect a Git checkout and open its committed observation:
 
 ```sh
-servediff .
-```
-
-Register another repository or choose the service address:
-
-```sh
-servediff /path/to/repo
-servediff . --port 4000
-servediff . --host 0.0.0.0
+servediff review
+servediff review --path /path/to/repo
+servediff review --no-browser
 servediff --version
 ```
 
-Commands start or reuse one background service per user, register their input,
-open its browser URL, and exit. Register several repositories, then switch
-between them and piped diffs in the top bar. Repeated registration of the same
-worktree reuses its context; linked worktrees remain separate.
+Each invocation collects once and creates an independent observation, including
+repository, branch, worktree, HEAD, hostname and source metadata. The local
+server starts automatically when needed and stays running after the CLI exits.
+Bare `servediff` prints help. There is no watcher and opening the dashboard does
+not recollect Git data.
 
-By default, the service binds to `127.0.0.1` and uses the first available port
-from 7981 through 7990. Manage its lifetime explicitly:
+Manage the local server explicitly:
 
 ```sh
 servediff service start
-servediff service status
 servediff service status --json
 servediff service stop
-servediff service restart --host 0.0.0.0 --port 4000
+servediff service restart
+servediff service config set host 0.0.0.0
+servediff service config get host
+servediff service config remove host
+servediff service restart --config '{"host":"127.0.0.1","port":4000}'
 ```
 
-`service start` starts an empty service and prints its status without opening a
-browser. The service stays running after terminal closure and has no idle shutdown.
-`--no-browser` suppresses browser opening for that invocation. Listener, state,
-and asset settings supplied explicitly must match a running service; conflicting
-settings require `service restart`. Restart inherits the running settings unless
-overridden. Settings are not saved: starting a stopped service uses defaults
-unless flags are supplied. `--host` selects the web listener, not a remote daemon.
+Defaults are created in `~/.config/servediff/config.json`; `SERVEDIFF_CONFIG_PATH`
+overrides the location. Start/restart JSON overrides apply to that invocation. The default
+listener binds to `127.0.0.1` and chooses a port from 7981 through 7990.
+The local API is unauthenticated: a non-loopback listener exposes its review
+data to anyone who can reach it.
 
-If acknowledgement is lost, the CLI retries once against the same state and
-settings. It refuses to replay into a changed database or restarted memory
-store. When recovery fails, the error identifies where data may have been saved.
+## Agent hooks and remote ingestion
 
-Passing `--host 0.0.0.0` exposes every registered context through the
-unauthenticated web server on every network interface and accepts any HTTP host
-name. Use it only on a trusted network.
+An agent hook uses the same collection operation as a manual review:
+
+```sh
+servediff review --trigger agent-hook --agent my-agent --run-id run-123 --no-browser
+```
+
+Use `--source-id` to supply a stable source/container identity. Hostnames,
+branches and source-local paths are searchable metadata, not global identities.
+Separate submissions remain independently reviewable, even on the same branch.
+
+Build/install the remote server with Go:
+
+```sh
+go install github.com/flexdinesh/servediff/cmd/servediff-server@main
+servediff-server --listen 0.0.0.0:7981 --state /data/state.db --account my-account
+```
+
+Set `SERVEDIFF_TOKEN` to a secret of at least 32 bytes before starting the
+remote server. API/MCP requests use bearer authentication; the browser uses
+HTTP Basic with the account name and token as password. Deploy behind TLS.
+The initial remote composition serves one account; multi-user authentication
+and alternative storage/queue backends remain future extensions.
+
+Collectors select that destination with `--server` or `SERVEDIFF_SERVER_URL`,
+and use `SERVEDIFF_TOKEN` for authentication:
+
+```sh
+servediff review --server https://reviews.example.com --no-browser
+```
+
+Remote submission does not start a local server. The remote server needs no Git
+installation or repository mount: all queries read committed SQLite data.
+Plugins may instead submit the same `POST /api/v2/ingestions` request directly.
 
 ## Reviewing changes
 
-Switch between all, staged, and unstaged changes. Use the file tree to navigate,
-mark files as reviewed, and select **+** beside a line to comment. **Copy
-unresolved** and **Copy all** export review comments as agent-ready XML.
+Select a repository, then an observation. Search/filter stored metadata to find
+a branch, worktree, host, source or agent run. Switch between its collected all,
+staged and unstaged scopes. Use the file tree to navigate, mark files as reviewed
+and comment on lines. **Copy unresolved** and **Copy all** export comments as
+agent-ready XML.
 
-Comments and reviewed-file marks persist by worktree or capture. Display preferences stay
-in the browser.
+Observations are immutable. A later submission creates another observation;
+it never relabels or refreshes an earlier diff. Comments and reviewed marks are
+stored in SQLite. Display preferences remain in the browser.
 
 ## Piped diffs
 
-Register a fixed Git patch alongside live repositories:
+Submit a fixed patch explicitly:
 
 ```sh
-git diff | servediff
-git show | servediff
-git show main..HEAD~1 | servediff
-servediff - < saved.patch
+git diff | servediff pipe
+git show | servediff pipe
+servediff pipe --path /path/to/repo < saved.patch
 ```
 
-Piped input takes priority over a directory argument. Each invocation creates a
-separate immutable capture, selectable alongside worktrees. It does not refresh
-and is not automatically associated with the submission directory's repository.
-Its reviews remain editable. The CLI prints the capture ID and URL. Reopen it
-within 14 days with
-`servediff --capture <id>`. Captures and their reviews expire 14 days after
-creation. Standard Git patches are limited to 16 MiB total and 2 MiB
-per file. Combined merge diffs are shown against the first parent. Use
-`git show --diff-merges=separate` to review the result against every parent.
+Pipe uses the same ingestion protocol as review and agent hooks. It captures
+Git metadata when its directory is a checkout; otherwise it records an
+unassociated observation. Piped diffs have only the all scope and do not
+include full file contents. Standard Git patches are limited to 16 MiB total
+and 2 MiB per file. Combined merge diffs are shown against the first parent.
+Use `git show --diff-merges=separate` to review every parent separately.
 
 ## API and data
 
-The OpenAPI 3.1 contract is served at `/openapi.yaml`. `/api/v2/contexts` lists
-worktrees and captures; review operations use `/api/v2/contexts/{id}/...`.
-Legacy unscoped `/api/v1` review routes require exactly one context in daemon
-mode; multiple contexts return `409 context_required`. Compatible coding agents
-can access review-comment tools through the MCP `2026-07-28` Streamable HTTP
-endpoint at `/mcp/contexts/{id}`, printed by the CLI; see
-[docs/mcp.md](docs/mcp.md).
+The OpenAPI contract is served at `/openapi.yaml`. `POST /api/v2/ingestions`
+validates and atomically commits an observation; acknowledgement means commit,
+not collection scheduled. Replaying the same source/submission identity and
+payload returns its original receipt. Reusing it with different payload fails.
+There is no durable upload queue in the collector; failures are reported.
 
-A compatible browser can expose the same tools to its browser agent through
-WebMCP while the servediff page is open; see
-[docs/webmcp.md](docs/webmcp.md).
+`/api/v2/contexts` lists stored observations with `q`, `repository`, `branch`,
+`worktree`, `hostname`, `sourceId` and `runId` filters. Scoped review operations
+use `/api/v2/contexts/{id}/...`; `/api/v2/events` sends ingestion notifications.
+Latest means latest received, not guaranteed current filesystem state.
 
-The API is unauthenticated. The process account is the current user for all
-browser and MCP requests. Browser same-origin and cross-site checks remain, but
-anyone who can reach the server can access that user's review data.
+Compatible coding agents use the printed `/mcp/contexts/{id}` URL; see
+[docs/mcp.md](docs/mcp.md). A compatible browser can expose the same tools through
+WebMCP while the page is open; see [docs/webmcp.md](docs/webmcp.md).
 
-Review data is stored in `$XDG_STATE_HOME/servediff/state.db`, or
-`~/.local/state/servediff/state.db` when `XDG_STATE_HOME` is unset. Schema-2
-databases migrate without changing review IDs. Unsupported schemas and legacy
-review JSON are rejected with existing data preserved. Stop old foreground
-servediff processes before upgrading: they do not honor the new database
-ownership lock.
-`--state memory` keeps contexts and reviews only until that service stops.
-`/api/v1/diffs/captures` remains available for retained captures.
+Local data lives in `$XDG_STATE_HOME/servediff/state.db`, or
+`~/.local/state/servediff/state.db`. `--state memory` disables persistence.
+Migrations preserve historical reviews and retained captures. Legacy worktree
+contexts cannot load Git through the server; submit a new observation with
+`servediff review`. Unsupported databases are rejected without deleting data.
+Stop older processes before upgrading. Local service lifecycle uses a private
+authenticated loopback control listener; its token does not authenticate the
+local public API.
 
-Service lifecycle and registration use a separate authenticated loopback control
-listener. Its token is private to the local user; it does not authenticate the
-web API. Use `servediff serve ...` for an explicit foreground process, stopped
-with **Ctrl+C**.
-
-For source setup, development commands, and architecture, see
-[docs/development.md](docs/development.md). Maintainers can find publishing
-instructions in [docs/release.md](docs/release.md).
+For development and architecture, see [docs/development.md](docs/development.md)
+and [docs/architecture.md](docs/architecture.md). Publishing instructions:
+[docs/release.md](docs/release.md).

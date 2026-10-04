@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -13,9 +14,11 @@ import (
 	"time"
 
 	"github.com/flexdinesh/servediff/internal/browser"
+	"github.com/flexdinesh/servediff/internal/config"
 	"github.com/flexdinesh/servediff/internal/contextservice"
 	"github.com/flexdinesh/servediff/internal/controlapi"
 	"github.com/flexdinesh/servediff/internal/daemon"
+	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/reviewstore"
 	buildversion "github.com/flexdinesh/servediff/internal/version"
 )
@@ -23,25 +26,36 @@ import (
 var errServiceStopped = errors.New("service is stopped")
 
 func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr io.Writer) error {
-	command := "submit"
+	if len(arguments) == 0 {
+		writeHelp(stdout)
+		return nil
+	}
+	command := ""
 	if len(arguments) > 0 {
 		switch arguments[0] {
-		case "service", "serve", "__daemon":
+		case "review", "pipe", "service", "serve", "__daemon":
 			command, arguments = arguments[0], arguments[1:]
 		}
+	}
+	if command == "" && arguments[0] != "--help" && arguments[0] != "-h" && arguments[0] != "--version" {
+		return fmt.Errorf("unknown command %q; use servediff review or servediff pipe", arguments[0])
 	}
 	action := ""
 	if command == "service" {
 		if len(arguments) == 0 || arguments[0] == "--help" || arguments[0] == "-h" {
 			fmt.Fprintln(stdout, "  Usage: servediff service {start|stop|restart|status} [options]")
+			fmt.Fprintln(stdout, "         servediff service config {set KEY VALUE|get KEY|remove KEY}")
 			return nil
 		}
 		action, arguments = arguments[0], arguments[1:]
+		if action == "config" {
+			return runConfig(arguments, stdout)
+		}
 		if action != "start" && action != "stop" && action != "restart" && action != "status" {
 			return fmt.Errorf("unknown service command %q", action)
 		}
 	}
-	values, err := parseOptionsMode(arguments, stderr, command == "__daemon")
+	values, err := parseOptionsMode(arguments, stderr, command == "__daemon", command == "serve")
 	if err != nil {
 		if errors.Is(err, errHelp) {
 			return nil
@@ -55,6 +69,9 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 	if command != "__daemon" && values.runtimeDir != "" {
 		return errors.New("runtime-dir is an internal option; use SERVEDIFF_RUNTIME_DIR for isolation")
 	}
+	if values.config != "" && (command != "service" || (action != "start" && action != "restart")) {
+		return errors.New("config overrides are only supported by service start/restart")
+	}
 	if values.json && (command != "service" || action != "status") {
 		return errors.New("json is only supported by service status")
 	}
@@ -64,9 +81,70 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 	if command == "service" && (action == "stop" || action == "status") && (values.hostSet || values.portSet || values.stateSet || values.webDirSet) {
 		return errors.New("stop and status do not accept server settings")
 	}
-	settings, explicit, err := serverSettings(values)
-	if err != nil {
-		return err
+	if (command == "service" || command == "serve" || command == "__daemon") && (values.serverSet || values.tokenSet || values.agent != "" || values.runID != "" || values.sourceID != "" || values.trigger != "manual") {
+		return errors.New("server lifecycle commands do not accept collector options")
+	}
+	if (command == "review" || command == "pipe") && values.server != "" && (values.hostSet || values.portSet || values.stateSet || values.webDirSet) {
+		return errors.New("remote ingestion does not accept local server settings")
+	}
+	if command == "review" && (values.fixture != "" || values.directory == "-") {
+		return errors.New("review collects Git data; use servediff pipe for stdin")
+	}
+	if command == "pipe" && (values.fixture != "" || values.capture != "") {
+		return errors.New("pipe only accepts a diff from stdin")
+	}
+	if values.capture != "" && values.server != "" && command == "review" {
+		return errors.New("capture reopening is only available on the local service")
+	}
+	if values.trigger == "agent-hook" {
+		values.noBrowser = true
+	}
+	if values.trigger != "manual" && values.trigger != "agent-hook" {
+		return errors.New("trigger must be manual or agent-hook")
+	}
+	settings, explicit := daemon.DefaultSettings(), daemon.Explicit{}
+	if values.server == "" || command == "service" || command == "serve" || command == "__daemon" {
+		settings, explicit, err = serverSettings(values)
+		if err != nil {
+			return err
+		}
+	}
+	if ((command == "review" || command == "pipe") && values.server == "") || (command == "service" && (action == "start" || action == "restart")) {
+		saved, loadErr := config.Load()
+		if loadErr != nil {
+			return loadErr
+		}
+		fields := map[string]interface{}{}
+		if values.portSet {
+			fields["port"] = values.port
+		}
+		if values.stateSet {
+			fields["state"] = settings.State
+		}
+		if values.webDirSet {
+			fields["webDir"] = settings.WebDir
+		}
+		raw, marshalErr := json.Marshal(fields)
+		if marshalErr != nil {
+			return marshalErr
+		}
+		saved, err = config.Merge(saved, string(raw))
+		if err != nil {
+			return err
+		}
+		if values.config != "" {
+			saved, err = config.Merge(saved, values.config)
+			if err != nil {
+				return err
+			}
+		}
+		settings, err = saved.Settings()
+		if err != nil {
+			return err
+		}
+		if command == "service" {
+			explicit = daemon.Explicit{Host: true, Port: true, State: true, WebDir: true}
+		}
 	}
 	if command == "__daemon" {
 		if values.runtimeDir == "" {
@@ -78,6 +156,13 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 		input, err := acquireInput(values, stdin)
 		if err != nil {
 			return err
+		}
+		if input.Kind != "reopen" {
+			request, collectErr := collectInitialInput(ctx, values, input)
+			if collectErr != nil {
+				return collectErr
+			}
+			input.Ingestion = &request
 		}
 		if os.Getenv("SERVEDIFF_EXIT_ON_STDIN_CLOSE") == "1" {
 			child, cancel := context.WithCancel(ctx)
@@ -94,11 +179,11 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 			openBrowser(values, status.BrowserURL, stderr)
 		})
 	}
-	client, err := daemon.NewClient()
-	if err != nil {
-		return err
-	}
 	if command == "service" {
+		client, err := daemon.NewClient()
+		if err != nil {
+			return err
+		}
 		var status controlapi.Status
 		switch action {
 		case "stop":
@@ -126,18 +211,34 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 		}
 		return nil
 	}
-	input, err := acquireInput(values, stdin)
-	if err != nil {
-		return err
-	}
 	started := time.Now()
 	operationCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
+	var input daemon.InitialInput
+	if values.capture != "" {
+		input = daemon.InitialInput{Kind: "reopen", CaptureID: values.capture}
+	} else {
+		request, collectErr := collectSubmission(operationCtx, command, values, stdin)
+		if collectErr != nil {
+			return collectErr
+		}
+		input = daemon.InitialInput{Kind: "ingestion", Ingestion: &request}
+		if values.server != "" {
+			return submitRemote(operationCtx, command, values, request, stdout, stderr, started)
+		}
+	}
+	client, err := daemon.NewClient()
+	if err != nil {
+		return err
+	}
 	connection, err := client.EnsureConnection(operationCtx, settings, explicit)
 	if err != nil {
 		return err
 	}
 	requestID := newSubmissionID()
+	if input.Ingestion != nil {
+		requestID = input.Ingestion.SubmissionID
+	}
 	var submitted contextservice.Submission
 	var firstFailure error
 	uncertain := false
@@ -161,7 +262,18 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 	}
 	status := connection.Status()
 	url := status.BrowserURL + "/contexts/" + submitted.Context.ID
-	writeSubmission(stdout, submitted, time.Since(started), url, status.BrowserURL+"/mcp/contexts/"+submitted.Context.ID)
+	if input.Ingestion != nil {
+		loaded := submissionInput(submitted, time.Since(started))
+		loaded.mode = "git"
+		if command == "pipe" {
+			loaded.mode = "pipe"
+		}
+		loaded.directory = input.Ingestion.Metadata.Root
+		loaded.contextID, loaded.mcpURL, loaded.submitted = submitted.Context.ID, status.BrowserURL+"/mcp/contexts/"+submitted.Context.ID, true
+		writeStartup(stdout, loaded, url)
+	} else {
+		writeSubmission(stdout, submitted, time.Since(started), url, status.BrowserURL+"/mcp/contexts/"+submitted.Context.ID)
+	}
 	openBrowser(values, url, stderr)
 	return nil
 }
@@ -232,4 +344,47 @@ func main() {
 		}
 		os.Exit(1)
 	}
+}
+
+func writeHelp(writer io.Writer) {
+	fmt.Fprintln(writer, "  Usage: servediff review [--path DIRECTORY] [options]")
+	fmt.Fprintln(writer, "         servediff pipe [--path DIRECTORY] [options]")
+	fmt.Fprintln(writer, "         servediff service {start|stop|restart|status} [options]")
+	fmt.Fprintln(writer, "         servediff service config {set KEY VALUE|get KEY|remove KEY}")
+	fmt.Fprintln(writer, "         servediff serve [directory | --fixture FILE] [options]")
+}
+
+func submitRemote(ctx context.Context, command string, values options, request ingestion.Request, stdout, stderr io.Writer, started time.Time) error {
+	client := ingestion.NewClient(values.server, values.token)
+	var receipt ingestion.Receipt
+	var err, firstFailure error
+	uncertain := false
+	for attempt := 0; attempt < 2; attempt++ {
+		receipt, err = client.Submit(ctx, request)
+		if err == nil {
+			break
+		}
+		var transportError *url.Error
+		retry := errors.As(err, &transportError)
+		uncertain = uncertain || retry
+		if !retry || ctx.Err() != nil {
+			break
+		}
+		if firstFailure == nil {
+			firstFailure = err
+		}
+	}
+	if err != nil {
+		if !uncertain {
+			return err
+		}
+		return fmt.Errorf("submission %s may have been saved; inspect server observations before resubmitting: %w", request.SubmissionID, errors.Join(firstFailure, err))
+	}
+	input := loadedInput{directory: request.Metadata.Root, snapshot: receipt.Snapshot, processed: time.Since(started), mode: "git", contextID: receipt.ContextID, mcpURL: receipt.MCPURL, submitted: true, remote: true}
+	if command == "pipe" {
+		input.mode = "pipe"
+	}
+	writeStartup(stdout, input, receipt.ReviewURL)
+	openBrowser(values, receipt.ReviewURL, stderr)
+	return nil
 }

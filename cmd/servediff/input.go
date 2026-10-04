@@ -9,10 +9,13 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/flexdinesh/servediff/internal/collector"
 	"github.com/flexdinesh/servediff/internal/contextservice"
 	"github.com/flexdinesh/servediff/internal/daemon"
 	"github.com/flexdinesh/servediff/internal/diffsource"
+	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/review"
+	buildversion "github.com/flexdinesh/servediff/internal/version"
 )
 
 type loadedInput struct {
@@ -24,6 +27,7 @@ type loadedInput struct {
 	contextID string
 	mcpURL    string
 	submitted bool
+	remote    bool
 }
 
 func acquireInput(values options, stdin *os.File) (daemon.InitialInput, error) {
@@ -74,6 +78,9 @@ func acquireInput(values options, stdin *os.File) (daemon.InitialInput, error) {
 func newSubmissionID() string { return rand.Text() }
 
 func submitInput(ctx context.Context, client *daemon.Connection, id string, input daemon.InitialInput) (contextservice.Submission, error) {
+	if input.Ingestion != nil {
+		return client.Ingest(ctx, *input.Ingestion)
+	}
 	switch input.Kind {
 	case "worktree":
 		return client.Register(ctx, id, input.Path)
@@ -104,4 +111,55 @@ func redirected(stdin *os.File) (bool, error) {
 		return false, err
 	}
 	return stat.Mode()&(os.ModeNamedPipe|os.ModeSocket) != 0 || stat.Mode().IsRegular(), nil
+}
+
+func collectionOptions(values options) (collector.Options, error) {
+	sourceID := values.sourceID
+	if sourceID == "" {
+		var err error
+		sourceID, err = collector.SourceID()
+		if err != nil {
+			return collector.Options{}, err
+		}
+	}
+	hostname, err := os.Hostname()
+	if err != nil {
+		return collector.Options{}, err
+	}
+	return collector.Options{SourceID: sourceID, Hostname: hostname, RunID: values.runID, Agent: values.agent, Trigger: values.trigger, CollectorVersion: buildversion.String(), SubmissionID: newSubmissionID()}, nil
+}
+
+func collectSubmission(ctx context.Context, command string, values options, stdin *os.File) (ingestion.Request, error) {
+	settings, err := collectionOptions(values)
+	if err != nil {
+		return ingestion.Request{}, err
+	}
+	if command == "review" {
+		return collector.Collect(ctx, values.directory, settings)
+	}
+	if command != "pipe" {
+		return ingestion.Request{}, errors.New("expected review or pipe command")
+	}
+	if stdin == nil {
+		return ingestion.Request{}, errors.New("stdin unavailable")
+	}
+	raw, err := io.ReadAll(io.LimitReader(stdin, diffsource.MaxInputBytes+1))
+	if err != nil {
+		return ingestion.Request{}, err
+	}
+	if len(raw) > diffsource.MaxInputBytes {
+		return ingestion.Request{}, errors.New("piped diff exceeds the 16 MiB input limit")
+	}
+	return collector.CollectPatch(ctx, string(raw), values.directory, settings)
+}
+
+func collectInitialInput(ctx context.Context, values options, input daemon.InitialInput) (ingestion.Request, error) {
+	settings, err := collectionOptions(values)
+	if err != nil {
+		return ingestion.Request{}, err
+	}
+	if input.Kind == "worktree" {
+		return collector.Collect(ctx, input.Path, settings)
+	}
+	return collector.CollectPatch(ctx, string(input.Raw), input.SubmittedFrom, settings)
 }
