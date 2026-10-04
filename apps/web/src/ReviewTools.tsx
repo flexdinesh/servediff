@@ -200,7 +200,7 @@ export function ChangeSummary() {
             <Button
               type="button"
               id="reset-reviewed"
-              variant="outline"
+              variant="outline-muted"
               size="xs"
               disabled={reviewedCount === 0 || pending.has("*")}
               aria-busy={pending.has("*")}

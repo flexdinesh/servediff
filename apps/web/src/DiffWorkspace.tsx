@@ -2,6 +2,7 @@ import type {
   CodeViewItem,
   DiffLineAnnotation,
   FileDiffMetadata,
+  LineAnnotation,
   SelectedLineRange,
 } from "@pierre/diffs";
 import {
@@ -9,6 +10,7 @@ import {
   type CodeViewReactOptions,
   useWorkerPool,
 } from "@pierre/diffs/react";
+import { MessageSquareIcon } from "lucide-react";
 import { api, errorDetail } from "@servediff/api";
 import type { RepositoryDiff } from "@servediff/shared";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -173,7 +175,14 @@ export function DiffWorkspace() {
   const contentsEnabled = capabilityEnabled(capabilities.files.contents);
   const refreshEnabled = capabilityEnabled(capabilities.diff.refresh);
   const lineMetric = useRef<HTMLSpanElement>(null);
-  const [lineHeight, setLineHeight] = useState<number>();
+  const viewport = useRef<HTMLDivElement>(null);
+  const [scrollbarHeight, setScrollbarHeight] = useState(0);
+  const [viewerMetrics, setViewerMetrics] = useState<{
+    lineHeight: number;
+    spacing: number;
+  }>();
+  const lineHeight = viewerMetrics?.lineHeight;
+  const fileSpacing = viewerMetrics?.spacing ?? 12;
   const [selectionFeedback, setSelectionFeedback] = useState("");
   const workerPool = useWorkerPool();
   useEffect(() => {
@@ -182,16 +191,33 @@ export function DiffWorkspace() {
       .setRenderOptions({ theme: themesFor(diffTheme), lineDiffType })
       .catch((error: unknown) => console.error(error));
   }, [workerPool, diffTheme, lineDiffType]);
-  // Virtual scroll offsets must use the same row height as our rem-based CSS.
+  // Virtual scroll offsets must use the same row height and spacing as our CSS.
   // Observe a sizing probe so browser font preferences also stay in sync.
   useLayoutEffect(() => {
     const element = lineMetric.current;
     if (!element) return;
-    const measure = () => setLineHeight(element.getBoundingClientRect().height);
+    const measure = () => {
+      const scroller = viewport.current;
+      if (scroller)
+        document.documentElement.style.setProperty(
+          "--diff-viewport-inset",
+          `${scroller.offsetWidth - scroller.clientWidth}px`,
+        );
+      const { height, width } = element.getBoundingClientRect();
+      setViewerMetrics((current) =>
+        current?.lineHeight === height && current.spacing === width
+          ? current
+          : { lineHeight: height, spacing: width },
+      );
+    };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(element);
-    return () => observer.disconnect();
+    if (viewport.current) observer.observe(viewport.current);
+    return () => {
+      observer.disconnect();
+      document.documentElement.style.removeProperty("--diff-viewport-inset");
+    };
   }, []);
   const versionFor = useMemo(itemVersions, []);
   const allFiles = repository?.files ?? [];
@@ -212,7 +238,10 @@ export function DiffWorkspace() {
               comment.id !== draft?.id,
           )
           .map((comment) => ({
-            side: comment.side,
+            side:
+              comment.target === "file" && file.status === "D"
+                ? "deletions"
+                : comment.side,
             lineNumber: comment.end,
             metadata: { kind: "saved", comment },
           }));
@@ -223,20 +252,42 @@ export function DiffWorkspace() {
           draft.fingerprint === file.fingerprint
         )
           annotations.push({
-            side: draft.side,
+            side:
+              draft.target === "file" && file.status === "D"
+                ? "deletions"
+                : draft.side,
             lineNumber: draft.end,
             metadata: { kind: "draft" },
           });
+        const state = {
+          collapsed: collapsed.has(file.path),
+          version: versionFor(
+            item,
+            `${collapsed.has(file.path)}:${JSON.stringify(annotations)}`,
+          ),
+        };
         return [
-          {
-            ...item,
-            ...(item.type === "diff" && commentsEnabled ? { annotations } : {}),
-            collapsed: collapsed.has(file.path),
-            version: versionFor(
-              item,
-              `${collapsed.has(file.path)}:${JSON.stringify(annotations)}`,
-            ),
-          },
+          item.type === "diff"
+            ? { ...item, ...state, ...(commentsEnabled ? { annotations } : {}) }
+            : {
+                ...item,
+                ...state,
+                ...(commentsEnabled
+                  ? {
+                      annotations: annotations
+                        .filter((annotation) => annotation.lineNumber === 0)
+                        .map(
+                          ({
+                            lineNumber,
+                            metadata,
+                          }): LineAnnotation<CommentAnnotation> =>
+                            metadata.kind === "saved"
+                              ? { lineNumber, metadata }
+                              : { lineNumber, metadata },
+                        ),
+                    }
+                  : {}),
+              },
         ];
       }),
     [
@@ -269,6 +320,7 @@ export function DiffWorkspace() {
   useLayoutEffect(() => {
     if (
       draft &&
+      draft.target !== "file" &&
       draft.scope === mode &&
       files.some(
         (file) =>
@@ -377,6 +429,16 @@ export function DiffWorkspace() {
           }
         : {}),
       unsafeCSS: `
+        [data-diff], [data-code] {
+          padding-bottom: 0;
+        }
+        /* Native scrollbar tracks are part of the code surface. */
+        [data-code]:has(> [data-content] > :is([data-line], [data-no-newline]):last-child[data-line-type="change-addition"]) {
+          background-color: var(--diffs-bg-addition);
+        }
+        [data-code]:has(> [data-content] > :is([data-line], [data-no-newline]):last-child[data-line-type="change-deletion"]) {
+          background-color: var(--diffs-bg-deletion);
+        }
         [data-diffs-header] {
           height: calc(2 * var(--space-4) + var(--space-1));
           min-height: calc(2 * var(--space-4) + var(--space-1));
@@ -456,31 +518,52 @@ export function DiffWorkspace() {
         }
       `,
       stickyHeaders: true,
-      ...(lineHeight === undefined
-        ? {}
-        : {
-            // Keep file headers aligned with the compact navigation toolbar.
-            itemMetrics: { lineHeight, diffHeaderHeight: lineHeight + 14 },
-          }),
-      layout: { paddingTop: 0, paddingBottom: 24, gap: 8 },
+      itemMetrics: {
+        // Native scrollbar tracks consume height even with zero code padding.
+        paddingBottom: wrap ? 0 : scrollbarHeight,
+        ...(lineHeight === undefined ? {} : { lineHeight }),
+        // Matches the header's 2 * --space-4 + --space-1 height.
+        diffHeaderHeight: fileSpacing * 3,
+      },
+      layout: {
+        paddingTop: fileSpacing,
+        paddingBottom: fileSpacing,
+        gap: fileSpacing,
+      },
+      onPostRender(node, _instance, phase, context) {
+        if (phase === "unmount") return;
+        const columns = Array.from(
+          (node.shadowRoot ?? node).querySelectorAll<HTMLElement>(
+            "[data-code]",
+          ),
+        );
+        if (!wrap && columns.length > 0 && !context.item.collapsed) {
+          const height = Math.max(
+            ...columns.map(
+              (column) => column.offsetHeight - column.clientHeight,
+            ),
+          );
+          setScrollbarHeight((current) =>
+            current === height ? current : height,
+          );
+        }
+        if (!commentsEnabled || context.item.type !== "diff") return;
+        const currentDraft = actions.current.draft;
+        const ranges = (context.item.annotations ?? []).flatMap(
+          (annotation): CommentLineRange[] => {
+            if (annotation.metadata.kind === "saved")
+              return [annotation.metadata.comment];
+            return currentDraft && currentDraft.path === context.item.id
+              ? [currentDraft]
+              : [];
+          },
+        );
+        markCommentedLines(node.shadowRoot ?? node, ranges);
+      },
       ...(commentsEnabled
         ? {
             enableGutterUtility: true,
             lineHoverHighlight: "both",
-            onPostRender(node, _instance, phase, context) {
-              if (phase === "unmount" || context.item.type !== "diff") return;
-              const currentDraft = actions.current.draft;
-              const ranges = (context.item.annotations ?? []).flatMap(
-                (annotation): CommentLineRange[] => {
-                  if (annotation.metadata.kind === "saved")
-                    return [annotation.metadata.comment];
-                  return currentDraft && currentDraft.path === context.item.id
-                    ? [currentDraft]
-                    : [];
-                },
-              );
-              markCommentedLines(node.shadowRoot ?? node, ranges);
-            },
             onGutterUtilityClick(range, context) {
               if (context.item.type !== "diff") return;
               const current = actions.current;
@@ -520,6 +603,8 @@ export function DiffWorkspace() {
       layout,
       wrap,
       lineHeight,
+      fileSpacing,
+      scrollbarHeight,
       contentsEnabled,
       commentsEnabled,
     ],
@@ -572,6 +657,8 @@ export function DiffWorkspace() {
             aria-hidden="true"
           />
           <CodeView
+            className="diff-code-view"
+            containerRef={viewport}
             ref={viewer}
             items={items}
             options={options}
@@ -607,27 +694,51 @@ export function DiffWorkspace() {
             renderHeaderMetadata={(item) => {
               const file = allFiles.find((file) => file.path === item.id);
               return file ? (
-                <Button
-                  type="button"
-                  className="review-button"
-                  variant="outline"
-                  size="sm"
-                  aria-label={`Mark ${file.path} ${isReviewed(file) ? "unreviewed" : "reviewed"}`}
-                  aria-pressed={isReviewed(file)}
-                  disabled={pending.has(file.id) || pending.has("*")}
-                  aria-busy={pending.has(file.id)}
-                  onClick={() => toggleReviewed(file)}
-                >
-                  <svg
-                    className="review-checkbox"
-                    viewBox="0 0 16 16"
-                    aria-hidden="true"
+                <div className="diff-file-actions">
+                  <Button
+                    type="button"
+                    className="review-button"
+                    variant="outline-muted"
+                    size="sm"
+                    aria-label={`Mark ${file.path} ${isReviewed(file) ? "unreviewed" : "reviewed"}`}
+                    aria-pressed={isReviewed(file)}
+                    disabled={pending.has(file.id) || pending.has("*")}
+                    aria-busy={pending.has(file.id)}
+                    onClick={() => toggleReviewed(file)}
                   >
-                    <rect x="2" y="2" width="12" height="12" />
-                    {isReviewed(file) && <path d="m4.5 8 2.5 2.5 4.5-5" />}
-                  </svg>
-                  {isReviewed(file) ? "Reviewed" : "Mark reviewed"}
-                </Button>
+                    <svg
+                      className="review-checkbox"
+                      viewBox="0 0 16 16"
+                      aria-hidden="true"
+                    >
+                      <rect x="2" y="2" width="12" height="12" />
+                      {isReviewed(file) && <path d="m4.5 8 2.5 2.5 4.5-5" />}
+                    </svg>
+                    Reviewed
+                  </Button>
+
+                  {commentsEnabled && (
+                    <Button
+                      type="button"
+                      className="file-comment-button"
+                      variant="outline-muted"
+                      size="icon-sm"
+                      aria-label={`Leave review comment on file ${file.path}`}
+                      title="Leave review comment on file"
+                      onClick={() => {
+                        setCollapsed((previous) => {
+                          const next = new Set(previous);
+                          next.delete(file.path);
+                          return next;
+                        });
+                        if (draft) navigateComment(draft);
+                        else review.begin(file);
+                      }}
+                    >
+                      <MessageSquareIcon aria-hidden="true" />
+                    </Button>
+                  )}
+                </div>
               ) : null;
             }}
             renderAnnotation={(annotation) =>

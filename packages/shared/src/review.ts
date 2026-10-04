@@ -12,6 +12,7 @@ export interface ReviewComment {
   path: string;
   scope: DiffMode;
   fingerprint: string;
+  target?: "file" | "lines";
   side: AnnotationSide;
   start: number;
   end: number;
@@ -138,22 +139,30 @@ function validOrigin(value: unknown): value is ReviewOrigin {
 }
 
 export function validComment(value: unknown): value is ReviewComment {
+  if (!record(value)) return false;
+  const validSelection =
+    value.target === "file"
+      ? value.side === "additions" &&
+        value.start === 0 &&
+        value.end === 0 &&
+        value.code === ""
+      : (value.target === undefined || value.target === "lines") &&
+        (value.side === "additions" || value.side === "deletions") &&
+        typeof value.start === "number" &&
+        Number.isInteger(value.start) &&
+        value.start > 0 &&
+        typeof value.end === "number" &&
+        Number.isInteger(value.end) &&
+        value.end >= value.start &&
+        value.end - value.start < 200;
   return (
-    record(value) &&
     typeof value.id === "string" &&
     typeof value.diffId === "string" &&
     typeof value.versionId === "string" &&
     typeof value.path === "string" &&
     diffMode(value.scope) &&
     typeof value.fingerprint === "string" &&
-    (value.side === "additions" || value.side === "deletions") &&
-    typeof value.start === "number" &&
-    Number.isInteger(value.start) &&
-    value.start > 0 &&
-    typeof value.end === "number" &&
-    Number.isInteger(value.end) &&
-    value.end >= value.start &&
-    value.end - value.start < 200 &&
+    validSelection &&
     typeof value.code === "string" &&
     typeof value.body === "string" &&
     value.body.trim().length > 0 &&
@@ -299,6 +308,14 @@ export function formatComments(
         : "";
       lines.push(`    <file path="${attribute(path)}"${oldPath}${change}>`);
       for (const { id, comment } of commentsForFile) {
+        if (comment.target === "file") {
+          lines.push(
+            `      <comment id="${id}" selection="file" scope="${comment.scope}" status="${comment.status}" applicability="${applicability(comment)}">`,
+            `        <body>${xml(comment.body)}</body>`,
+            "      </comment>",
+          );
+          continue;
+        }
         const selection =
           comment.start === comment.end ? "single-line" : "range";
         const anchorState = applicability(comment);

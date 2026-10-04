@@ -12,6 +12,8 @@
   --border-strong: var(--border-control);
   --hover: #eeeef4;
   --diff-file-header: var(--panel);
+  --diff-canvas: var(--bg);
+  --diff-canvas-dot: var(--border);
   --accent: #5957d2;
   --accent-hover: #514fc5;
   --accent-bg: #eeeeff;
@@ -66,6 +68,7 @@
     var(--text-xs) * var(--leading-ui) + 2 * var(--space-2) + 1px
   );
   --page-gutter: var(--space-6);
+  --diff-gutter: var(--space-3);
   --sidebar-width: 330px;
   --reading-width: 42.5rem;
   --layer-sidebar: 10;
@@ -87,6 +90,8 @@
   --border-control: #747985;
   --border-strong: var(--border-control);
   --hover: #282930;
+  --diff-canvas: #111216;
+  --diff-canvas-dot: #282a31;
   --accent: #aba7ff;
   --accent-hover: #bfbbff;
   --accent-bg: #2c2944;

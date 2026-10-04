@@ -1,11 +1,14 @@
 import { isDiffMode } from "@servediff/shared";
-import { Settings2Icon } from "lucide-react";
+import {
+  ChevronsDownUpIcon,
+  ChevronsUpDownIcon,
+  Settings2Icon,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
@@ -91,14 +94,14 @@ export function DiffToolbar() {
             <Button
               type="button"
               id="view-options"
-              variant="outline"
-              size="sm"
+              variant="outline-muted"
+              size="icon-sm"
               aria-label="View options"
+              title="View options"
             />
           }
         >
           <Settings2Icon aria-hidden="true" />
-          <span className="view-options-label">View options</span>
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="end"
@@ -108,17 +111,6 @@ export function DiffToolbar() {
           <DropdownMenuCheckboxItem checked={wrap} onCheckedChange={setWrap}>
             Wrap lines
           </DropdownMenuCheckboxItem>
-          <DropdownMenuItem
-            onClick={() =>
-              setCollapsed(
-                allCollapsed
-                  ? new Set()
-                  : new Set(files.map((file) => file.path)),
-              )
-            }
-          >
-            {allCollapsed ? "Expand all files" : "Collapse all files"}
-          </DropdownMenuItem>
           <div className="dropdown-menu-label">Layout</div>
           <DropdownMenuRadioGroup
             aria-label="Diff layout"
@@ -158,6 +150,26 @@ export function DiffToolbar() {
           </DropdownMenuRadioGroup>
         </DropdownMenuContent>
       </DropdownMenu>
+      <Button
+        type="button"
+        id="toggle-all-files"
+        variant="outline-muted"
+        size="icon-sm"
+        disabled={files.length === 0}
+        aria-label={allCollapsed ? "Expand all files" : "Collapse all files"}
+        title={allCollapsed ? "Expand all files" : "Collapse all files"}
+        onClick={() =>
+          setCollapsed(
+            allCollapsed ? new Set() : new Set(files.map((file) => file.path)),
+          )
+        }
+      >
+        {allCollapsed ? (
+          <ChevronsUpDownIcon aria-hidden="true" />
+        ) : (
+          <ChevronsDownUpIcon aria-hidden="true" />
+        )}
+      </Button>
     </div>
   );
 }

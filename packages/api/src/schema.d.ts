@@ -662,6 +662,11 @@ export interface components {
       path: string;
       scope: components["schemas"]["DiffMode"];
       fingerprint: string;
+      /**
+       * @description Omitted means a line comment. File comments use additions, zero start/end, and empty code.
+       * @enum {string}
+       */
+      target?: "file" | "lines";
       /** @enum {string} */
       side: "additions" | "deletions";
       start: number;
@@ -680,6 +685,11 @@ export interface components {
       path: string;
       scope: components["schemas"]["DiffMode"];
       fingerprint: string;
+      /**
+       * @description Omitted means a line comment. File comments use additions, zero start/end, and empty code.
+       * @enum {string}
+       */
+      target?: "file" | "lines";
       /** @enum {string} */
       side: "additions" | "deletions";
       start: number;
@@ -705,6 +715,11 @@ export interface components {
       fileId: string;
       scope: components["schemas"]["DiffMode"];
       fileVersion: string;
+      /**
+       * @description Omitted means a line comment. File comments use additions and zero start/end.
+       * @enum {string}
+       */
+      target?: "file" | "lines";
       /** @enum {string} */
       side: "additions" | "deletions";
       start: number;

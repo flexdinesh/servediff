@@ -228,7 +228,7 @@
 }
 #sidebar-resizer {
   /* Overlap the pane divider without shifting the viewer's alignment. */
-  margin: 0 0 0 -3px;
+  margin: 0 -2px 0 -3px;
   width: 5px;
   height: auto;
   align-self: stretch;
@@ -723,6 +723,9 @@
   .sidebar .tree-control.mobile-only {
     display: inline-flex;
   }
+  .sidebar-tabs {
+    height: var(--topbar-height);
+  }
 }
 
 @media (max-width: 767px) {
@@ -751,13 +754,7 @@
 /* Enlarge app chrome, never Pierre's measured header or code-row slots. */
 @media (max-width: 767px), (pointer: coarse) {
   .topbar [data-slot="button"],
-  [data-slot="button"][data-size="icon"],
-  .tree-control,
-  .tree-folder,
-  .file-row,
-  .sidebar-tabs button,
-  .review-tools-toggle,
-  .review-progress button,
+  [data-slot="button"][data-size="icon"]:not(.tree-control),
   .copy-comments-actions [data-slot="button"],
   .webmcp-instruction-button,
   .comment-filter-trigger,
@@ -769,24 +766,22 @@
   .toolbar [data-slot="button"],
   .toolbar [data-slot="toggle"],
   .toolbar [data-slot="select-trigger"],
-  .segmented button,
-  .search-box {
+  .segmented button {
     min-height: var(--touch-target);
   }
   .copy-comments-menu-trigger {
     min-width: var(--touch-target);
   }
-  #view-options {
-    min-width: var(--touch-target);
-    min-height: var(--touch-target);
+  #view-options,
+  #toggle-all-files {
+    width: var(--control-height);
+    height: var(--control-height);
+    min-width: var(--control-height);
+    min-height: var(--control-height);
   }
-  [data-slot="button"][data-size="icon"],
-  .tree-control,
+  [data-slot="button"][data-size="icon"]:not(.tree-control),
   #refresh {
     min-width: var(--touch-target);
-  }
-  .sidebar-tabs {
-    height: calc(var(--touch-target) + var(--space-2));
   }
   .comment-editor textarea,
   .copy-dialog textarea,

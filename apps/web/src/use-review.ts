@@ -197,7 +197,7 @@ export function useReview(
   );
 
   const begin = useCallback(
-    (file: ChangedFile, diff: FileDiffMetadata, range: SelectedLineRange) => {
+    (file: ChangedFile, diff?: FileDiffMetadata, range?: SelectedLineRange) => {
       const { repository, draft } = latest.current;
       if (!enabled) return;
       if (draft) {
@@ -205,7 +205,19 @@ export function useReview(
         return;
       }
       if (!repository) return;
-      const context = commentContext(diff, range);
+      const context =
+        diff && range
+          ? commentContext(diff, range)
+          : ({
+              target: "file",
+              side: "additions",
+              start: 0,
+              end: 0,
+              code: "",
+            } satisfies Pick<
+              ReviewComment,
+              "target" | "side" | "start" | "end" | "code"
+            >);
       if (!context) {
         setFeedback("Select up to 200 visible lines on one side to comment.");
         return;
@@ -266,6 +278,7 @@ export function useReview(
                 fileId: file.id,
                 scope: draft.scope,
                 fileVersion: draft.fingerprint,
+                ...(draft.target ? { target: draft.target } : {}),
                 side: draft.side,
                 start: draft.start,
                 end: draft.end,

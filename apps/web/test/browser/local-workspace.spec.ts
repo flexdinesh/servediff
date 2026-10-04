@@ -204,9 +204,17 @@ test("draft survives scopes and forced refresh while polling pauses and resumes"
   const state = await localWorkspace(page);
   await page.goto("/");
   await ready(page);
-  await page.locator('[data-gutter] [data-column-number="50"]').last().hover();
-  await page.locator("[data-utility-button]").click();
   const inline = page.locator("#viewer .comment-editor textarea");
+  // Worker rendering can replace the hover utility during initial highlighting.
+  await expect(async () => {
+    if (await inline.isVisible()) return;
+    await page
+      .locator('[data-gutter] [data-column-number="50"]')
+      .last()
+      .hover({ timeout: 1_000 });
+    await page.locator("[data-utility-button]").click({ timeout: 1_000 });
+    await expect(inline).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 10_000 });
   await inline.fill("Preserve this draft");
   const requestsBefore = state.scopes.length;
   await page.clock.fastForward(3_000);

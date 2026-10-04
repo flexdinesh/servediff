@@ -473,3 +473,70 @@ test("light and dark themes retain readable text and visible control boundaries"
     expect(contrast.statusBorder).toBeGreaterThanOrEqual(3);
   }
 });
+
+test("diff header actions use shared muted borders and collapse files directly", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const options = page.getByRole("button", {
+    name: "View options",
+    exact: true,
+  });
+  await expect(options).toHaveText("");
+  await expect(options).toHaveAttribute("title", "View options");
+  const reviewed = page.locator(".review-button").first();
+  await expect(reviewed).toHaveText("Reviewed");
+  const comment = page.locator(".file-comment-button").first();
+  await expect(comment).toHaveAttribute(
+    "title",
+    "Leave review comment on file",
+  );
+  for (const theme of ["light", "dark"]) {
+    await page
+      .locator("html")
+      .evaluate(
+        (element, value) => element.setAttribute("data-theme", value),
+        theme,
+      );
+    const colors = await page.evaluate(() => {
+      const probe = document.createElement("span");
+      probe.style.borderColor = "var(--border-muted)";
+      document.body.append(probe);
+      const expected = getComputedStyle(probe).borderColor;
+      const actual = Array.from(
+        document.querySelectorAll(
+          ".search-box, .layout-control, #view-options, #toggle-all-files, .review-button, .file-comment-button, #reset-reviewed",
+        ),
+        (element) => getComputedStyle(element).borderTopColor,
+      );
+      probe.remove();
+      return { expected, actual };
+    });
+    expect(colors.actual.every((color) => color === colors.expected)).toBe(
+      true,
+    );
+  }
+  await options.click();
+  await expect(
+    page.getByRole("menuitem", { name: "Collapse all files" }),
+  ).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await page
+    .getByRole("button", { name: "Collapse all files", exact: true })
+    .click();
+  await expect(page.locator(".diff-collapse[aria-expanded=true]")).toHaveCount(
+    0,
+  );
+  await expect(
+    page.getByRole("button", { name: "Expand all files", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Expand all files", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Collapse all files", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.locator(".diff-collapse[aria-expanded=true]").first(),
+  ).toBeVisible();
+});

@@ -1,3 +1,13 @@
+---
+name: servediff
+description: Focused, compact, calm code review workspace
+colors:
+  diff-canvas: "#ffffff"
+  diff-canvas-dot: "#e5e7ec"
+  diff-canvas-dark: "#111216"
+  diff-canvas-dot-dark: "#282a31"
+---
+
 # Design system
 
 ## Design direction
@@ -77,26 +87,28 @@ measured elements or replace the application tokens with framework defaults.
 
 ## Color
 
-| Role                          | Token              | Rule                                                               |
-| ----------------------------- | ------------------ | ------------------------------------------------------------------ |
-| Application / primary surface | `--bg`             | Canvas surround, inputs, header, primary content                   |
-| Secondary surface             | `--panel`          | Sidebar, grouped controls, inline review annotations               |
-| Elevated surface              | `--surface-raised` | Dialogs and future actual overlays                                 |
-| Primary text                  | `--fg`             | File names, headings, review content                               |
-| Secondary text                | `--text-secondary` | Supporting prose and available secondary actions                   |
-| Muted text                    | `--muted`          | Paths, counts, captions; still readable, never disabled by default |
-| Separator                     | `--border-muted`   | Pane dividers and low-emphasis grouping                            |
-| Control boundary              | `--border-control` | Inputs, outlined buttons, and resting interactive boundaries       |
-| Emphasized boundary           | `--border-strong`  | Rare boundaries requiring emphasis beyond focus or error styling   |
-| Neutral hover                 | `--hover`          | Available controls under the pointer, compact count surfaces       |
-| Accent                        | `--accent`         | Selection, focus, navigation links, primary commit action          |
-| Accent interaction            | `--accent-hover`   | Hover/active on filled primary actions                             |
-| Selected surface              | `--accent-bg`      | Selected file or pressed toggle                                    |
-| On accent                     | `--on-accent`      | Text on filled accent; never assume white in both themes           |
-| Success                       | `--success`        | Added files/counts, reviewed and resolved state                    |
-| Warning                       | `--warning`        | Modified files, recoverable notices                                |
-| Review anchor                 | `--review-anchor`  | Subtle tint on lines covered by a visible review comment           |
-| Destructive / error           | `--error`          | Deleted files/counts, conflicts, delete actions, errors            |
+| Role                          | Token               | Rule                                                               |
+| ----------------------------- | ------------------- | ------------------------------------------------------------------ |
+| Application / primary surface | `--bg`              | Inputs, header, primary content                                    |
+| Diff canvas                   | `--diff-canvas`     | Quiet neutral surround behind opaque file diffs                    |
+| Diff canvas dots              | `--diff-canvas-dot` | Faint dotted texture visible only between file diffs               |
+| Secondary surface             | `--panel`           | Sidebar, grouped controls, inline review annotations               |
+| Elevated surface              | `--surface-raised`  | Dialogs and future actual overlays                                 |
+| Primary text                  | `--fg`              | File names, headings, review content                               |
+| Secondary text                | `--text-secondary`  | Supporting prose and available secondary actions                   |
+| Muted text                    | `--muted`           | Paths, counts, captions; still readable, never disabled by default |
+| Separator                     | `--border-muted`    | Pane dividers and low-emphasis grouping                            |
+| Control boundary              | `--border-control`  | Inputs and controls requiring stronger boundaries                  |
+| Emphasized boundary           | `--border-strong`   | Rare boundaries requiring emphasis beyond focus or error styling   |
+| Neutral hover                 | `--hover`           | Available controls under the pointer, compact count surfaces       |
+| Accent                        | `--accent`          | Selection, focus, navigation links, primary commit action          |
+| Accent interaction            | `--accent-hover`    | Hover/active on filled primary actions                             |
+| Selected surface              | `--accent-bg`       | Selected file or pressed toggle                                    |
+| On accent                     | `--on-accent`       | Text on filled accent; never assume white in both themes           |
+| Success                       | `--success`         | Added files/counts, reviewed and resolved state                    |
+| Warning                       | `--warning`         | Modified files, recoverable notices                                |
+| Review anchor                 | `--review-anchor`   | Subtle tint on lines covered by a visible review comment           |
+| Destructive / error           | `--error`           | Deleted files/counts, conflicts, delete actions, errors            |
 
 - Use one foreground hierarchy across both themes. Dark mode maps the same roles;
   it is not a separate visual identity.
@@ -110,6 +122,10 @@ measured elements or replace the application tokens with framework defaults.
   the browser or whole machine. Keep that scope explicit in the tooltip.
 - Pierre owns syntax colors, changed-line fills, word highlights, line selection,
   and code-theme surfaces. App status tokens govern the surrounding UI only.
+- Quiet frames use the light canvas/dot tokens or their dark equivalents from
+  the frontmatter. Keep dots behind opaque code surfaces; they do not tint code.
+  Light mode uses the white primary surface and separator-colored dots; dark mode
+  uses a deeper charcoal canvas and softened dots. File headers retain `--panel`.
 
 ## Typography
 
@@ -158,12 +174,14 @@ component internals; layout remains aligned to the 4px rhythm.
 | Label to input; heading to prose       | 8                                         |
 | Comment card/editor padding            | 12 in both sidebar and inline locations   |
 | Sidebar section inset                  | 16                                        |
+| Diff canvas gutters / file gaps        | 12; measured from `--space-3`             |
 | Form groups / distinct sections        | 16 or 24                                  |
 | Dialog padding                         | 24                                        |
 | Large conceptual separation            | 32 or 48, rarely needed in review chrome  |
 
-Use `--page-gutter` for header, toolbar, notices, and footer: 24 desktop, 16 below
-1012px, 12 below 768px. Do not independently center those regions.
+Use `--page-gutter` for notices and footer: 24 desktop, 16 below
+1012px, 12 below 768px. Header, toolbar, and file frames share `--diff-gutter`
+(12px). Their trailing actions account for the viewport's native scrollbar inset.
 Use explicit margins instead of relying on browser-default paragraph spacing.
 
 Custom values are acceptable only for documented optical or renderer geometry:
@@ -176,12 +194,14 @@ such detail into a token. New layout spacing must use the scale.
 - Use a full-width application shell, not a centered marketing container.
   The diff receives all width remaining after navigation.
 - Header: `--topbar-height` (56 desktop, 48 narrow). Toolbar and sidebar tabs: `--toolbar-height`
-  (44) as the desktop baseline; allow toolbar height to grow when controls wrap.
+  (44) as the desktop baseline. The narrow toolbar matches the 48px page header;
+  its icon buttons match the header theme button's 32px control height.
 - Header uses `--panel`, a quiet brand, and the repository trigger as its primary
   context. Keep the secondary scope heading and muted monospace path inline;
   hide the path at 768–1011px and both below 768px. Group ghost Refresh/theme
   actions at the trailing edge; share `--hover` feedback with the trigger.
 - Status bar: `--statusbar-height` (28), with shortcuts shed before server metrics.
+- The diff display toolbar uses `--panel`, matching the header and status bar.
 - Desktop sidebar: `--sidebar-width` defaults to 330px. `use-sidebar.ts` owns
   the user's pixel width, bounded to 200–520px and available viewport space.
   Do not add competing CSS defaults or override a saved width at tablet sizes.
@@ -196,6 +216,8 @@ such detail into a token. New layout spacing must use the scale.
   Column gaps use the spacing scale. Do not turn every grouping into a card.
 - Keep overlays anchored to their owning region. Sidebar/resizer layering uses
   `--layer-sidebar` / `--layer-resizer`; modal dialogs use the native top layer.
+  The resize handle overlaps the divider fully and adds no layout width, so the
+  canvas's shared 12px gutter starts at the sidebar edge.
 
 ### Pierre boundary
 
@@ -205,18 +227,35 @@ such detail into a token. New layout spacing must use the scale.
   integration. Preserve the user's split/unified, wrapping, and code-theme choice.
 - Set supported `--diffs-font-*` / `--diffs-line-height` properties on `#viewer`.
   Keep the sizing probe, `ResizeObserver`, and `itemMetrics` synchronized.
-- Pierre's header uses the measured row height plus 24px native padding. Keep
-  header-slot controls compact; do not apply global touch sizing to these slots.
+- Pierre's header height is `2 * --space-4 + --space-1` (36px by default).
+  Measure it as file spacing × 3 so browser font scaling updates CSS and
+  `itemMetrics` together. Keep header-slot controls compact; do not apply global
+  touch sizing to these slots.
 - Do not add outer margins, padding, or borders to virtualized `diffs-container`
-  elements. Separate files with a Pierre-measured 8px gap and a subtle full-width
-  divider; keep `itemMetrics` synchronized so virtual scrolling remains correct.
+  elements. Quiet frames use `--space-3` horizontal gutters on `CodeView` and
+  Pierre-measured top/bottom padding and file gaps (12px by default), read from
+  the sizing probe. Frame each file with `--radius-md`, `overflow: clip`, and a
+  1px `--border` outline at the edge, matching shell separators in both themes.
+  Remove bottom padding from code and diff surfaces. Native horizontal scrollbar
+  tracks use the final row's addition/deletion color; other endings use the base
+  code surface. Set `itemMetrics.paddingBottom` to the measured native scrollbar
+  height for unwrapped code, or 0 when wrapped. The frame adds no layout geometry;
+  keep `itemMetrics` synchronized so virtual scrolling remains correct.
 - Keep `unsafeCSS` small and justified. Do not reconstruct syntax styling or
   broadly target internal shadow-DOM elements to make the library look like chrome.
+- Each file header shows a Reviewed toggle and, when comments are enabled, an
+  icon titled "Leave review comment on file". File comments use explicit
+  `target: "file"`, appear in Pierre's lineNumber 0 annotation slot, and never
+  select code lines. Navigation targets the file header; export omits line context.
 - Changing code/header geometry requires validating navigation, sticky headers,
   annotations, expansion, wrapping, and browser font scaling together.
 
 ## Borders, radii, and shadows
 
+- Use the shared `outline-muted` Button variant (`--border-muted`) for compact
+  diff actions and reset reviewed. Segmented layout controls and the grouped
+  file-filter field share this token.
+  Text, icons, hover and focus identify these actions; avoid per-button colors.
 - Use 1px `--border-muted` for separators and `--border-control` for interactive
   boundaries requiring 3:1 contrast. Reserve `--border-strong` for exceptional
   emphasis; focus and errors use their semantic tokens. Do not stack a card
@@ -229,7 +268,9 @@ such detail into a token. New layout spacing must use the scale.
 - `--shadow-overlay` is the single elevation treatment for drawers/dialogs.
   Use `--backdrop` for modal separation. Whitespace and surface changes do the
   grouping work in the rest of the app.
-- Pierre's file divider and measured gap are separation, not elevation.
+- Quiet frames use small corners (`--radius-md`, 6px by default), a neutral
+  outline, and measured gaps without an elevation shadow. The faint canvas dots
+  use a 20px pitch and remain visible only outside file surfaces.
 
 ## Components
 
@@ -350,16 +391,23 @@ Do not add motion for decoration. New animation must honor
 
 - Use 1012px for drawer navigation/tighter gutters and 768px for compact mobile
   chrome. Synchronize drawer behavior with `use-sidebar.ts`.
-- Keep scope and desktop layout choice visible. Put wrap, collapse-all, inline
-  detail, code theme, and narrow layout choice in View options.
+- Keep scope and desktop layout choice visible. View options and collapse/expand
+  all are adjacent icon buttons with action titles. Put wrap, inline detail,
+  code theme, and narrow layout choice in View options.
 - Mobile retains the project trigger's repository/branch context; truncate long
   labels and hide its shortcut hint. Hide the secondary heading/path and refresh
   text, preserving accessible labels and theme/sidebar controls.
 - Collapse navigation to the toggle-controlled modal drawer; its width is
   `min(320px, 88vw)`. Keep file selection, comments, and export reachable there.
+  Its tab strip matches `--topbar-height`, including the tablet header height.
+  File/folder rows, filter, summary toggle, and review progress retain desktop
+  control heights and spacing; do not apply the general mobile enlargement here.
 - Hide redundant summary/shortcut detail before removing essential actions.
 - At mobile widths or coarse pointers, app-owned controls target 44px hit heights;
   icon controls also reach 44px width. Text-input sizing uses `--text-input-touch`.
+  The compact View options and collapse/expand icons match the theme control's
+  32px size within the narrow 48px toolbar, per the workspace alignment brief.
+  Drawer navigation and summary controls retain desktop density, per the same brief.
 - Pierre code rows and header slots retain measured geometry. Larger library
   gutter/header targets need a coordinated renderer-metric change, not a CSS override.
 - Preserve the desktop split/unified and wrap preferences. Default narrow screens
@@ -406,24 +454,24 @@ Before adding a value or visual pattern:
 
 This audit records the starting points, not permission to reuse legacy values.
 
-| Area             | Existing pattern / inconsistency                                                            | Consolidation                                                                  |
-| ---------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| Surfaces         | White / `#f8f9fb`; dark `#151619` / `#1b1c20`                                               | Retain neutral shell; add a semantic elevated surface                          |
-| Text             | `#24252a` / `#e1e2e7`; most supporting text shared `#787c86` / `#91949e`                    | Distinguish secondary/muted; strengthen muted contrast                         |
-| Borders/hover    | `#e5e7ec` / `#303137`; `#eeeef4` / `#282930`                                                | Retain separators; distinguish control boundaries                              |
-| Accent/brand     | Violet `#6260df` / `#aba7ff`, pale violet fills; former yellow logo                         | Preserve violet roles; remove the nonessential logo                            |
-| Status           | Green `#24844c` / `#70cc95`, red `#cf4b51` / `#ed8a8e`, shared gold `#b58a29`               | Semantic success/error/warning with theme-equivalent contrast                  |
-| File kinds       | Four inline light/dark blue, gold, orange, purple pairs                                     | Bounded semantic file-kind tokens                                              |
-| Type             | System sans/mono; 9, 10, 11, 12, 13, 14, 15, 17, 18px; 400/550/600/650/700 weights          | Five UI sizes; three weights; separate functional touch-input size             |
-| Leading/tracking | Browser defaults, 18/13 tree, 22/13 code, 1.5/1.6/1.7 prose; −0.6px and 1.1px tracking      | Explicit UI/copy leading, semantic tracking; preserve measured code leading    |
-| Spacing          | Repeated 3/5/6/7/9/10/11/14/15/17/18/20/22px padding, margins, gaps mixed with 4/8/12/16/24 | 4px rhythm; documented optical exceptions only                                 |
-| Radii            | 3, 4, 5, 6, 7, 8, 10px plus circles                                                         | 3/6/12px roles; circles only for dots/checks                                   |
-| Shadows          | Tiny button and segmented shadows; sidebar shadow; dialog backdrop                          | One overlay shadow; retain non-geometric inset diff divider                    |
-| Geometry         | Header 58px, toolbar 40px; 24/28/30px icon controls and content-sized buttons               | 56/44px shell rhythm, 32px controls, 24px Pierre slots, 44px touch targets     |
-| Width/gutters    | Competing 260/220/280px sidebar rules; 10/12/14/22/24px gutters; 680px dialog               | One user-owned sidebar width; shared responsive gutter and reading-width roles |
-| Review           | Inline 12×14px padding versus sidebar/mobile 10px; 85px editor, 300px XML area              | Shared 12px comment inset, readable editor, viewport-bounded overlay           |
-| States           | Search removed input focus; textarea/select lacked shared focus; reviewed rows faded to 55% | Group/field focus, readable reviewed state, explicit destructive action        |
-| Responsive       | 1000/760px breakpoints; toolbar wrapped only below 760px                                    | 1012px drawer, 768px compact chrome, unified narrow default                    |
+| Area             | Existing pattern / inconsistency                                                            | Consolidation                                                                                |
+| ---------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Surfaces         | White / `#f8f9fb`; dark `#151619` / `#1b1c20`                                               | Retain neutral shell; add a semantic elevated surface                                        |
+| Text             | `#24252a` / `#e1e2e7`; most supporting text shared `#787c86` / `#91949e`                    | Distinguish secondary/muted; strengthen muted contrast                                       |
+| Borders/hover    | `#e5e7ec` / `#303137`; `#eeeef4` / `#282930`                                                | Retain separators; distinguish control boundaries                                            |
+| Accent/brand     | Violet `#6260df` / `#aba7ff`, pale violet fills; former yellow logo                         | Preserve violet roles; remove the nonessential logo                                          |
+| Status           | Green `#24844c` / `#70cc95`, red `#cf4b51` / `#ed8a8e`, shared gold `#b58a29`               | Semantic success/error/warning with theme-equivalent contrast                                |
+| File kinds       | Four inline light/dark blue, gold, orange, purple pairs                                     | Bounded semantic file-kind tokens                                                            |
+| Type             | System sans/mono; 9, 10, 11, 12, 13, 14, 15, 17, 18px; 400/550/600/650/700 weights          | Five UI sizes; three weights; separate functional touch-input size                           |
+| Leading/tracking | Browser defaults, 18/13 tree, 22/13 code, 1.5/1.6/1.7 prose; −0.6px and 1.1px tracking      | Explicit UI/copy leading, semantic tracking; preserve measured code leading                  |
+| Spacing          | Repeated 3/5/6/7/9/10/11/14/15/17/18/20/22px padding, margins, gaps mixed with 4/8/12/16/24 | 4px rhythm; documented optical exceptions only                                               |
+| Radii            | 3, 4, 5, 6, 7, 8, 10px plus circles                                                         | 3/6/12px roles; circles only for dots/checks                                                 |
+| Shadows          | Tiny button and segmented shadows; sidebar shadow; dialog backdrop                          | One overlay shadow; non-geometric file outlines without elevation                            |
+| Geometry         | Header 58px, toolbar 40px; 24/28/30px icon controls and content-sized buttons               | 56/44px shell rhythm, 32px controls, 24px Pierre slots, 44px touch targets                   |
+| Width/gutters    | Competing 260/220/280px sidebar rules; 10/12/14/22/24px gutters; 680px dialog               | One user-owned sidebar width; shared shell gutters/reading width; measured 12px diff spacing |
+| Review           | Inline 12×14px padding versus sidebar/mobile 10px; 85px editor, 300px XML area              | Shared 12px comment inset, readable editor, viewport-bounded overlay                         |
+| States           | Search removed input focus; textarea/select lacked shared focus; reviewed rows faded to 55% | Group/field focus, readable reviewed state, explicit destructive action                      |
+| Responsive       | 1000/760px breakpoints; toolbar wrapped only below 760px                                    | 1012px drawer, 768px compact chrome, unified narrow default                                  |
 
 ### Decisions needing product judgment
 

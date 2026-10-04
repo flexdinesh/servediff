@@ -11,6 +11,8 @@ const buttonVariants = cva(
           "bg-primary text-primary-foreground hover:bg-[var(--accent-hover)] active:bg-[var(--accent-hover)]",
         outline:
           "border-input bg-background text-foreground hover:bg-muted aria-expanded:bg-muted",
+        "outline-muted":
+          "border-[var(--border-muted)] bg-background text-foreground hover:bg-muted aria-expanded:bg-muted",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-muted aria-expanded:bg-muted",
         ghost:

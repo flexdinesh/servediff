@@ -252,7 +252,9 @@ test("file navigation scrolls to and retriggers a destination cue", async ({
   await expect(cue).toHaveCount(0, { timeout: 1_000 });
 });
 
-test("file diffs have measured gaps and end dividers", async ({ page }) => {
+test("file frames preserve measured gutters, gaps, and virtual geometry", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1280, height: 4_000 });
   await page.goto("/");
 
@@ -283,22 +285,94 @@ test("file diffs have measured gaps and end dividers", async ({ page }) => {
   expect(collapseAlignment.every((offset) => Math.abs(offset) <= 0.5)).toBe(
     true,
   );
-  const gaps = await containers.evaluateAll((elements) =>
-    elements.slice(0, -1).map((element, index) => {
-      const next = elements[index + 1];
-      if (!next) throw new Error("Missing adjacent diff");
-      const currentBox = element.getBoundingClientRect();
-      return next.getBoundingClientRect().top - currentBox.bottom;
-    }),
-  );
-  expect(gaps).toHaveLength(11);
-  expect(gaps.every((gap) => gap === 8)).toBe(true);
+  for (const fontSize of [16, 20]) {
+    const spacing = fontSize * 0.75;
+    await page.locator("html").evaluate((element, size) => {
+      element.style.fontSize = `${size}px`;
+    }, fontSize);
+    await expect(containers.first().locator("[data-diffs-header]")).toHaveCSS(
+      "height",
+      `${fontSize * 2.25}px`,
+    );
+    await expect
+      .poll(() =>
+        containers.evaluateAll((elements) =>
+          elements.slice(0, -1).map((element, index) => {
+            const next = elements[index + 1];
+            if (!next) throw new Error("Missing adjacent diff");
+            return (
+              next.getBoundingClientRect().top -
+              element.getBoundingClientRect().bottom
+            );
+          }),
+        ),
+      )
+      .toEqual(Array.from({ length: 11 }, () => spacing));
+    const gutters = await containers.first().evaluate((element) => {
+      const scroller = document.querySelector(".diff-code-view");
+      if (!scroller) throw new Error("Missing diff scroller");
+      const file = element.getBoundingClientRect();
+      const viewport = scroller.getBoundingClientRect();
+      return {
+        top: file.top - viewport.top,
+        left: file.left - viewport.left,
+        right: viewport.left + scroller.clientWidth - file.right,
+      };
+    });
+    expect(gutters).toEqual({ top: spacing, left: spacing, right: spacing });
+    await expect
+      .poll(() =>
+        containers.evaluateAll((elements, gap) => {
+          const scaffold = elements[0]?.parentElement?.parentElement;
+          if (!scaffold) throw new Error("Missing virtual scroll scaffold");
+          const measuredHeight = elements.reduce(
+            (height, element) =>
+              height + element.getBoundingClientRect().height,
+            (elements.length - 1) * gap,
+          );
+          return Math.abs(
+            scaffold.getBoundingClientRect().height - measuredHeight,
+          );
+        }, spacing),
+      )
+      .toBeLessThanOrEqual(0.5);
+  }
+  await page.locator("html").evaluate((element) => {
+    element.style.fontSize = "16px";
+  });
 
-  const divider = await containers
-    .first()
-    .evaluate((element) => getComputedStyle(element).boxShadow);
-  expect(divider).toContain("inset");
-  expect(divider).toContain("-1px");
+  await expect(containers.first()).toHaveCSS("box-shadow", "none");
+  await expect(containers.first()).toHaveCSS("border-radius", "6px");
+  await expect(containers.first()).toHaveCSS("outline-width", "1px");
+  await expect(containers.first()).toHaveCSS("outline-offset", "0px");
+  const borderColors = await containers.first().evaluate((element) => {
+    const toolbar = document.querySelector(".toolbar");
+    if (!toolbar) throw new Error("Missing toolbar");
+    return {
+      frame: getComputedStyle(element).outlineColor,
+      shell: getComputedStyle(toolbar).borderBottomColor,
+    };
+  });
+  expect(borderColors.frame).toBe(borderColors.shell);
+  await expect
+    .poll(() =>
+      containers.evaluateAll((elements) =>
+        elements.slice(0, 4).map((element) => {
+          const lines = element.shadowRoot?.querySelectorAll("[data-line]");
+          const last = lines?.[lines.length - 1];
+          if (!last) throw new Error("Missing final diff row");
+          return Math.abs(
+            element.getBoundingClientRect().bottom -
+              last.getBoundingClientRect().bottom,
+          );
+        }),
+      ),
+    )
+    .toEqual([0, 0, 0, 0]);
+  await expect(page.locator("#viewer")).toHaveCSS(
+    "background-image",
+    /radial-gradient/,
+  );
   const headerColors = await containers.first().evaluate((element) => {
     const root = element.shadowRoot;
     const header = root?.querySelector<HTMLElement>("[data-diffs-header]");
@@ -407,6 +481,12 @@ for (const [start, end] of [
     // Worker rendering can replace the hover utility before the drag starts.
     await expect(async () => {
       if (await editor.isVisible()) return;
+      // File spacing can leave the drag endpoint below the clipped viewport.
+      const endpoint = file.locator(
+        `[data-gutter] [data-column-number="${end}"]`,
+      );
+      await endpoint.scrollIntoViewIfNeeded({ timeout: 1_000 });
+      await expect(endpoint).toBeInViewport({ ratio: 1, timeout: 1_000 });
       await file
         .locator(`[data-gutter] [data-column-number="${start}"]`)
         .hover({ timeout: 1_000 });
@@ -414,10 +494,8 @@ for (const [start, end] of [
       if (start === end) {
         await add.click({ timeout: 1_000 });
       } else {
-        const button = await add.boundingBox();
-        const lastLine = await file
-          .locator(`[data-gutter] [data-column-number="${end}"]`)
-          .boundingBox();
+        const button = await add.boundingBox({ timeout: 1_000 });
+        const lastLine = await endpoint.boundingBox({ timeout: 1_000 });
         if (!button || !lastLine) throw new Error("Missing selection targets");
         await page.mouse.move(
           button.x + button.width / 2,
@@ -489,7 +567,7 @@ test("reset reviewed clears file review marks and disables when empty", async ({
 
   const reset = page.getByRole("button", { name: "Reset reviewed" });
   await expect(reset).toBeDisabled();
-  await expect(reset).toHaveAttribute("data-variant", "outline");
+  await expect(reset).toHaveAttribute("data-variant", "outline-muted");
   await expect(reset).toHaveAttribute("data-size", "xs");
   await expect(reset).toHaveCSS("height", "24px");
 
@@ -1146,6 +1224,16 @@ test("sidebar resizer supports pointer dragging", async ({ page }) => {
     name: "Resize file sidebar",
   });
   await expect(resizer).toBeVisible();
+  const paneGap = () =>
+    page.locator("main").evaluate((element) => {
+      const sidebar = document.querySelector("#sidebar");
+      if (!sidebar) throw new Error("Missing sidebar");
+      return (
+        element.getBoundingClientRect().left -
+        sidebar.getBoundingClientRect().right
+      );
+    });
+  expect(await paneGap()).toBe(0);
   const box = await resizer.boundingBox();
   expect(box?.height ?? 0).toBeGreaterThan(100);
   const before = Number(await resizer.getAttribute("aria-valuenow"));
@@ -1157,6 +1245,7 @@ test("sidebar resizer supports pointer dragging", async ({ page }) => {
   await expect
     .poll(async () => Number(await resizer.getAttribute("aria-valuenow")))
     .toBeGreaterThan(before);
+  expect(await paneGap()).toBe(0);
 });
 
 test("copy dialog reports clipboard status and restores focus", async ({
@@ -1404,49 +1493,149 @@ test("copy dialog reports clipboard status and restores focus", async ({
   await expect(instructionDialog).toBeHidden();
 });
 
-test("mobile sidebar preserves accessible touch targets", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
+test("drawer aligns its header and retains desktop navigation density", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 844 });
   await page.goto("/");
-  const toggle = page.getByRole("button", { name: "Show file sidebar" });
-  await expect(toggle).toBeVisible();
-  const box = await toggle.boundingBox();
-  await toggle.click();
-  await expect(page.locator("#sidebar")).toBeVisible();
-  expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
-  expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
-  const fileBox = await page
-    .locator("#file-tree .file-row")
-    .first()
-    .boundingBox();
-  const folderBox = await page
-    .locator("#file-tree .tree-folder")
-    .first()
-    .boundingBox();
-  const summaryBox = await page
-    .getByRole("button", { name: "Hide summary" })
-    .boundingBox();
-  const resetBox = await page
-    .getByRole("button", { name: "Reset reviewed" })
-    .boundingBox();
-  const searchBox = await page.locator(".search-box").boundingBox();
-  const filesTabBox = await page
-    .getByRole("tab", { name: /Changes/ })
-    .boundingBox();
-  const commentsTabBox = await page
-    .getByRole("tab", { name: /Review/ })
-    .boundingBox();
-  const toolbarBox = await page.locator(".toolbar").boundingBox();
-  const viewOptionsBox = await page
-    .getByRole("button", { name: "View options" })
-    .boundingBox();
-  expect(fileBox?.height ?? 0).toBeGreaterThanOrEqual(44);
-  expect(folderBox?.height ?? 0).toBeGreaterThanOrEqual(44);
-  expect(summaryBox?.height ?? 0).toBeGreaterThanOrEqual(44);
-  expect(resetBox?.height ?? 0).toBeGreaterThanOrEqual(44);
-  expect(searchBox?.height ?? 0).toBeGreaterThanOrEqual(44);
-  expect(filesTabBox?.height ?? 0).toBeGreaterThanOrEqual(44);
-  expect(commentsTabBox?.height ?? 0).toBeGreaterThanOrEqual(44);
-  expect(toolbarBox?.height ?? 0).toBeGreaterThanOrEqual(52);
-  expect(viewOptionsBox?.width ?? 0).toBeGreaterThanOrEqual(44);
-  expect(viewOptionsBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+  await expect(page.locator("#file-tree .file-row").first()).toBeVisible();
+  const density = () =>
+    page.evaluate(() => {
+      const selectors = [
+        ".file-row",
+        ".tree-folder",
+        ".summary-section .review-tools-toggle",
+        "#reset-reviewed",
+        ".search-box",
+        ".review-progress",
+        ".sidebar-footer",
+      ];
+      return selectors.map((selector) => {
+        const element = document.querySelector(selector);
+        if (!element) throw new Error(`Missing sidebar element: ${selector}`);
+        const style = getComputedStyle(element);
+        return {
+          height: element.getBoundingClientRect().height,
+          padding: style.padding,
+          margin: style.margin,
+        };
+      });
+    });
+  const desktop = await density();
+  for (const width of [800, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    const toggle = page.getByRole("button", { name: "Show file sidebar" });
+    await toggle.click();
+    await expect(page.locator("#sidebar")).toBeVisible();
+    await expect.poll(density).toEqual(desktop);
+    const header = await page.locator(".topbar").boundingBox();
+    const tabs = await page.locator(".sidebar-tabs").boundingBox();
+    if (!header || !tabs) throw new Error("Missing drawer header");
+    expect(tabs.height).toBe(header.height);
+    expect(tabs.y).toBe(header.y);
+    if (width === 390) {
+      const toolbar = await page.locator(".toolbar").boundingBox();
+      const theme = await page.locator("#theme").boundingBox();
+      const options = await page.locator("#view-options").boundingBox();
+      expect(toolbar?.height).toBe(header.height);
+      expect(options?.width).toBe(theme?.width);
+      expect(options?.height).toBe(theme?.height);
+    }
+    await page
+      .locator("#sidebar")
+      .getByRole("button", { name: "Close review sidebar" })
+      .click();
+    await expect(page.locator("#sidebar")).toBeHidden();
+    await expect(toggle).toBeFocused();
+  }
+});
+
+test("file review comments save and reopen without selecting lines", async ({
+  page,
+}) => {
+  await page.goto("/");
+  for (const path of ["config/servediff.json", "docs/legacy.md"]) {
+    const file = page
+      .locator("#viewer diffs-container")
+      .filter({ hasText: path });
+    await file
+      .getByRole("button", {
+        name: `Leave review comment on file ${path}`,
+        exact: true,
+      })
+      .click();
+    const editor = file.locator(".comment-editor");
+    await expect(editor).toBeVisible();
+    await expect(editor.locator(".comment-editor-title")).toContainText(path);
+    await expect(editor.locator(".comment-editor-title")).not.toContainText(
+      ":0",
+    );
+    await expect(file.locator("[data-selected-line]")).toHaveCount(0);
+    await editor
+      .getByRole("textbox", { name: "Review comment" })
+      .fill(`Review entire ${path}`);
+    const saved = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        /\/comments$/.test(new URL(response.url()).pathname),
+    );
+    await editor.getByRole("button", { name: "Save comment" }).click();
+    const response = await saved;
+    expect(response.ok()).toBe(true);
+    expect(response.request().postDataJSON()).toMatchObject({
+      target: "file",
+      start: 0,
+      end: 0,
+    });
+    const card = file
+      .locator(".comment-card")
+      .filter({ hasText: `Review entire ${path}` });
+    await expect(card).toBeVisible();
+    await expect(card.locator(".comment-card-title")).toContainText("· file");
+  }
+  await page.reload();
+  const card = page
+    .locator("#viewer .comment-card")
+    .filter({ hasText: "Review entire config/servediff.json" });
+  await expect(card).toBeVisible();
+  await card.getByRole("button", { name: "Edit", exact: true }).click();
+  await expect(page.locator("#viewer .comment-editor")).toBeVisible();
+  await page
+    .locator("#viewer .comment-editor")
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  await card.getByRole("button", { name: "Resolve", exact: true }).click();
+  await expect(card).toContainText("Resolved");
+});
+
+test("file comments remain available without a text diff", async ({ page }) => {
+  await page.route("**/files/*/patch?*", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        patch: "",
+        message: "Binary file changed. No text preview available.",
+      }),
+    }),
+  );
+  await page.goto("/");
+  const file = page
+    .locator("#viewer diffs-container")
+    .filter({ hasText: "config/servediff.json" });
+  await expect(file).toContainText("No text preview available");
+  await file
+    .getByRole("button", {
+      name: "Leave review comment on file config/servediff.json",
+      exact: true,
+    })
+    .click();
+  const editor = file.locator(".comment-editor");
+  await expect(editor).toBeVisible();
+  await editor
+    .getByRole("textbox", { name: "Review comment" })
+    .fill("Review this binary asset");
+  await editor.getByRole("button", { name: "Save comment" }).click();
+  await expect(file.locator(".comment-card")).toContainText(
+    "Review this binary asset",
+  );
 });

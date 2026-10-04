@@ -103,7 +103,8 @@ kbd {
   align-items: center;
   border-bottom: 1px solid var(--border);
   background: var(--panel);
-  padding: 0 var(--page-gutter);
+  padding: 0 var(--diff-gutter);
+  padding-right: calc(var(--diff-gutter) + var(--diff-viewport-inset, 0px));
 }
 .brand {
   display: flex;
@@ -215,7 +216,7 @@ kbd {
   height: var(--control-small);
   min-height: var(--control-small);
   padding: 0 var(--space-1-5);
-  border: 1px solid var(--border-control);
+  border: 1px solid var(--border-muted);
   border-radius: var(--radius-control);
   background: var(--bg);
   color: var(--muted);
@@ -376,12 +377,14 @@ main {
 }
 .toolbar {
   display: flex;
+  background: var(--panel);
   align-items: center;
   min-height: calc(var(--control-small) + 2 * var(--space-1));
   flex-shrink: 0;
   flex-wrap: wrap;
   gap: var(--space-1-5);
-  padding: var(--space-0-5) var(--page-gutter);
+  padding: var(--space-0-5) var(--diff-gutter);
+  padding-right: calc(var(--diff-gutter) + var(--diff-viewport-inset, 0px));
   border-bottom: 1px solid var(--border);
 }
 .segmented {
@@ -389,7 +392,7 @@ main {
   min-width: 0;
   display: inline-flex;
   min-height: var(--control-small);
-  border: 1px solid var(--border-control);
+  border: 1px solid var(--border-muted);
   border-radius: var(--radius-control);
   /* Optical inset inside the shared compact control height. */
   padding: 1px;
@@ -453,22 +456,35 @@ main {
   overflow: hidden;
   overflow-anchor: none;
   contain: strict;
-  background: var(--bg);
+  background: var(--diff-canvas);
+  background-image: radial-gradient(
+    circle,
+    var(--diff-canvas-dot) 0.8px,
+    transparent 0.9px
+  );
+  background-size: 20px 20px;
+  background-position: 10px 10px;
   --diffs-font-family: var(--font-mono);
   --diffs-font-size: var(--text-code);
   --diffs-line-height: calc(var(--text-code) * var(--leading-code));
   --diff-gutter-divider-width: 2px;
 }
+.diff-code-view {
+  padding-inline: var(--diff-gutter);
+}
 .diff-line-metric {
   position: absolute;
   visibility: hidden;
   pointer-events: none;
-  width: 0;
+  width: var(--diff-gutter);
   height: var(--diffs-line-height);
 }
-diffs-container {
-  /* Pair Pierre's measured gap with a non-geometric file-end rule. */
-  box-shadow: inset 0 -1px var(--border);
+#viewer diffs-container {
+  /* Frame files without adding unmeasured height to Pierre's virtual layout. */
+  border-radius: var(--radius-md);
+  overflow: clip;
+  outline: 1px solid var(--border);
+  outline-offset: 0;
 }
 .diff-collapse-gutter {
   display: inline-flex;
@@ -517,6 +533,11 @@ diffs-container {
 .copy-path[data-status="error"] .copy-path-feedback {
   color: var(--error);
 }
+.diff-file-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
 .review-button {
   color: var(--muted);
 }
@@ -546,7 +567,6 @@ diffs-container {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: var(--bg);
   text-align: center;
   padding: var(--page-gutter);
 }
@@ -680,15 +700,19 @@ h2 {
   }
   .toolbar {
     gap: var(--space-2);
-    min-height: calc(var(--touch-target) + 2 * var(--space-1));
+    height: var(--topbar-height);
+    min-height: var(--topbar-height);
+    padding-block: 0;
+  }
+  #view-options svg,
+  #toggle-all-files svg {
+    width: var(--icon-lg);
+    height: var(--icon-lg);
   }
   .toolbar-spacer {
     min-width: 0;
   }
   .layout-control {
-    display: none;
-  }
-  .view-options-label {
     display: none;
   }
   .diff-metadata {
