@@ -246,8 +246,28 @@ func TestDaemonConcurrentIngestion(t *testing.T) {
 		}
 	}
 	harness.requireRun(t, nil, "review", first, "--no-browser")
-	if repeated := harness.status(t); repeated.InstanceID != status.InstanceID || repeated.Captures != 3 {
-		t.Fatalf("repeat collection must reuse daemon and create another observation: %#v", repeated)
+	if repeated := harness.status(t); repeated.InstanceID != status.InstanceID || repeated.Captures != 2 {
+		t.Fatalf("repeat collection must reuse daemon and unchanged observation: %#v", repeated)
+	}
+	var repeatedCatalog contextCatalog
+	requestJSON(t, status.URL+"/api/v2/contexts", &repeatedCatalog)
+	for _, entry := range repeatedCatalog.Contexts {
+		found := false
+		for _, original := range catalog.Contexts {
+			if original.ID == entry.ID {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("repeat collection replaced context: %#v", repeatedCatalog)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(first, "value.txt"), []byte("changed again\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	harness.requireRun(t, nil, "review", first, "--no-browser")
+	if changed := harness.status(t); changed.Captures != 3 {
+		t.Fatalf("changed content failed to create observation: %#v", changed)
 	}
 }
 
@@ -289,8 +309,8 @@ func TestDaemonCaptureSurvivesRestart(t *testing.T) {
 	}
 	var catalog contextCatalog
 	requestJSON(t, before.URL+"/api/v2/contexts", &catalog)
-	if len(catalog.Contexts) != 2 || catalog.Contexts[0].ID == catalog.Contexts[1].ID {
-		t.Fatalf("independent identical pipes must create separate captures: %#v", catalog)
+	if len(catalog.Contexts) != 1 {
+		t.Fatalf("identical pipes must reuse one capture: %#v", catalog)
 	}
 	id := catalog.Contexts[0].ID
 	for _, entry := range catalog.Contexts {
@@ -305,7 +325,7 @@ func TestDaemonCaptureSurvivesRestart(t *testing.T) {
 	}
 	harness.requireRun(t, nil, "service", "restart", "--state", harness.state, "--port", strconv.Itoa(before.Settings.Port))
 	after := harness.status(t)
-	if after.InstanceID == before.InstanceID || after.Captures != 2 || after.Settings != before.Settings || after.URL != before.URL {
+	if after.InstanceID == before.InstanceID || after.Captures != 1 || after.Settings != before.Settings || after.URL != before.URL {
 		t.Fatalf("restart must replace process and retain data/settings: before=%#v after=%#v", before, after)
 	}
 	var restored currentDiff
@@ -313,8 +333,14 @@ func TestDaemonCaptureSurvivesRestart(t *testing.T) {
 	if restored.ID != original.ID || restored.VersionID != original.VersionID || len(restored.Files) != len(original.Files) {
 		t.Fatalf("captured diff changed across restart: original=%#v restored=%#v", original, restored)
 	}
-	if queried := harness.status(t); queried.Captures != 2 {
+	if queried := harness.status(t); queried.Captures != 1 {
 		t.Fatalf("querying an observation must not duplicate it: %#v", queried)
+	}
+	harness.requireRun(t, patch, "pipe", "--no-browser")
+	var repeated contextCatalog
+	requestJSON(t, after.URL+"/api/v2/contexts", &repeated)
+	if len(repeated.Contexts) != 1 || repeated.Contexts[0].ID != id {
+		t.Fatalf("restart lost dedupe identity: %#v", repeated)
 	}
 }
 
