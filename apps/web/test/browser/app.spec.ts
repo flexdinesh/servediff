@@ -461,8 +461,8 @@ for (const [start, end] of [
       const endpoint = file.locator(
         `[data-gutter] [data-column-number="${end}"]`,
       );
-      await endpoint.scrollIntoViewIfNeeded();
-      await expect(endpoint).toBeInViewport({ ratio: 1 });
+      await endpoint.scrollIntoViewIfNeeded({ timeout: 1_000 });
+      await expect(endpoint).toBeInViewport({ ratio: 1, timeout: 1_000 });
       await file
         .locator(`[data-gutter] [data-column-number="${start}"]`)
         .hover({ timeout: 1_000 });
@@ -470,10 +470,8 @@ for (const [start, end] of [
       if (start === end) {
         await add.click({ timeout: 1_000 });
       } else {
-        const button = await add.boundingBox();
-        const lastLine = await file
-          .locator(`[data-gutter] [data-column-number="${end}"]`)
-          .boundingBox();
+        const button = await add.boundingBox({ timeout: 1_000 });
+        const lastLine = await endpoint.boundingBox({ timeout: 1_000 });
         if (!button || !lastLine) throw new Error("Missing selection targets");
         await page.mouse.move(
           button.x + button.width / 2,
