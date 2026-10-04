@@ -1,6 +1,7 @@
 package ingestion
 
 import (
+	"encoding/hex"
 	"fmt"
 	"strings"
 
@@ -13,6 +14,14 @@ func Validate(input Request) error {
 	}
 	if strings.TrimSpace(input.SubmissionID) == "" || len(input.SubmissionID) > 128 {
 		return fmt.Errorf("submissionId required; maximum 128 bytes")
+	}
+	if input.ContentHash != "" {
+		if len(input.ContentHash) != 64 || input.ContentHash != strings.ToLower(input.ContentHash) {
+			return fmt.Errorf("contentHash must be a lowercase SHA256 hex digest")
+		}
+		if _, err := hex.DecodeString(input.ContentHash); err != nil {
+			return fmt.Errorf("contentHash must be a lowercase SHA256 hex digest")
+		}
 	}
 	if strings.TrimSpace(input.Metadata.SourceID) == "" || len(input.Metadata.SourceID) > 256 || input.Metadata.CollectedAt <= 0 {
 		return fmt.Errorf("sourceId and positive collectedAt required")

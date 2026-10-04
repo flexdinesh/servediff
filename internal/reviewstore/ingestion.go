@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"sort"
 	"strings"
 	"time"
 
@@ -18,6 +19,9 @@ func initializeIngestion(tx *sql.Tx) error {
 		`CREATE TABLE IF NOT EXISTS observation_repositories (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, repository_key TEXT NOT NULL, UNIQUE(owner_id,repository_key))`,
 		`CREATE TABLE IF NOT EXISTS observations (context_id TEXT PRIMARY KEY REFERENCES contexts(id) ON DELETE CASCADE, owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, source_id TEXT NOT NULL, submission_id TEXT NOT NULL, payload_hash TEXT NOT NULL, repository_id TEXT REFERENCES observation_repositories(id), metadata TEXT NOT NULL, UNIQUE(owner_id,source_id,submission_id))`,
 		`CREATE TABLE IF NOT EXISTS observation_scopes (context_id TEXT NOT NULL REFERENCES observations(context_id) ON DELETE CASCADE, mode TEXT NOT NULL, diff_id TEXT NOT NULL UNIQUE REFERENCES diffs(id) ON DELETE CASCADE, version_id TEXT NOT NULL REFERENCES diff_versions(id) ON DELETE CASCADE, PRIMARY KEY(context_id,mode))`,
+		`CREATE TABLE IF NOT EXISTS observation_submissions (owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, source_id TEXT NOT NULL, submission_id TEXT NOT NULL, context_id TEXT NOT NULL REFERENCES observations(context_id) ON DELETE CASCADE, payload_hash TEXT NOT NULL, metadata TEXT NOT NULL, PRIMARY KEY(owner_id,source_id,submission_id))`,
+		`INSERT INTO observation_submissions(owner_id,source_id,submission_id,context_id,payload_hash,metadata) SELECT owner_id,source_id,submission_id,context_id,payload_hash,metadata FROM observations WHERE true ON CONFLICT DO NOTHING`,
+		`CREATE TABLE IF NOT EXISTS observation_identities (owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, identity_hash TEXT NOT NULL, context_id TEXT NOT NULL REFERENCES observations(context_id) ON DELETE CASCADE, PRIMARY KEY(owner_id,identity_hash))`,
 		`CREATE INDEX IF NOT EXISTS observations_source ON observations(owner_id,source_id)`,
 		`CREATE INDEX IF NOT EXISTS observations_branch ON observations(owner_id,json_extract(metadata,'$.branch'))`,
 	}
@@ -50,7 +54,7 @@ func (store *Store) Ingest(ownerID string, request ingestion.Request) (Binding, 
 	}
 	defer tx.Rollback()
 	var id, previousHash string
-	err = tx.QueryRow(`SELECT context_id,payload_hash FROM observations WHERE owner_id=? AND source_id=? AND submission_id=?`, ownerID, request.Metadata.SourceID, request.SubmissionID).Scan(&id, &previousHash)
+	err = tx.QueryRow(`SELECT context_id,payload_hash FROM observation_submissions WHERE owner_id=? AND source_id=? AND submission_id=?`, ownerID, request.Metadata.SourceID, request.SubmissionID).Scan(&id, &previousHash)
 	if err == nil {
 		if hash != previousHash {
 			return Binding{}, ErrSubmissionConflict
@@ -59,6 +63,37 @@ func (store *Store) Ingest(ownerID string, request ingestion.Request) (Binding, 
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return Binding{}, err
+	}
+	now := time.Now().UnixMilli()
+	identity, err := observationIdentity(request)
+	if err != nil {
+		return Binding{}, err
+	}
+	if identity != "" {
+		err = tx.QueryRow(`SELECT i.context_id FROM observation_identities i JOIN contexts c ON c.id=i.context_id JOIN diffs d ON d.id=c.capture_id WHERE i.owner_id=? AND i.identity_hash=? AND d.expires_at>?`, ownerID, identity, now).Scan(&id)
+		if err == nil {
+			if _, err := tx.Exec(`UPDATE contexts SET last_submitted_at=? WHERE id=?`, now, id); err != nil {
+				return Binding{}, err
+			}
+			if _, err := tx.Exec(`UPDATE diffs SET expires_at=? WHERE id IN (SELECT diff_id FROM observation_scopes WHERE context_id=?)`, now+CaptureLifetime.Milliseconds(), id); err != nil {
+				return Binding{}, err
+			}
+			if err := putObservationSubmission(tx, ownerID, id, hash, request); err != nil {
+				return Binding{}, err
+			}
+			binding, err := observationBinding(tx, ownerID, id)
+			if err != nil {
+				return Binding{}, err
+			}
+			return binding, tx.Commit()
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return Binding{}, err
+		}
+		// Expired identity may still await pruning. It must not hide a new review.
+		if _, err := tx.Exec(`DELETE FROM observation_identities WHERE owner_id=? AND identity_hash=?`, ownerID, identity); err != nil {
+			return Binding{}, err
+		}
 	}
 	id, err = newID()
 	if err != nil {
@@ -78,7 +113,6 @@ func (store *Store) Ingest(ownerID string, request ingestion.Request) (Binding, 
 		}
 		repositoryID = &repoID
 	}
-	now := time.Now().UnixMilli()
 	binding := Binding{ContextID: id, RepositoryID: repositoryID, DiffIDs: make(map[review.DiffMode]string)}
 	// The all-scope diff anchors the legacy capture context; extra scopes have
 	// independent review identities associated through observation_scopes.
@@ -108,7 +142,7 @@ func (store *Store) Ingest(ownerID string, request ingestion.Request) (Binding, 
 		if err != nil {
 			return Binding{}, err
 		}
-		if _, err := tx.Exec(`INSERT INTO diffs(id,owner_id,kind,mode,created_at) VALUES(?,?,'observation',?,?)`, diffID, ownerID, snapshot.Mode, now); err != nil {
+		if _, err := tx.Exec(`INSERT INTO diffs(id,owner_id,kind,mode,created_at,expires_at) VALUES(?,?,'observation',?,?,?)`, diffID, ownerID, snapshot.Mode, now, now+CaptureLifetime.Milliseconds()); err != nil {
 			return Binding{}, err
 		}
 		snapshot.ID, snapshot.VersionID = diffID, versionID
@@ -139,7 +173,43 @@ func (store *Store) Ingest(ownerID string, request ingestion.Request) (Binding, 
 			return Binding{}, err
 		}
 	}
+	if err := putObservationSubmission(tx, ownerID, id, hash, request); err != nil {
+		return Binding{}, err
+	}
+	if identity != "" {
+		if _, err := tx.Exec(`INSERT INTO observation_identities(owner_id,identity_hash,context_id) VALUES(?,?,?)`, ownerID, identity, id); err != nil {
+			return Binding{}, err
+		}
+	}
 	return binding, tx.Commit()
+}
+
+// Missing hashes from older producers dedupe only known empty snapshots.
+func observationIdentity(request ingestion.Request) (string, error) {
+	modes := make([]string, 0, len(request.Scopes))
+	for _, scope := range request.Scopes {
+		modes = append(modes, string(scope.Snapshot.Mode))
+		if request.ContentHash == "" && len(scope.Snapshot.Files) != 0 {
+			return "", nil
+		}
+	}
+	sort.Strings(modes)
+	metadata := request.Metadata
+	encoded, err := json.Marshal([]any{metadata.SourceID, metadata.RepositoryKey, metadata.CheckoutKey, metadata.Branch, metadata.Head, request.Scopes[0].Snapshot.Source, modes, request.ContentHash})
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.Sum256(encoded)
+	return hex.EncodeToString(digest[:]), nil
+}
+
+func putObservationSubmission(tx *sql.Tx, ownerID, contextID, hash string, request ingestion.Request) error {
+	metadata, err := json.Marshal(request.Metadata)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(`INSERT INTO observation_submissions(owner_id,source_id,submission_id,context_id,payload_hash,metadata) VALUES(?,?,?,?,?,?)`, ownerID, request.Metadata.SourceID, request.SubmissionID, contextID, hash, string(metadata))
+	return err
 }
 
 func pinObservationVersion(tx *sql.Tx, snapshot review.RepositoryDiff, patches map[string]review.FilePatch, now int64) error {
@@ -168,7 +238,7 @@ func pinObservationVersion(tx *sql.Tx, snapshot review.RepositoryDiff, patches m
 
 func observationBinding(db queryer, ownerID, contextID string) (Binding, error) {
 	binding := Binding{ContextID: contextID, DiffIDs: make(map[review.DiffMode]string)}
-	if err := db.QueryRow(`SELECT repository_id FROM observations WHERE owner_id=? AND context_id=?`, ownerID, contextID).Scan(&binding.RepositoryID); err != nil {
+	if err := db.QueryRow(`SELECT o.repository_id FROM observations o JOIN contexts c ON c.id=o.context_id JOIN diffs d ON d.id=c.capture_id WHERE o.owner_id=? AND o.context_id=? AND d.expires_at>?`, ownerID, contextID, time.Now().UnixMilli()).Scan(&binding.RepositoryID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Binding{}, ErrNotFound
 		}
@@ -196,7 +266,7 @@ func observationBinding(db queryer, ownerID, contextID string) (Binding, error) 
 
 func (store *Store) Observation(ownerID, contextID string) (ingestion.Metadata, error) {
 	var raw string
-	err := store.db.QueryRow(`SELECT metadata FROM observations WHERE owner_id=? AND context_id=?`, ownerID, contextID).Scan(&raw)
+	err := store.db.QueryRow(`SELECT o.metadata FROM observations o JOIN contexts c ON c.id=o.context_id JOIN diffs d ON d.id=c.capture_id WHERE o.owner_id=? AND o.context_id=? AND d.expires_at>?`, ownerID, contextID, time.Now().UnixMilli()).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ingestion.Metadata{}, ErrNotFound
 	}
@@ -210,7 +280,7 @@ func (store *Store) Observation(ownerID, contextID string) (ingestion.Metadata, 
 
 func (store *Store) ObservationSnapshot(ownerID, contextID string, mode review.DiffMode) (review.RepositoryDiff, error) {
 	var raw string
-	err := store.db.QueryRow(`SELECT v.manifest FROM observations o JOIN observation_scopes s ON s.context_id=o.context_id JOIN diff_versions v ON v.id=s.version_id WHERE o.owner_id=? AND o.context_id=? AND s.mode=?`, ownerID, contextID, mode).Scan(&raw)
+	err := store.db.QueryRow(`SELECT v.manifest FROM observations o JOIN observation_scopes s ON s.context_id=o.context_id JOIN diff_versions v ON v.id=s.version_id JOIN diffs d ON d.id=s.diff_id WHERE o.owner_id=? AND o.context_id=? AND s.mode=? AND d.expires_at>?`, ownerID, contextID, mode, time.Now().UnixMilli()).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return review.RepositoryDiff{}, ErrNotFound
 	}
@@ -224,7 +294,7 @@ func (store *Store) ObservationSnapshot(ownerID, contextID string, mode review.D
 
 func (store *Store) ObservationPatch(ownerID, contextID string, mode review.DiffMode, fileID string) (review.FilePatch, error) {
 	var raw string
-	err := store.db.QueryRow(`SELECT f.patch FROM observations o JOIN observation_scopes s ON s.context_id=o.context_id JOIN diff_files f ON f.version_id=s.version_id WHERE o.owner_id=? AND o.context_id=? AND s.mode=? AND f.file_id=?`, ownerID, contextID, mode, fileID).Scan(&raw)
+	err := store.db.QueryRow(`SELECT f.patch FROM observations o JOIN observation_scopes s ON s.context_id=o.context_id JOIN diff_files f ON f.version_id=s.version_id JOIN diffs d ON d.id=s.diff_id WHERE o.owner_id=? AND o.context_id=? AND s.mode=? AND f.file_id=? AND d.expires_at>?`, ownerID, contextID, mode, fileID, time.Now().UnixMilli()).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return review.FilePatch{}, ErrNotFound
 	}
@@ -238,8 +308,8 @@ func (store *Store) ObservationPatch(ownerID, contextID string, mode review.Diff
 
 // ObservationContexts filters immutable observations using captured metadata.
 func (store *Store) ObservationContexts(ownerID string, limit int, beforeTime int64, beforeID string, filter ingestion.Filter) ([]ContextInfo, error) {
-	query := contextSelect + ` WHERE c.owner_id=? AND o.context_id IS NOT NULL`
-	arguments := []any{ownerID}
+	query := contextSelect + ` WHERE c.owner_id=? AND o.context_id IS NOT NULL AND d.expires_at>?`
+	arguments := []any{ownerID, time.Now().UnixMilli()}
 	fields := []struct{ key, value string }{
 		{"repositoryName", filter.Repository}, {"branch", filter.Branch}, {"worktreeName", filter.Worktree}, {"hostname", filter.Hostname}, {"sourceId", filter.SourceID}, {"runId", filter.RunID},
 	}

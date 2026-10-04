@@ -470,15 +470,7 @@ test("unavailable context keeps the switcher usable", async ({ page }) => {
   await page.route("**/api/v2/contexts/unavailable", (route) =>
     route.fulfill({ status: 503, json: { detail: "Repository moved" } }),
   );
-  await page.goto("/");
-  await ready(page);
-  await page
-    .getByRole("button", { name: "Switch repository", exact: true })
-    .click();
-  await page
-    .getByRole("combobox", { name: "Search repositories" })
-    .fill("Unavailable repo");
-  await page.keyboard.press("Enter");
+  await page.goto("/contexts/unavailable");
   await expect(page.getByText("Repository moved")).toBeVisible();
   await page
     .getByRole("button", { name: "Switch repository", exact: true })
@@ -658,7 +650,18 @@ test("picker distinguishes unknown and unavailable status and refreshes change c
   ).toContainText("Status unknown");
   await expect(
     dialog.getByRole("option", { name: /Missing repo/ }),
+  ).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Filters", exact: true }).click();
+  await dialog
+    .getByRole("button", { name: "Availability", exact: true })
+    .click();
+  await page.getByRole("menuitemradio", { name: "All", exact: true }).click();
+  await expect(
+    dialog.getByRole("option", { name: /Missing repo/ }),
   ).toContainText("Unavailable");
+  await expect(
+    dialog.getByRole("option", { name: /Missing repo/ }),
+  ).toBeDisabled();
   const search = dialog.getByRole("combobox", { name: "Search repositories" });
   await search.fill("Local");
   await expect(dialog.getByRole("option")).toHaveCount(1);
@@ -809,4 +812,154 @@ test("observation picker drills into repositories and searches independent sourc
   await expect(dialog.getByRole("option")).toContainText("4 snapshots");
   await expect(page).toHaveURL(/\/contexts\/second$/);
   expect(state.scopes).toHaveLength(diffReads);
+});
+
+test("picker combines filters before grouping and preserves them across navigation and reopening", async ({
+  page,
+}) => {
+  const state = await localWorkspace(page);
+  function snapshot(
+    id: string,
+    hostname: string,
+    branch: string,
+    worktreeName: string,
+    changedFileCount: number,
+  ): ApiContext {
+    return {
+      ...state.context,
+      id,
+      kind: "observation",
+      branch,
+      worktreeName,
+      changedFileCount,
+      observation: {
+        sourceId: `source-${hostname}`,
+        hostname,
+        runId: "run",
+        agent: "",
+        trigger: "review",
+        repositoryKey: "repo",
+        repositoryName: state.context.name,
+        remoteUrl: "https://example.test/review.git",
+        checkoutKey: worktreeName,
+        root: `/workspace/${worktreeName}`,
+        worktreeName,
+        branch,
+        head: "head",
+        collectedAt: 1000,
+        collectorVersion: "test",
+      },
+    };
+  }
+  const contexts = [
+    snapshot("first", "host-a", "main", "tree-a", 1),
+    snapshot("second", "host-b", "feature", "tree-b", 2),
+    snapshot("third", "host-c", "main", "tree-c", 0),
+    {
+      ...state.context,
+      id: "missing",
+      name: "Missing checkout",
+      availability: "unavailable",
+    },
+  ];
+  await page.route("**/api/v2/contexts?*", (route) =>
+    route.fulfill({ json: { contexts, nextCursor: null } }),
+  );
+  await page.route("**/api/v2/contexts/*", (route) => {
+    const id = new URL(route.request().url()).pathname.split("/").at(-1);
+    return route.fulfill({
+      json: contexts.find((context) => context.id === id),
+    });
+  });
+  await page.goto("/");
+  await ready(page);
+  const trigger = page.getByRole("button", {
+    name: "Switch repository",
+    exact: true,
+  });
+  await trigger.click();
+  const dialog = page.getByRole("dialog", { name: "Switch repository" });
+  const search = dialog.getByRole("combobox", { name: "Search repositories" });
+  await expect(dialog.getByRole("option")).toContainText("3 snapshots");
+  await expect(
+    dialog.getByRole("option", { name: /Missing checkout/ }),
+  ).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Filters", exact: true }).click();
+  await dialog.getByRole("button", { name: "Host", exact: true }).click();
+  await page
+    .getByRole("menuitemcheckbox", { name: "host-a", exact: true })
+    .click();
+  await page
+    .getByRole("menuitemcheckbox", { name: "host-b", exact: true })
+    .click();
+  await page.keyboard.press("Escape");
+  await expect(dialog.getByRole("option")).toContainText("2 snapshots");
+  await dialog.getByRole("button", { name: "Branch", exact: true }).click();
+  await page
+    .getByRole("menuitemcheckbox", { name: "feature", exact: true })
+    .click();
+  await page.keyboard.press("Escape");
+  await expect(dialog.getByRole("option")).toContainText("1 snapshot");
+  await dialog.getByRole("button", { name: "Worktree", exact: true }).click();
+  await page
+    .getByRole("menuitemcheckbox", { name: "tree-b", exact: true })
+    .click();
+  await page.keyboard.press("Escape");
+  await dialog.getByRole("button", { name: "Changes", exact: true }).click();
+  await page
+    .getByRole("menuitemradio", { name: "No changes", exact: true })
+    .click();
+  await expect(
+    page.getByRole("menuitemradio", { name: "No changes", exact: true }),
+  ).toBeHidden();
+  await expect(
+    dialog.getByText("No repositories found", { exact: true }),
+  ).toBeVisible();
+  await dialog.getByRole("button", { name: "Changes", exact: true }).click();
+  await page
+    .getByRole("menuitemradio", { name: "Changed", exact: true })
+    .click();
+  await expect(
+    page.getByRole("menuitemradio", { name: "Changed", exact: true }),
+  ).toBeHidden();
+  await search.focus();
+  await search.press("Enter");
+  await expect(dialog.getByRole("option")).toHaveCount(1);
+  await expect(dialog.getByRole("option")).toContainText("tree-b");
+  await dialog.getByRole("button", { name: "Back to repositories" }).click();
+  await expect(dialog.getByRole("option")).toContainText("1 snapshot");
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await trigger.click();
+  await expect(dialog.getByRole("option")).toContainText("1 snapshot");
+  await expect(dialog.locator(".project-picker-filter-summary")).toContainText(
+    "Host: host-a · Host: host-b · Branch: feature · Worktree: tree-b",
+  );
+  await page.setViewportSize({ width: 360, height: 640 });
+  const bounds = await dialog.boundingBox();
+  if (!bounds) throw new Error("Missing picker bounds");
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(360);
+  expect(bounds.y + bounds.height).toBeLessThanOrEqual(640);
+  await dialog
+    .getByRole("button", { name: "Clear filters", exact: true })
+    .click();
+  await expect(dialog.getByRole("option")).toContainText("3 snapshots");
+  await dialog
+    .getByRole("button", { name: "Availability", exact: true })
+    .click();
+  await page.getByRole("menuitemradio", { name: "All", exact: true }).click();
+  const unavailable = dialog.getByRole("option", { name: /Missing checkout/ });
+  await expect(unavailable).toBeDisabled();
+  await expect(unavailable).toContainText(
+    "No collected snapshot for this checkout",
+  );
+  await search.fill("Missing checkout");
+  await search.press("ArrowDown");
+  await search.press("Enter");
+  await expect(dialog).toBeVisible();
+  await expect(search).not.toHaveAttribute("aria-activedescendant");
+  await expect(page).toHaveURL(/\/contexts\/first$/);
+  await search.fill("");
+  await search.press("ArrowDown");
+  await expect(unavailable).toHaveAttribute("aria-selected", "false");
 });

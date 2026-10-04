@@ -30,11 +30,21 @@ loopback control with the same application operation.
 
 ## Identity and stored state
 
-Each submission creates an independent observation. Replaying the same
-account/source/submission identity with identical payload returns the original
-result; reusing it with different content fails. Independent producers may
-submit the same checkout and branch. There are no producer ownership claims,
-precedence policies or automatic failover.
+Fresh submissions reuse an unexpired observation when account, source,
+repository, checkout, branch, HEAD and stable content hash match. The content
+hash covers all/staged/unstaged data, exact file contents and file modes before
+preview limits; filesystem timestamps are excluded. Unknown full content
+identities remain independent. Older producers without a content hash dedupe
+only empty snapshots. Independent sources and checkouts stay separate.
+
+Retry identity remains account/source/submission ID: identical replays return
+the original result; changed payloads conflict. Each fresh submission retains
+its own retry mapping and captured metadata. Reusing a snapshot preserves its
+original manifests, previews, comments and reviewed marks; only its last
+submission time and seven-day expiry advance. Retries do not extend retention.
+Expired snapshots are hidden from reads, then pruned with all scopes and review
+state. Migration applies retention from existing last submission times and
+preserves duplicate histories until expiry.
 
 Repository grouping is separate from source and checkout identity. Paths and
 hostnames are captured labels, not global identities. Container sources can
@@ -53,8 +63,10 @@ not guaranteed current filesystem state.
 `GET /api/v2/contexts` supports metadata search and repository, branch, worktree,
 hostname, source and run filters. The browser chooses a repository, then an
 observation. `GET /api/v2/events` emits transient ingestion notifications;
-clients query durable catalog state after reconnecting. Notifications are not
-a queue or proof of delivery.
+clients query durable catalog state after reconnecting. The picker filters
+availability, host, changes, branch and worktree before repository grouping.
+Available is the default; unavailable legacy entries are disabled when shown.
+Notifications are not a queue or proof of delivery.
 
 ## Local and remote composition
 

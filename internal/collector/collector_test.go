@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/ingestion"
@@ -278,5 +279,205 @@ func TestSourceIdentityPersistsAcrossConcurrentInvocations(t *testing.T) {
 	id, err := SourceID()
 	if err != nil || id != "explicit-container" {
 		t.Fatalf("explicit ID: %q %v", id, err)
+	}
+}
+
+func TestContentIdentityIgnoresRewritesButTracksStaging(t *testing.T) {
+	root := repository(t)
+	write(t, root, "tracked", "original\n")
+	git(t, root, "add", ".")
+	git(t, root, "commit", "-m", "initial")
+	write(t, root, "tracked", "working\n")
+	first := collect(t, root)
+	write(t, root, "tracked", "working\n")
+	if err := os.Chtimes(filepath.Join(root, "tracked"), time.Unix(1, 0), time.Unix(1, 0)); err != nil {
+		t.Fatal(err)
+	}
+	rewritten := collect(t, root)
+	if first.ContentHash == "" || rewritten.ContentHash != first.ContentHash {
+		t.Fatalf("identical rewrite changed content identity: %s -> %s", first.ContentHash, rewritten.ContentHash)
+	}
+	git(t, root, "add", "tracked")
+	staged := collect(t, root)
+	if staged.ContentHash == rewritten.ContentHash {
+		t.Fatal("staging did not change content identity")
+	}
+	// The combined diff is unchanged, but staged contents also matter.
+	write(t, root, "tracked", "original\n")
+	stagedWithCleanCombinedDiff := collect(t, root)
+	git(t, root, "reset", "--", "tracked")
+	clean := collect(t, root)
+	if stagedWithCleanCombinedDiff.ContentHash == clean.ContentHash {
+		t.Fatal("nonempty staged/unstaged scopes collided with clean checkout")
+	}
+}
+
+func TestContentIdentityIncludesUnpreviewableBytes(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		before string
+		after  string
+	}{
+		{"binary", "before\x00binary", "after!\x00binary"},
+		{"file limit", strings.Repeat("a", diffsource.MaxFileBytes+1), strings.Repeat("a", diffsource.MaxFileBytes) + "b"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := repository(t)
+			write(t, root, "untracked", test.before)
+			first := collect(t, root)
+			write(t, root, "untracked", test.after)
+			second := collect(t, root)
+			if first.ContentHash == "" || second.ContentHash == "" || first.ContentHash == second.ContentHash {
+				t.Fatal("different full contents shared content identity")
+			}
+			git(t, root, "add", ".")
+			git(t, root, "commit", "-m", "initial")
+			write(t, root, "untracked", test.before)
+			third := collect(t, root)
+			write(t, root, "untracked", test.after)
+			fourth := collect(t, root)
+			if third.ContentHash == "" || fourth.ContentHash == "" || third.ContentHash == fourth.ContentHash {
+				t.Fatal("tracked bytes shared content identity")
+			}
+		})
+	}
+}
+
+func TestContentIdentityIncludesFilesAfterAggregatePreviewBudget(t *testing.T) {
+	root := repository(t)
+	value := strings.Repeat("a", 3<<19)
+	for _, name := range []string{"a", "b", "c", "d", "e", "f", "g", "z-last"} {
+		write(t, root, name, value)
+	}
+	first := collect(t, root)
+	preview := patchFor(t, first, review.DiffAll, "z-last")
+	if preview.Patch != "" || preview.Contents != nil || preview.Message == nil {
+		t.Fatalf("test must exhaust aggregate budget before last file: %+v", preview)
+	}
+	write(t, root, "z-last", value[:len(value)-1]+"b")
+	second := collect(t, root)
+	if first.ContentHash == "" || second.ContentHash == first.ContentHash {
+		t.Fatal("file omitted from previews also omitted from content identity")
+	}
+}
+
+func TestContentIdentityIncludesConflictStages(t *testing.T) {
+	root := repository(t)
+	var commits []string
+	for _, value := range []string{"base\n", "ours-one\n", "ours-two\n", "theirs\n"} {
+		write(t, root, "tracked", value)
+		git(t, root, "add", ".")
+		git(t, root, "commit", "-m", "change")
+		commits = append(commits, git(t, root, "rev-parse", "HEAD"))
+	}
+	stages := func(ours string) {
+		t.Helper()
+		command := exec.Command("git", "update-index", "--index-info")
+		command.Dir = root
+		command.Stdin = strings.NewReader("0 " + strings.Repeat("0", 40) + "\ttracked\n" +
+			"100644 " + git(t, root, "rev-parse", commits[0]+":tracked") + " 1\ttracked\n" +
+			"100644 " + git(t, root, "rev-parse", ours+":tracked") + " 2\ttracked\n" +
+			"100644 " + git(t, root, "rev-parse", commits[3]+":tracked") + " 3\ttracked\n")
+		if raw, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("set conflict stages: %v: %s", err, raw)
+		}
+	}
+	stages(commits[1])
+	first := collect(t, root)
+	stages(commits[2])
+	second := collect(t, root)
+	if first.ContentHash == "" || second.ContentHash == "" || first.ContentHash == second.ContentHash {
+		t.Fatal("different conflict index stages shared content identity")
+	}
+}
+
+func TestContentIdentityForEmptyUnbornAndCleanCheckouts(t *testing.T) {
+	root := repository(t)
+	unborn := collect(t, root)
+	if unborn.ContentHash == "" || collect(t, root).ContentHash != unborn.ContentHash {
+		t.Fatal("unborn checkout lacks stable content identity")
+	}
+	write(t, root, "tracked", "original\n")
+	git(t, root, "add", ".")
+	git(t, root, "commit", "-m", "initial")
+	clean := collect(t, root)
+	if clean.ContentHash == "" || collect(t, root).ContentHash != clean.ContentHash {
+		t.Fatal("clean checkout lacks stable content identity")
+	}
+}
+
+func TestPipeContentIdentityUsesInput(t *testing.T) {
+	raw := "diff --git a/file b/file\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n"
+	options := Options{SourceID: "source", Hostname: "host"}
+	first, err := CollectPatch(t.Context(), raw, "", options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := CollectPatch(t.Context(), raw, "", options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	third, err := CollectPatch(t.Context(), strings.ReplaceAll(raw, "+new", "+different"), "", options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ContentHash == "" || first.ContentHash != second.ContentHash || first.ContentHash == third.ContentHash {
+		t.Fatal("piped identity does not reflect exact immutable input")
+	}
+}
+
+func TestContentIdentityIncludesModesRenamesAndSymlinks(t *testing.T) {
+	root := repository(t)
+	write(t, root, "tracked", "original\n")
+	git(t, root, "add", ".")
+	git(t, root, "commit", "-m", "initial")
+	write(t, root, "tracked", "working\n")
+	first := collect(t, root)
+	if err := os.Chmod(filepath.Join(root, "tracked"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	mode := collect(t, root)
+	if mode.ContentHash == "" || mode.ContentHash == first.ContentHash {
+		t.Fatal("file mode missing from content identity")
+	}
+	git(t, root, "add", ".")
+	staged := collect(t, root)
+	git(t, root, "mv", "tracked", "renamed")
+	renamed := collect(t, root)
+	if renamed.ContentHash == "" || renamed.ContentHash == staged.ContentHash {
+		t.Fatal("rename missing from content identity")
+	}
+	link := filepath.Join(root, "link")
+	if err := os.Symlink("target-one", link); err != nil {
+		t.Fatal(err)
+	}
+	linked := collect(t, root)
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("target-two", link); err != nil {
+		t.Fatal(err)
+	}
+	if other := collect(t, root); linked.ContentHash == "" || other.ContentHash == linked.ContentHash {
+		t.Fatal("symlink target missing from content identity")
+	}
+}
+
+func TestChangedSubmoduleRemainsReviewableWithoutContentIdentity(t *testing.T) {
+	root := repository(t)
+	write(t, root, "tracked", "original\n")
+	git(t, root, "add", ".")
+	git(t, root, "commit", "-m", "initial")
+	head := git(t, root, "rev-parse", "HEAD")
+	git(t, root, "update-index", "--add", "--cacheinfo", "160000,"+head+",module")
+	if err := os.Mkdir(filepath.Join(root, "module"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	request := collect(t, root)
+	if request.ContentHash != "" {
+		t.Fatal("submodule contents incorrectly treated as complete")
+	}
+	if err := ingestion.Validate(request); err != nil {
+		t.Fatalf("unsupported content identity prevented valid review: %v", err)
 	}
 }

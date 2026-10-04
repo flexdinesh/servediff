@@ -303,7 +303,7 @@ func (service *Service) present(item reviewstore.ContextInfo) (Context, error) {
 		if name == "" {
 			name = "Piped diff"
 		}
-		return Context{ID: item.ID, Kind: "observation", Name: name, Root: &m.Root, RepositoryID: item.RepositoryID, CreatedAt: item.CreatedAt, LastSubmittedAt: item.LastSubmittedAt, LastChangedAt: m.CollectedAt, ChangedFileCount: item.ChangedFileCount, SubmittedFrom: item.SubmittedFrom, Observation: m, Branch: &m.Branch, WorktreeName: &m.WorktreeName, Availability: "available", Capabilities: storedCapabilities(scopes, snapshot.Source == "local")}, nil
+		return Context{ID: item.ID, Kind: "observation", Name: name, Root: &m.Root, RepositoryID: item.RepositoryID, CreatedAt: item.CreatedAt, LastSubmittedAt: item.LastSubmittedAt, LastChangedAt: m.CollectedAt, ExpiresAt: item.ExpiresAt, ChangedFileCount: item.ChangedFileCount, SubmittedFrom: item.SubmittedFrom, Observation: m, Branch: &m.Branch, WorktreeName: &m.WorktreeName, Availability: "available", Capabilities: storedCapabilities(scopes, snapshot.Source == "local")}, nil
 	}
 	var branch, worktreeName *string
 	lastChangedAt := item.LastSubmittedAt

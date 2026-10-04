@@ -19,6 +19,9 @@ func TestValidateObservationContracts(t *testing.T) {
 		{"unknown protocol", func(r *Request) { r.ProtocolVersion++ }},
 		{"blank submission", func(r *Request) { r.SubmissionID = " " }},
 		{"oversized submission", func(r *Request) { r.SubmissionID = strings.Repeat("x", 129) }},
+		{"short content hash", func(r *Request) { r.ContentHash = "abc" }},
+		{"invalid content hash", func(r *Request) { r.ContentHash = strings.Repeat("z", 64) }},
+		{"uppercase content hash", func(r *Request) { r.ContentHash = strings.Repeat("A", 64) }},
 		{"blank source", func(r *Request) { r.Metadata.SourceID = " " }},
 		{"oversized source", func(r *Request) { r.Metadata.SourceID = strings.Repeat("x", 257) }},
 		{"missing collection time", func(r *Request) { r.Metadata.CollectedAt = 0 }},
@@ -67,6 +70,7 @@ func TestValidateObservationContracts(t *testing.T) {
 
 func TestValidateEmptyAndUnavailableSnapshots(t *testing.T) {
 	r := validRequest()
+	r.ContentHash = strings.Repeat("a", 64)
 	message := "Binary contents unavailable"
 	r.Scopes[0].Patches["file"] = review.FilePatch{Message: &message}
 	if err := Validate(r); err != nil {

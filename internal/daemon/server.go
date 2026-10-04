@@ -180,7 +180,7 @@ func runServer(ctx context.Context, cancel context.CancelFunc, settings Settings
 				return
 			case <-ticker.C:
 				if err := store.PruneExpired(time.Now()); err != nil {
-					logger.Printf("prune captures: %v", err)
+					logger.Printf("prune diffs: %v", err)
 				}
 			}
 		}

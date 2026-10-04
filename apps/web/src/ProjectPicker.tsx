@@ -7,6 +7,7 @@ import {
   GitBranchIcon,
   SearchIcon,
   SquareTerminalIcon,
+  SlidersHorizontalIcon,
   XIcon,
 } from "lucide-react";
 import { useEffect, useId, useRef, useState, type RefObject } from "react";
@@ -23,9 +24,18 @@ import {
   contextChangeLabel,
   contextDetail,
   contextHasChanges,
+  contextUnavailableReason,
+  defaultPickerFilters,
+  pickerEntryAvailable,
+  pickerFilterOptions,
   pickerEntries,
   observationDetail,
 } from "./project-picker.ts";
+import {
+  PickerFilterControls,
+  pickerFiltersChanged,
+  pickerFilterSummary,
+} from "./PickerFilters.tsx";
 
 function ContextIcon({ context }: { context: ApiContext }) {
   const Icon = context.kind === "capture" ? SquareTerminalIcon : FolderGit2Icon;
@@ -103,21 +113,25 @@ export function ProjectPicker({
   const [query, setQuery] = useState("");
   const [repositoryId, setRepositoryId] = useState("");
   const [highlightedId, setHighlightedId] = useState("");
+  const [filters, setFilters] = useState(defaultPickerFilters);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const listId = useId();
-  const results = pickerEntries(contexts, query, repositoryId);
+  const filtersId = useId();
+  const results = pickerEntries(contexts, query, repositoryId, filters);
+  const selectable = results.filter(pickerEntryAvailable);
   const repository = contexts.find(
     (context) => context.repositoryId === repositoryId,
   );
   const active =
-    results.find((context) => context.id === highlightedId) ??
+    selectable.find((context) => context.id === highlightedId) ??
     (!query.trim()
-      ? results.find(
+      ? selectable.find(
           (entry) =>
             entry.kind === "context" && entry.context.id === selectedId,
         )
       : undefined) ??
-    results[0];
+    selectable[0];
   const optionId = (id: string) => `${listId}-${id}`;
   const changeOpen = (next: boolean) => {
     if (!next) {
@@ -129,6 +143,7 @@ export function ProjectPicker({
   };
   const choose = (id: string) => {
     const entry = results.find((result) => result.id === id);
+    if (!entry || !pickerEntryAvailable(entry)) return;
     if (entry?.kind === "repository") {
       setRepositoryId(entry.context.repositoryId ?? "");
       setHighlightedId("");
@@ -189,69 +204,114 @@ export function ProjectPicker({
           worktrees, hosts, and runs. Use arrow keys to navigate and Enter to
           choose.
         </DialogDescription>
-        <div className="project-picker-search">
-          {repositoryId ? (
+        <div className="project-picker-header">
+          <div className="project-picker-search">
+            {repositoryId ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={back}
+                aria-label="Back to repositories"
+              >
+                <ArrowLeftIcon aria-hidden="true" />
+              </Button>
+            ) : (
+              <SearchIcon className="size-(--icon-base)" aria-hidden="true" />
+            )}
+            <Input
+              ref={searchRef}
+              role="combobox"
+              aria-label="Search repositories"
+              aria-autocomplete="list"
+              aria-expanded={open}
+              aria-controls={listId}
+              aria-activedescendant={activeOptionId}
+              placeholder={
+                repositoryId
+                  ? `Search ${repository?.name ?? "observations"}…`
+                  : "Search repositories, branches, hosts…"
+              }
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setHighlightedId("");
+              }}
+              onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing) return;
+                const index = selectable.findIndex(
+                  (context) => context.id === active?.id,
+                );
+                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                  event.preventDefault();
+                  const next =
+                    selectable[
+                      Math.max(
+                        0,
+                        Math.min(
+                          selectable.length - 1,
+                          index + (event.key === "ArrowDown" ? 1 : -1),
+                        ),
+                      )
+                    ];
+                  if (next) setHighlightedId(next.id);
+                } else if (
+                  event.key === "ArrowLeft" &&
+                  repositoryId &&
+                  !query
+                ) {
+                  event.preventDefault();
+                  back();
+                } else if (event.key === "Enter" && active) {
+                  event.preventDefault();
+                  choose(active.id);
+                }
+              }}
+            />
             <Button
               type="button"
               variant="ghost"
               size="icon-sm"
-              onClick={back}
-              aria-label="Back to repositories"
+              aria-label="Filters"
+              title="Filter repositories"
+              aria-expanded={filtersOpen}
+              aria-controls={filtersId}
+              onClick={() => setFiltersOpen((value) => !value)}
             >
-              <ArrowLeftIcon aria-hidden="true" />
+              <SlidersHorizontalIcon aria-hidden="true" />
             </Button>
-          ) : (
-            <SearchIcon className="size-(--icon-base)" aria-hidden="true" />
-          )}
-          <Input
-            ref={searchRef}
-            role="combobox"
-            aria-label="Search repositories"
-            aria-autocomplete="list"
-            aria-expanded={open}
-            aria-controls={listId}
-            aria-activedescendant={activeOptionId}
-            placeholder={
-              repositoryId
-                ? `Search ${repository?.name ?? "observations"}…`
-                : "Search repositories, branches, hosts…"
-            }
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setHighlightedId("");
-            }}
-            onKeyDown={(event) => {
-              if (event.nativeEvent.isComposing) return;
-              const index = results.findIndex(
-                (context) => context.id === active?.id,
-              );
-              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                event.preventDefault();
-                const next =
-                  results[
-                    Math.max(
-                      0,
-                      Math.min(
-                        results.length - 1,
-                        index + (event.key === "ArrowDown" ? 1 : -1),
-                      ),
-                    )
-                  ];
-                if (next) setHighlightedId(next.id);
-              } else if (event.key === "ArrowLeft" && repositoryId && !query) {
-                event.preventDefault();
-                back();
-              } else if (event.key === "Enter" && active) {
-                event.preventDefault();
-                choose(active.id);
-              }
-            }}
-          />
-          <DialogClose render={<Button variant="ghost" size="icon-sm" />}>
-            <XIcon aria-hidden="true" />
-            <span className="sr-only">Close</span>
-          </DialogClose>
+            <DialogClose render={<Button variant="ghost" size="icon-sm" />}>
+              <XIcon aria-hidden="true" />
+              <span className="sr-only">Close</span>
+            </DialogClose>
+          </div>
+          <div id={filtersId} hidden={!filtersOpen}>
+            <PickerFilterControls
+              filters={filters}
+              options={pickerFilterOptions(contexts)}
+              onChange={(next) => {
+                setFilters(next);
+                setHighlightedId("");
+              }}
+            />
+          </div>
+          <div className="project-picker-filter-summary">
+            <span title={pickerFilterSummary(filters)}>
+              {pickerFilterSummary(filters)}
+            </span>
+            {pickerFiltersChanged(filters) && (
+              <Button
+                variant="ghost"
+                size="xs"
+                onClick={() => {
+                  setFilters(defaultPickerFilters);
+                  setHighlightedId("");
+                }}
+              >
+                Clear filters
+              </Button>
+            )}
+          </div>
         </div>
         <div
           id={listId}
@@ -262,6 +322,7 @@ export function ProjectPicker({
           {results.map((entry) => {
             const context = entry.context;
             const grouped = entry.kind === "repository";
+            const available = pickerEntryAvailable(entry);
             return (
               <button
                 type="button"
@@ -271,9 +332,13 @@ export function ProjectPicker({
                 key={entry.id}
                 className="project-picker-option"
                 aria-selected={entry.id === active?.id}
-                title={`${context.root ?? context.name}\n${observationDetail(context)}`}
+                aria-disabled={!available}
+                disabled={!available}
+                title={`${context.root ?? context.name}\n${available ? observationDetail(context) : contextUnavailableReason(context)}`}
                 onClick={() => choose(entry.id)}
-                onMouseMove={() => setHighlightedId(entry.id)}
+                onMouseMove={() => {
+                  if (available) setHighlightedId(entry.id);
+                }}
               >
                 <ContextIcon context={context} />
                 <span className="project-picker-copy">
@@ -301,6 +366,11 @@ export function ProjectPicker({
                       </span>
                     </span>
                   </span>
+                  {!available && (
+                    <span className="project-picker-unavailable-reason">
+                      {contextUnavailableReason(context)}
+                    </span>
+                  )}
                   <span className="project-picker-path">
                     {!context.observation && context.worktreeName && (
                       <span className="project-picker-kind">Worktree · </span>
@@ -350,9 +420,7 @@ export function ProjectPicker({
               <p>
                 {repositoryId ? "No snapshots found" : "No repositories found"}
               </p>
-              <span>
-                Try another repository, branch, worktree, host, or run.
-              </span>
+              <span>Try another search or clear filters.</span>
             </div>
           )}
         </div>

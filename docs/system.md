@@ -128,9 +128,14 @@ sequenceDiagram
 ### Browse and review
 
 The dashboard queries `/api/v2/contexts`, selects a repository, then selects an
-observation identified by worktree, branch, source, run and time. Multiple
-observations from the same worktree remain independently selectable. Search
-supports repository, branch, worktree, hostname, source and run metadata.
+observation identified by worktree, branch, source, run and time. Distinct
+content from the same worktree remains independently selectable; unchanged
+reviews reuse one context. Search supports repository, branch, worktree,
+hostname, source and run metadata. Filters cover Availability, Host, Changes,
+Branch and Worktree, with OR within a multi-select filter and AND across
+filters. Filtering precedes repository grouping and counts. Available is the
+default; unavailable legacy entries are disabled and skipped by keyboard
+navigation. Selections persist while navigating the picker.
 
 Opening a context or switching scope loads its stored manifest, patches and
 available contents through scoped REST endpoints. MCP uses the same stored
@@ -178,7 +183,11 @@ producer reported; it is not proof of repository ownership or trustworthiness.
 SQLite is the durable query source, including the diff data itself. Reads need
 neither Git nor a repository mount. Available full contents are captured within
 a collection budget; unsupported or unavailable previews remain explicit.
-Schemas migrate existing reviews and retained captures. Legacy registered
+Snapshots expire seven days after the last fresh submission. Reads enforce
+expiry immediately; local and remote servers prune at startup and hourly,
+removing all scopes, previews, comments, marks and retry mappings. Schema
+migration preserves existing histories and sets expiry from their last
+submission times. Existing duplicates remain until expiry. Legacy registered
 worktree contexts cannot trigger server Git reads; users submit a new review.
 
 ## Decisions and trade-offs
@@ -188,8 +197,8 @@ worktree contexts cannot trigger server Git reads; users submit a new review.
 | Push-only freshness                                          | Queries have predictable dependencies and work after checkout removal. Missing producer events or failed uploads can leave the catalog behind the checkout.  |
 | Complete observations, not path registration or change pings | The same contract works across machines and containers. Producers pay collection and upload costs; the server never needs producer filesystem access.        |
 | Shared pipeline for hooks and manual commands                | Both paths produce the same searchable metadata and reviewable data. No separate plugin-specific storage model.                                              |
-| Immutable observations                                       | History, concurrent sources and comments remain understandable. Repeated collections consume additional storage.                                             |
-| Keep independent submissions                                 | No exclusive producer, ownership transfer, automatic failover or precedence policy. Users can inspect every source; duplicate content may appear repeatedly. |
+| Immutable snapshots with seven-day retention                 | Reused contexts keep their original contents and review state; fresh submissions reset expiry. Expiry removes comments and reviewed marks too.               |
+| Dedupe matching checkout content                             | Stable hashes reuse unchanged reviews within one account/source/checkout/branch/HEAD. Independent sources and different contents remain separate.            |
 | Synchronous atomic ingestion                                 | A successful receipt means publication is committed, not merely queued. Upload latency includes validation and persistence.                                  |
 | One server process, layered entry points                     | Local use stays simple; remote deployment adds authentication around shared logic. This is not a distributed worker system.                                  |
 | SQLite first                                                 | Durable queries and transactions with a small operational footprint. Other storage and queue backends remain future implementation work.                     |
@@ -206,7 +215,14 @@ The API does not contact producers to establish freshness.
 Replay identity is **account + source ID + submission ID**. The server hashes
 the validated request representation. A matching replay returns the original
 context; different content under the same identity fails with a conflict.
-Content similarity between different submissions does not cause deduplication.
+A separate identity uses account, source, repository, checkout, branch, HEAD,
+source kind, scopes and producer content hash to reuse unexpired snapshots.
+The hash covers full content before preview truncation, including binary and
+untracked files, modes, renames and staged/unstaged state; mtime and ctime are
+excluded. Unsupported full identities fail closed and remain independent.
+Producers without a hash dedupe only known empty snapshots. Fresh matching
+submissions retain separate retry mappings and provenance, refresh catalog
+recency and reset expiry without replacing the original snapshot or review.
 
 The CLI performs a bounded retry of the exact collected request after an
 eligible transport failure. It does not recollect the checkout during that
@@ -217,7 +233,8 @@ requests fail explicitly rather than being retried as transport errors.
 There is no durable producer outbox, offline upload queue or guarantee that an
 agent hook will run. Producers report failures. Direct plugins implementing the
 contract must preserve submission identity themselves when retrying. A later
-manual collection is a new observation, not a replay of a previous failed one.
+manual collection has a new submission ID and may reuse matching content; it
+is not a replay of a previous failed submission.
 
 ## Local and remote boundaries
 
@@ -251,12 +268,12 @@ added at server composition boundaries while preserving the shared application
 operations and versioned ingestion contract.
 
 Future multi-user auth must derive ownership from authenticated credentials.
-Future duplicate presentation or precedence can query retained metadata and
-content hashes without first discarding independent submissions. Future
+Future precedence can query retained submission metadata without discarding
+independent source identities. Future
 storage backends must preserve atomic publication and replay identity. A future
 queue must distinguish accepted work from committed, queryable observations
 rather than silently weakening the existing receipt semantics.
 
-Trigger selection, durable producer retries, retention, multi-user auth,
+Trigger selection, durable producer retries, configurable retention, multi-user auth,
 alternative storage, queues and any upstream relay remain open extensions.
 They are not hidden background behavior in the current system.

@@ -5,6 +5,9 @@ import {
   contextChangeLabel,
   pickerResults,
   pickerEntries,
+  defaultPickerFilters,
+  pickerEntryAvailable,
+  pickerFilterOptions,
 } from "../src/project-picker.ts";
 
 const main: ApiContext = {
@@ -209,4 +212,113 @@ test("repositories group observations without merging sources or repeated submis
     pickerEntries(contexts, "container-b", "repo").map((entry) => entry.id),
     ["second"],
   );
+});
+
+test("availability defaults to available and unavailable entries cannot be selected", () => {
+  const unavailable: ApiContext = { ...clone, availability: "unavailable" };
+  assert.deepEqual(pickerResults([main, unavailable], ""), [main]);
+  const all = pickerEntries([main, unavailable], "", "", {
+    ...defaultPickerFilters,
+    availability: "all",
+  });
+  assert.equal(all.length, 2);
+  assert.equal(all.filter(pickerEntryAvailable).length, 1);
+  assert.deepEqual(
+    pickerResults([main, unavailable], "", {
+      ...defaultPickerFilters,
+      availability: "unavailable",
+    }),
+    [unavailable],
+  );
+});
+
+test("multi-value filters use OR within a filter and AND across filters before grouping", () => {
+  const first = {
+    ...observation("first", "host-a", "run"),
+    worktreeName: "tree-a",
+    changedFileCount: 1,
+  };
+  const second = {
+    ...observation("second", "host-b", "run"),
+    worktreeName: "tree-b",
+    branch: "feature",
+    changedFileCount: 2,
+  };
+  const third = {
+    ...observation("third", "host-c", "run"),
+    worktreeName: "tree-c",
+    changedFileCount: 0,
+  };
+  const contexts = [first, second, third];
+  const filters = {
+    ...defaultPickerFilters,
+    hosts: ["host-a", "host-b"],
+    branches: ["main", "feature"],
+    worktrees: ["tree-b"],
+  };
+  const entries = pickerEntries(contexts, "", "", filters);
+  const grouped = entries[0];
+  if (grouped?.kind !== "repository") throw new Error("Missing repository");
+  assert.deepEqual(
+    grouped.contexts.map((context) => context.id),
+    ["second"],
+  );
+  assert.deepEqual(
+    pickerEntries(contexts, "", "repo", filters).map((entry) => entry.id),
+    ["second"],
+  );
+  assert.deepEqual(pickerResults(contexts, "host-a", filters), []);
+  assert.deepEqual(pickerFilterOptions(contexts), {
+    hosts: ["host-a", "host-b", "host-c"],
+    branches: ["feature", "main"],
+    worktrees: ["tree-a", "tree-b", "tree-c"],
+  });
+});
+
+test("changes filters exclude unknown and unavailable counts", () => {
+  const changed = { ...main, id: "changed", changedFileCount: 2 };
+  const unknown = { ...main, id: "unknown", changedFileCount: null };
+  const unavailable: ApiContext = {
+    ...main,
+    id: "unavailable",
+    availability: "unavailable",
+    changedFileCount: 2,
+  };
+  const contexts = [main, changed, unknown, unavailable];
+  assert.deepEqual(
+    pickerResults(contexts, "", {
+      ...defaultPickerFilters,
+      availability: "all",
+      changes: "changed",
+    }).map((context) => context.id),
+    ["changed"],
+  );
+  assert.deepEqual(
+    pickerResults(contexts, "", {
+      ...defaultPickerFilters,
+      availability: "all",
+      changes: "unchanged",
+    }).map((context) => context.id),
+    ["main"],
+  );
+});
+
+test("freshly reviewed observations sort by latest review without changing collection metadata", () => {
+  const recentCollection = {
+    ...observation("recent", "host", "run"),
+    lastChangedAt: 20,
+    lastSubmittedAt: 20,
+  };
+  const repeatedReview = {
+    ...observation("repeated", "host", "run"),
+    lastChangedAt: 1,
+    lastSubmittedAt: 30,
+  };
+  assert.deepEqual(
+    pickerResults([recentCollection, repeatedReview], "").map(
+      (context) => context.id,
+    ),
+    ["repeated", "recent"],
+  );
+  assert.equal(repeatedReview.observation?.collectedAt, 1000);
 });

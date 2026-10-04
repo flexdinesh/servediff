@@ -33,10 +33,11 @@ type Scope struct {
 }
 
 // Request is one immutable observation. Replays retain the submission ID;
-// separate observations remain separate even when their content is identical.
+// fresh observations may reuse an existing review when ContentHash matches.
 type Request struct {
 	ProtocolVersion int      `json:"protocolVersion"`
 	SubmissionID    string   `json:"submissionId"`
+	ContentHash     string   `json:"contentHash,omitempty"`
 	Metadata        Metadata `json:"metadata"`
 	Scopes          []Scope  `json:"scopes"`
 }

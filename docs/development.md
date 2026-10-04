@@ -133,7 +133,11 @@ Search includes repository, branch, worktree, hostname, and source/run labels.
 Catalog reads query stored metadata only; ingestion events, reconnect, and tab
 visibility reload the catalog without replacing the selected observation.
 Opening a review never discovers worktrees or reads Git. Changed observations
-come first, ordered by collection time; counts describe their fixed snapshots.
+come first, ordered by last submission time; counts describe their fixed
+snapshots. Picker filters cover Availability, Host, Changes, Branch and
+Worktree; apply them before repository grouping. Available is the default,
+unavailable entries are disabled and skipped during keyboard navigation, and
+filter selections persist while navigating and reopening the picker.
 Switching disposes the previous workspace's request ownership and resets transient
 state.
 `DiffWorkspace.tsx` owns Pierre rendering,

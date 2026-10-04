@@ -62,6 +62,9 @@ func Run(ctx context.Context, settings Settings, ready func(string)) error {
 		return err
 	}
 	defer store.Close()
+	if err := store.PruneExpired(time.Now()); err != nil {
+		return err
+	}
 	handler, closeService, err := Handler(ctx, store, settings.Account, settings.Token, webui.Assets())
 	if err != nil {
 		return err
@@ -73,17 +76,29 @@ func Run(ctx context.Context, settings Settings, ready func(string)) error {
 	}
 	defer listener.Close()
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 2 * time.Minute, IdleTimeout: 60 * time.Second}
+	defer server.Close()
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
 	if ready != nil {
 		ready(listener.Addr().String())
 	}
-	select {
-	case err := <-done:
-		if !errors.Is(err, http.ErrServerClosed) {
-			return err
+serving:
+	for {
+		select {
+		case err := <-done:
+			if !errors.Is(err, http.ErrServerClosed) {
+				return err
+			}
+			break serving
+		case <-ctx.Done():
+			break serving
+		case <-ticker.C:
+			if err := store.PruneExpired(time.Now()); err != nil {
+				return err
+			}
 		}
-	case <-ctx.Done():
 	}
 	shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
