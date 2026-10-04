@@ -18,8 +18,8 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 4
-const CaptureLifetime = 14 * 24 * time.Hour
+const schemaVersion = 5
+const CaptureLifetime = 7 * 24 * time.Hour
 
 var ErrNotFound = errors.New("diff not found")
 
@@ -173,7 +173,7 @@ func (store *Store) initialize() error {
 			return err
 		}
 	}
-	if version > 0 && version != 2 && version != 3 && version != schemaVersion {
+	if version > 0 && version != 2 && version != 3 && version != 4 && version != schemaVersion {
 		return fmt.Errorf("servediff state schema %d is unsupported; existing data preserved", version)
 	}
 	statements := []string{
@@ -199,6 +199,15 @@ func (store *Store) initialize() error {
 	}
 	if err := initializeIngestion(transaction); err != nil {
 		return err
+	}
+	if version < 5 {
+		// Preserve histories; begin retention from each context's last submission.
+		if _, err := transaction.Exec(`UPDATE diffs SET expires_at=COALESCE(
+			(SELECT c.last_submitted_at FROM contexts c WHERE c.capture_id=diffs.id OR c.location_id=diffs.location_id),
+			(SELECT c.last_submitted_at FROM observation_scopes s JOIN contexts c ON c.id=s.context_id WHERE s.diff_id=diffs.id),
+			created_at)+?`, CaptureLifetime.Milliseconds()); err != nil {
+			return err
+		}
 	}
 	if _, err := transaction.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
 		return err
@@ -271,7 +280,7 @@ func registerGit(transaction *sql.Tx, ownerID, root, commonDir, worktreeKey stri
 		if idError != nil {
 			return Binding{}, idError
 		}
-		if _, err := transaction.Exec(`INSERT INTO diffs(id, owner_id, location_id, kind, mode, created_at) VALUES(?, ?, ?, 'live', ?, ?) ON CONFLICT(location_id, mode) DO NOTHING`, diffID, ownerID, locationID, mode, time.Now().UnixMilli()); err != nil {
+		if _, err := transaction.Exec(`INSERT INTO diffs(id, owner_id, location_id, kind, mode, created_at, expires_at) VALUES(?, ?, ?, 'live', ?, ?, ?) ON CONFLICT(location_id, mode) DO UPDATE SET expires_at=excluded.expires_at`, diffID, ownerID, locationID, mode, time.Now().UnixMilli(), time.Now().Add(CaptureLifetime).UnixMilli()); err != nil {
 			return Binding{}, err
 		}
 		if err := transaction.QueryRow(`SELECT id FROM diffs WHERE location_id=? AND mode=?`, locationID, mode).Scan(&diffID); err != nil {
@@ -375,7 +384,10 @@ func (store *Store) PruneExpired(now time.Time) error {
 		return err
 	}
 	defer transaction.Rollback()
-	if _, err := transaction.Exec(`DELETE FROM diffs WHERE kind='capture' AND expires_at<=?`, now.UnixMilli()); err != nil {
+	if _, err := transaction.Exec(`DELETE FROM diffs WHERE id IN (SELECT s.diff_id FROM observation_scopes s JOIN contexts c ON c.id=s.context_id JOIN diffs d ON d.id=c.capture_id WHERE d.expires_at<=?)`, now.UnixMilli()); err != nil {
+		return err
+	}
+	if _, err := transaction.Exec(`DELETE FROM diffs WHERE expires_at<=?`, now.UnixMilli()); err != nil {
 		return err
 	}
 	if _, err := transaction.Exec(`DELETE FROM submissions WHERE created_at<=?`, now.Add(-SubmissionLifetime).UnixMilli()); err != nil {

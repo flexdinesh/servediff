@@ -188,6 +188,13 @@ func TestPublicIngestionSurvivesProducerRemovalAndServerRestart(t *testing.T) {
 			if err := d.store.PutComment(first.ContextID, comment); err != nil {
 				t.Fatal(err)
 			}
+			fresh := input
+			fresh.SubmissionID = "turn-2"
+			fresh.Metadata.CollectedAt++
+			reused, err := client.Submit(t.Context(), fresh)
+			if err != nil || !reflect.DeepEqual(first, reused) {
+				t.Fatalf("fresh unchanged review duplicated: %v %#v %#v", err, first, reused)
+			}
 			d.close()
 			d = start(t, state, remote)
 			page := decode[contextservice.Page](t, request(t, d, "GET", "/api/v2/contexts?repository=project&branch=shared", nil))

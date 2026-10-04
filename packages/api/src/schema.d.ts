@@ -253,7 +253,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** @description Commit an immutable Git-aware observation. Retrying the same submission ID and payload returns its original receipt; independent submissions remain distinct. */
+    /** @description Commit an immutable Git-aware observation. Retrying the same submission ID and payload returns its original receipt. Fresh submissions with matching source, checkout, branch, HEAD and stable content reuse an unexpired snapshot and reset its seven-day TTL. */
     post: operations["ingestSnapshot"];
     delete?: never;
     options?: never;
@@ -601,6 +601,8 @@ export interface components {
       protocolVersion: 1;
       /** @description Retry identity. Reusing it with different content fails. */
       submissionId: string;
+      /** @description Optional SHA256 of complete contents and staging state, independent of preview truncation and timestamps. Omit when complete identity cannot be proven. */
+      contentHash?: string;
       metadata: components["schemas"]["ObservationMetadata"];
       scopes: components["schemas"]["IngestionScope"][];
     };

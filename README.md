@@ -40,8 +40,10 @@ servediff review --no-browser
 servediff --version
 ```
 
-Each invocation collects once and creates an independent observation, including
-repository, branch, worktree, HEAD, hostname and source metadata. The local
+Each invocation collects once, including repository, branch, worktree, HEAD,
+hostname and source metadata. Unchanged reviews of the same checkout and HEAD
+reuse their snapshot and review state. Snapshots expire seven days after the
+last fresh submission; transport retries do not extend retention. The local
 server starts automatically when needed and stays running after the CLI exits.
 Bare `servediff` prints help. There is no watcher and opening the dashboard does
 not recollect Git data.
@@ -80,7 +82,9 @@ servediff review --trigger agent-hook --agent my-agent --run-id run-123 --no-bro
 
 Use `--source-id` to supply a stable source/container identity. Hostnames,
 branches and source-local paths are searchable metadata, not global identities.
-Separate submissions remain independently reviewable, even on the same branch.
+Different sources, checkouts, branches, HEADs, or diff contents remain
+independently reviewable. Identical content from the same checkout reuses its
+review context.
 
 Build/install the remote server with Go:
 

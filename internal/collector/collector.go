@@ -71,6 +71,13 @@ func collectRepository(ctx context.Context, source diffsource.Source, options Op
 		}
 		snapshots = append(snapshots, snapshot)
 	}
+	contentHash, err := diffsource.ContentHash(ctx, source, snapshots)
+	if err != nil {
+		if isChanged(err) {
+			return ingestion.Request{}, errChanged
+		}
+		return ingestion.Request{}, err
+	}
 	remaining := previewBudget
 	scopes := make([]ingestion.Scope, 0, len(snapshots))
 	for _, snapshot := range snapshots {
@@ -92,6 +99,16 @@ func collectRepository(ctx context.Context, source diffsource.Source, options Op
 			return ingestion.Request{}, errChanged
 		}
 	}
+	latestHash, err := diffsource.ContentHash(ctx, source, snapshots)
+	if err != nil {
+		if isChanged(err) {
+			return ingestion.Request{}, errChanged
+		}
+		return ingestion.Request{}, err
+	}
+	if latestHash != contentHash {
+		return ingestion.Request{}, errChanged
+	}
 	latestFacts, err := diffsource.Metadata(ctx, source.Root())
 	if err != nil {
 		return ingestion.Request{}, err
@@ -100,7 +117,9 @@ func collectRepository(ctx context.Context, source diffsource.Source, options Op
 		return ingestion.Request{}, errChanged
 	}
 	metadata := repositoryMetadata(source.Root(), facts, snapshots[0], options)
-	return request(metadata, scopes, options), nil
+	observation := request(metadata, scopes, options)
+	observation.ContentHash = contentHash
+	return observation, nil
 }
 
 func collectScope(ctx context.Context, source diffsource.Source, snapshot review.RepositoryDiff, remaining *int) (ingestion.Scope, error) {
@@ -212,7 +231,9 @@ func CollectPatch(ctx context.Context, raw, directory string, options Options) (
 	if err != nil {
 		return ingestion.Request{}, err
 	}
-	return request(metadata, []ingestion.Scope{scope}, options), nil
+	observation := request(metadata, []ingestion.Scope{scope}, options)
+	observation.ContentHash = hash("piped-content-v1", raw)
+	return observation, nil
 }
 
 func request(metadata ingestion.Metadata, scopes []ingestion.Scope, options Options) ingestion.Request {

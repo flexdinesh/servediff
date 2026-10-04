@@ -1,5 +1,65 @@
 import type { ApiContext } from "@servediff/api";
 
+export type PickerFilters = {
+  availability: "all" | "available" | "unavailable";
+  changes: "all" | "changed" | "unchanged";
+  hosts: string[];
+  branches: string[];
+  worktrees: string[];
+};
+
+export const defaultPickerFilters: PickerFilters = {
+  availability: "available",
+  changes: "all",
+  hosts: [],
+  branches: [],
+  worktrees: [],
+};
+
+export function pickerFilterValues(context: ApiContext) {
+  return {
+    hosts: context.observation?.hostname ?? "",
+    branches: context.branch ?? context.observation?.branch ?? "",
+    worktrees: context.worktreeName ?? context.observation?.worktreeName ?? "",
+  };
+}
+
+export function pickerFilterOptions(contexts: ApiContext[]) {
+  const values = contexts.map(pickerFilterValues);
+  const options = (key: "hosts" | "branches" | "worktrees") =>
+    [...new Set(values.map((value) => value[key]).filter(Boolean))].sort(
+      (left, right) => left.localeCompare(right),
+    );
+  return {
+    hosts: options("hosts"),
+    branches: options("branches"),
+    worktrees: options("worktrees"),
+  };
+}
+
+function matchesFilters(context: ApiContext, filters: PickerFilters) {
+  if (
+    filters.availability !== "all" &&
+    context.availability !== filters.availability
+  )
+    return false;
+  if (
+    filters.changes !== "all" &&
+    (context.availability === "unavailable" ||
+      context.changedFileCount === null ||
+      (filters.changes === "changed"
+        ? context.changedFileCount === 0
+        : context.changedFileCount > 0))
+  )
+    return false;
+  const values = pickerFilterValues(context);
+  return (
+    (!filters.hosts.length || filters.hosts.includes(values.hosts)) &&
+    (!filters.branches.length || filters.branches.includes(values.branches)) &&
+    (!filters.worktrees.length || filters.worktrees.includes(values.worktrees))
+  );
+}
+
 export function contextDetail(context: ApiContext) {
   return context.kind === "capture"
     ? "Piped diff"
@@ -32,9 +92,20 @@ function matchScore(value: string, word: string): number {
   return position === word.length ? 1 : 0;
 }
 
-export function pickerResults(contexts: ApiContext[], query: string) {
+function pickerRecency(context: ApiContext) {
+  return context.kind === "observation"
+    ? context.lastSubmittedAt
+    : context.lastChangedAt;
+}
+
+export function pickerResults(
+  contexts: ApiContext[],
+  query: string,
+  filters: PickerFilters = defaultPickerFilters,
+) {
   const words = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
   return contexts
+    .filter((context) => matchesFilters(context, filters))
     .map((context) => {
       const values = [
         context.name,
@@ -65,7 +136,7 @@ export function pickerResults(contexts: ApiContext[], query: string) {
       (left, right) =>
         Number(contextHasChanges(right.context)) -
           Number(contextHasChanges(left.context)) ||
-        right.context.lastChangedAt - left.context.lastChangedAt ||
+        pickerRecency(right.context) - pickerRecency(left.context) ||
         right.score - left.score ||
         left.context.name.localeCompare(right.context.name) ||
         contextDetail(left.context).localeCompare(
@@ -108,12 +179,25 @@ export type PickerEntry =
     }
   | { id: string; kind: "context"; context: ApiContext };
 
+export function pickerEntryAvailable(entry: PickerEntry) {
+  return entry.kind === "repository"
+    ? entry.contexts.some((context) => context.availability === "available")
+    : entry.context.availability === "available";
+}
+
+export function contextUnavailableReason(context: ApiContext) {
+  return context.kind === "worktree"
+    ? "No collected snapshot for this checkout"
+    : "Snapshot unavailable";
+}
+
 export function pickerEntries(
   contexts: ApiContext[],
   query: string,
   repositoryId: string,
+  filters: PickerFilters = defaultPickerFilters,
 ) {
-  const results = pickerResults(contexts, query);
+  const results = pickerResults(contexts, query, filters);
   if (repositoryId)
     return results
       .filter((context) => context.repositoryId === repositoryId)
