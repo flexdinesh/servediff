@@ -397,11 +397,15 @@ Do not add motion for decoration. New animation must honor
   text, preserving accessible labels and theme/sidebar controls.
 - Collapse navigation to the toggle-controlled modal drawer; its width is
   `min(320px, 88vw)`. Keep file selection, comments, and export reachable there.
+  Its tab strip matches `--topbar-height`, including the tablet header height.
+  File/folder rows, filter, summary toggle, and review progress retain desktop
+  control heights and spacing; do not apply the general mobile enlargement here.
 - Hide redundant summary/shortcut detail before removing essential actions.
 - At mobile widths or coarse pointers, app-owned controls target 44px hit heights;
   icon controls also reach 44px width. Text-input sizing uses `--text-input-touch`.
   The compact View options and collapse/expand icons match the theme control's
   32px size within the narrow 48px toolbar, per the workspace alignment brief.
+  Drawer navigation and summary controls retain desktop density, per the same brief.
 - Pierre code rows and header slots retain measured geometry. Larger library
   gutter/header targets need a coordinated renderer-metric change, not a CSS override.
 - Preserve the desktop split/unified and wrap preferences. Default narrow screens

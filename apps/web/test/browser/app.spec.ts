@@ -1482,53 +1482,61 @@ test("copy dialog reports clipboard status and restores focus", async ({
   await expect(instructionDialog).toBeHidden();
 });
 
-test("mobile sidebar preserves accessible touch targets", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
+test("drawer aligns its header and retains desktop navigation density", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 844 });
   await page.goto("/");
-  const toggle = page.getByRole("button", { name: "Show file sidebar" });
-  await expect(toggle).toBeVisible();
-  const box = await toggle.boundingBox();
-  await toggle.click();
-  await expect(page.locator("#sidebar")).toBeVisible();
-  expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
-  expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
-  const fileBox = await page
-    .locator("#file-tree .file-row")
-    .first()
-    .boundingBox();
-  const folderBox = await page
-    .locator("#file-tree .tree-folder")
-    .first()
-    .boundingBox();
-  const summaryBox = await page
-    .getByRole("button", { name: "Hide summary" })
-    .boundingBox();
-  const resetBox = await page
-    .getByRole("button", { name: "Reset reviewed" })
-    .boundingBox();
-  const searchBox = await page.locator(".search-box").boundingBox();
-  const filesTabBox = await page
-    .getByRole("tab", { name: /Changes/ })
-    .boundingBox();
-  const commentsTabBox = await page
-    .getByRole("tab", { name: /Review/ })
-    .boundingBox();
-  const toolbarBox = await page.locator(".toolbar").boundingBox();
-  const headerBox = await page.locator(".topbar").boundingBox();
-  const themeBox = await page.locator("#theme").boundingBox();
-  const viewOptionsBox = await page
-    .getByRole("button", { name: "View options" })
-    .boundingBox();
-  expect(fileBox?.height ?? 0).toBeGreaterThanOrEqual(44);
-  expect(folderBox?.height ?? 0).toBeGreaterThanOrEqual(44);
-  expect(summaryBox?.height ?? 0).toBeGreaterThanOrEqual(44);
-  expect(resetBox?.height ?? 0).toBeGreaterThanOrEqual(44);
-  expect(searchBox?.height ?? 0).toBeGreaterThanOrEqual(44);
-  expect(filesTabBox?.height ?? 0).toBeGreaterThanOrEqual(44);
-  expect(commentsTabBox?.height ?? 0).toBeGreaterThanOrEqual(44);
-  expect(toolbarBox?.height).toBe(headerBox?.height);
-  expect(viewOptionsBox?.width).toBe(themeBox?.width);
-  expect(viewOptionsBox?.height).toBe(themeBox?.height);
+  await expect(page.locator("#file-tree .file-row").first()).toBeVisible();
+  const density = () =>
+    page.evaluate(() => {
+      const selectors = [
+        ".file-row",
+        ".tree-folder",
+        ".summary-section .review-tools-toggle",
+        "#reset-reviewed",
+        ".search-box",
+        ".review-progress",
+        ".sidebar-footer",
+      ];
+      return selectors.map((selector) => {
+        const element = document.querySelector(selector);
+        if (!element) throw new Error(`Missing sidebar element: ${selector}`);
+        const style = getComputedStyle(element);
+        return {
+          height: element.getBoundingClientRect().height,
+          padding: style.padding,
+          margin: style.margin,
+        };
+      });
+    });
+  const desktop = await density();
+  for (const width of [800, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    const toggle = page.getByRole("button", { name: "Show file sidebar" });
+    await toggle.click();
+    await expect(page.locator("#sidebar")).toBeVisible();
+    await expect.poll(density).toEqual(desktop);
+    const header = await page.locator(".topbar").boundingBox();
+    const tabs = await page.locator(".sidebar-tabs").boundingBox();
+    if (!header || !tabs) throw new Error("Missing drawer header");
+    expect(tabs.height).toBe(header.height);
+    expect(tabs.y).toBe(header.y);
+    if (width === 390) {
+      const toolbar = await page.locator(".toolbar").boundingBox();
+      const theme = await page.locator("#theme").boundingBox();
+      const options = await page.locator("#view-options").boundingBox();
+      expect(toolbar?.height).toBe(header.height);
+      expect(options?.width).toBe(theme?.width);
+      expect(options?.height).toBe(theme?.height);
+    }
+    await page
+      .locator("#sidebar")
+      .getByRole("button", { name: "Close review sidebar" })
+      .click();
+    await expect(page.locator("#sidebar")).toBeHidden();
+    await expect(toggle).toBeFocused();
+  }
 });
 
 test("file review comments save and reopen without selecting lines", async ({
