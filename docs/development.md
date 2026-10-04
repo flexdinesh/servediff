@@ -137,9 +137,10 @@ Latest snapshots with changes. All / Latest / Stale filters freshness; the
 right-aligned All checkbox also includes unavailable, empty, and unknown-status
 snapshots. A newer collection supersedes older snapshots for the same owner,
 source, repository, checkout, and branch; arrival order breaks collection-time
-ties. Freshness uses submission history, including deduplicated collections and
-observations outside the current search or page. Returning to previous content
-makes its existing review latest again; its original snapshot metadata stays fixed.
+ties. Freshness uses a durable stream head, including deduplicated collections and
+observations outside the current search or page. Expiry and pruning leave that head
+intact, so older retained snapshots stay stale. A newer collection of previous
+content makes its existing review latest again; its original snapshot metadata stays fixed.
 Changed observations come first, ordered by last submission time; counts
 describe their fixed snapshots. Host, Branch, and Worktree filters apply before
 repository grouping. Unavailable entries are disabled and skipped during keyboard

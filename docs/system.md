@@ -141,6 +141,8 @@ the picker. New collections make older snapshots stale within the same owner,
 source, repository, checkout and branch; collection time wins over upload time,
 with arrival order breaking ties. Fresh deduplicated submissions can make an
 existing review latest again without changing its captured contents or metadata.
+The durable stream head survives expiry and pruning so older retained snapshots
+do not become latest through housekeeping.
 
 Opening a context or switching scope loads its stored manifest, patches and
 available contents through scoped REST endpoints. MCP uses the same stored
@@ -191,8 +193,10 @@ a collection budget; unsupported or unavailable previews remain explicit.
 Snapshots expire seven days after the last fresh submission. Reads enforce
 expiry immediately; local and remote servers prune at startup and hourly,
 removing all scopes, previews, comments, marks and retry mappings. Schema
-migration preserves existing histories and sets expiry from their last
-submission times. Existing duplicates remain until expiry. Legacy registered
+migration preserves existing histories, sets expiry from their last
+submission times, and backfills stream heads from retained submission history.
+Pruning preserves the latest stream identity and collection time. Existing
+duplicates remain until expiry. Legacy registered
 worktree contexts cannot trigger server Git reads; users submit a new review.
 
 ## Decisions and trade-offs
@@ -210,10 +214,11 @@ worktree contexts cannot trigger server Git reads; users submit a new review.
 | Event notifications plus catalog queries                     | The database remains authoritative when a connection drops. Notifications may be missed or repeated.                                                         |
 | No watcher                                                   | Explicit CLI calls and agent events are the only new collection triggers. There is no filesystem polling, Git-hook installer or background freshness repair. |
 
-“Latest” means the latest stored observations received by the server. It does
-not mean verified current checkout state or a single authoritative diff for a
-branch. Producer collection clocks and submission arrival order can differ.
-The API does not contact producers to establish freshness.
+“Latest” means the most recently collected submission within a source, repository,
+checkout and branch; arrival order breaks ties. Delayed uploads remain stale.
+It does not mean verified current checkout state. Producer collection clocks and
+submission arrival order can differ. The API does not contact producers to
+establish freshness.
 
 ### Failure and retry semantics
 

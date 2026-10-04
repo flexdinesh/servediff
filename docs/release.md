@@ -40,8 +40,9 @@ runtime.
 
 For daemon upgrades, stop the current service before replacing the executable,
 then start it with the new binary. Stop older foreground servers separately:
-they do not honor daemon/database ownership locks. The schema-2 migration
-preserves existing review IDs and data; unsupported older/newer schemas fail
+they do not honor daemon/database ownership locks. State migrations
+preserve existing review IDs and data and backfill snapshot freshness;
+unsupported older/newer schemas fail
 without modification. Persistent contexts survive restart; in-memory state does
 not. Listener settings are not saved across a stopped service.
 

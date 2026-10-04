@@ -150,7 +150,9 @@ There is no durable upload queue in the collector; failures are reported.
 `/api/v2/contexts` lists stored observations with `q`, `repository`, `branch`,
 `worktree`, `hostname`, `sourceId` and `runId` filters. Scoped review operations
 use `/api/v2/contexts/{id}/...`; `/api/v2/events` sends ingestion notifications.
-Latest means latest received, not guaranteed current filesystem state.
+Latest means the most recently collected submission for each source, repository,
+checkout and branch; arrival order breaks ties. It does not guarantee current
+filesystem state. Older snapshots stay stale when newer reviews expire.
 
 Compatible coding agents use the printed `/mcp/contexts/{id}` URL; see
 [docs/mcp.md](docs/mcp.md). A compatible browser can expose the same tools through

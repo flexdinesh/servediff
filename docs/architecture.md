@@ -57,8 +57,9 @@ An observation is an immutable review context, addressed at `/contexts/{id}`.
 Its branch/worktree metadata does not change when the producer switches branch.
 The API reads manifests, patches, available contents and review state from
 SQLite. Queries never invoke Git, refresh a checkout, or require its continued
-existence. Freshness is push-only: latest means latest received observation,
-not guaranteed current filesystem state.
+existence. Freshness is push-only: latest means the most recently collected
+submission in each stream, with arrival order breaking ties. It does not guarantee
+current filesystem state.
 
 `GET /api/v2/contexts` supports metadata search and repository, branch, worktree,
 hostname, source and run filters. The browser chooses a repository, then an
@@ -67,8 +68,9 @@ clients query durable catalog state after reconnecting. The picker filters
 freshness, host, branch and worktree before repository grouping. Latest snapshots
 with changes are the default; the All checkbox includes unavailable, empty and
 unknown-status entries. Unavailable legacy entries are disabled when shown.
-Freshness derives from submission history for the same owner, source, repository,
+Freshness uses a durable stream head for the same owner, source, repository,
 checkout and branch, ordered by collection time with arrival order breaking ties.
+Pruning expired reviews preserves that head so retained older snapshots stay stale.
 Notifications are not a queue or proof of delivery.
 
 ## Local and remote composition

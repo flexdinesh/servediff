@@ -217,6 +217,79 @@ func TestObservationFreshnessKeepsStreamsSeparate(t *testing.T) {
 	}
 }
 
+func TestObservationFreshnessSurvivesPruningLatestSnapshot(t *testing.T) {
+	for _, test := range []struct {
+		name                string
+		firstTime, lateTime int64
+	}{{"newer collection", 100, 150}, {"equal-time arrival", 200, 199}} {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "state.db")
+			store, err := Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = store.Close() })
+			user := testUser(t, store, "pruned-freshness")
+			request := observationRequest("source", "a-first")
+			request.ContentHash = strings.Repeat("a", 64)
+			request.Metadata.CollectedAt = test.firstTime
+			first, err := store.Ingest(user.ID, request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			newer := observationRequest("source", "b-first")
+			newer.ContentHash = strings.Repeat("b", 64)
+			newer.Metadata.CollectedAt = 200
+			latest, err := store.Ingest(user.ID, newer)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request.SubmissionID = "a-delayed"
+			request.Metadata.CollectedAt = test.lateTime
+			late, err := store.Ingest(user.ID, request)
+			if err != nil || late.ContextID != first.ContextID {
+				t.Fatalf("delayed dedupe: %#v, %v", late, err)
+			}
+			if _, err := store.db.Exec(`UPDATE diffs SET expires_at=? WHERE id IN (SELECT diff_id FROM observation_scopes WHERE context_id=?)`, time.Now().Add(-time.Second).UnixMilli(), latest.ContextID); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.PruneExpired(time.Now()); err != nil {
+				t.Fatal(err)
+			}
+			for _, phase := range []string{"after prune", "after restart"} {
+				if phase == "after restart" {
+					if err := store.Close(); err != nil {
+						t.Fatal(err)
+					}
+					reopened, err := Open(path)
+					if err != nil {
+						t.Fatal(err)
+					}
+					store = reopened
+				}
+				item, err := store.Context(user.ID, first.ContextID, time.Now())
+				if err != nil || !item.Stale {
+					t.Fatalf("old snapshot promoted %s: %#v, %v", phase, item, err)
+				}
+				items, err := store.ObservationContexts(user.ID, 100, 0, "", ingestion.Filter{SourceID: "source"})
+				if err != nil || len(items) != 1 || !items[0].Stale {
+					t.Fatalf("catalog freshness %s: %#v, %v", phase, items, err)
+				}
+			}
+			request.SubmissionID = "a-fresh"
+			request.Metadata.CollectedAt = 201
+			fresh, err := store.Ingest(user.ID, request)
+			if err != nil || fresh.ContextID != first.ContextID {
+				t.Fatalf("fresh dedupe: %#v, %v", fresh, err)
+			}
+			item, err := store.Context(user.ID, first.ContextID, time.Now())
+			if err != nil || item.Stale {
+				t.Fatalf("fresh snapshot remained stale: %#v, %v", item, err)
+			}
+		})
+	}
+}
+
 func TestObservationRollbackOnIncompleteScope(t *testing.T) {
 	store := openTestStore(t)
 	user := testUser(t, store, "rollback")
@@ -225,7 +298,7 @@ func TestObservationRollbackOnIncompleteScope(t *testing.T) {
 	if _, err := store.Ingest(user.ID, request); err == nil {
 		t.Fatal("incomplete scope accepted")
 	}
-	for _, table := range []string{"observations", "observation_repositories", "observation_scopes", "observation_submissions", "observation_identities", "contexts", "diffs", "diff_versions", "diff_files", "reviews"} {
+	for _, table := range []string{"observations", "observation_repositories", "observation_scopes", "observation_submissions", "observation_identities", "observation_stream_heads", "contexts", "diffs", "diff_versions", "diff_files", "reviews"} {
 		var count int
 		if err := store.db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&count); err != nil || count != 0 {
 			t.Fatalf("partial commit in %s: %d, %v", table, count, err)
@@ -651,7 +724,7 @@ func TestSchemaFourMigrationPreservesObservationHistoryAndRetry(t *testing.T) {
 	if _, err := store.db.Exec(`UPDATE contexts SET last_submitted_at=?`, lastSubmitted); err != nil {
 		t.Fatal(err)
 	}
-	for _, query := range []string{"DROP TABLE observation_identities", "DROP TABLE observation_submissions", "UPDATE diffs SET expires_at=NULL", "PRAGMA user_version=4"} {
+	for _, query := range []string{"DROP TABLE observation_stream_heads", "DROP TABLE observation_identities", "DROP TABLE observation_submissions", "UPDATE diffs SET expires_at=NULL", "PRAGMA user_version=4"} {
 		if _, err := store.db.Exec(query); err != nil {
 			t.Fatal(err)
 		}
@@ -683,5 +756,64 @@ func TestSchemaFourMigrationPreservesObservationHistoryAndRetry(t *testing.T) {
 	retry, err := store.Ingest(user.ID, request)
 	if err != nil || retry.ContextID != first.ContextID {
 		t.Fatalf("migration replay: %#v %v", retry, err)
+	}
+}
+
+func TestSchemaFiveMigrationBackfillsLatestDeduplicatedCollection(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.db")
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	user := testUser(t, store, "schema5-freshness")
+	requests := make([]ingestion.Request, 0, 5)
+	contexts := make(map[string]string)
+	for _, step := range []struct {
+		id, content string
+		collectedAt int64
+	}{{"a-first", "a", 100}, {"b-first", "b", 200}, {"a-fresh", "a", 300}, {"b-equal", "b", 300}, {"a-late", "a", 250}} {
+		request := observationRequest("source", step.id)
+		request.ContentHash = strings.Repeat(step.content, 64)
+		request.Metadata.CollectedAt = step.collectedAt
+		binding, err := store.Ingest(user.ID, request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		contexts[step.content] = binding.ContextID
+		requests = append(requests, request)
+	}
+	before, err := store.Context(user.ID, contexts["b"], time.Now())
+	if err != nil || before.ExpiresAt == nil {
+		t.Fatalf("original retention: %#v, %v", before, err)
+	}
+	for _, query := range []string{"DROP TABLE observation_stream_heads", "PRAGMA user_version=5"} {
+		if _, err := store.db.Exec(query); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store = reopened
+	for content, id := range contexts {
+		item, err := store.Context(user.ID, id, time.Now())
+		if err != nil || item.Stale != (content == "a") || item.ExpiresAt == nil || (content == "b" && *item.ExpiresAt != *before.ExpiresAt) {
+			t.Fatalf("migrated freshness or retention for %s: %#v, %v", content, item, err)
+		}
+	}
+	// Backfill uses fresh aliases, not immutable initial observation metadata;
+	// replaying an earlier equal-time alias cannot replace the winner.
+	retry, err := store.Ingest(user.ID, requests[2])
+	if err != nil || retry.ContextID != contexts["a"] {
+		t.Fatalf("migrated retry: %#v, %v", retry, err)
+	}
+	item, err := store.Context(user.ID, contexts["a"], time.Now())
+	if err != nil || !item.Stale {
+		t.Fatalf("retry replaced migrated head: %#v, %v", item, err)
 	}
 }
