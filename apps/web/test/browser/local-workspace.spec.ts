@@ -628,6 +628,176 @@ test("empty service explains how to review a repository or pipe", async ({
   ).toBeVisible();
 });
 
+for (const kind of [
+  "worktree",
+  "observation",
+  "capture",
+] satisfies ApiContext["kind"][]) {
+  test(`landing stays unselected when ${kind} contexts have no usable diff`, async ({
+    page,
+  }) => {
+    const state = await localWorkspace(page);
+    const contexts: ApiContext[] = [
+      { ...state.context, kind, changedFileCount: 0 },
+      { ...state.context, kind, id: "unknown", changedFileCount: null },
+      {
+        ...state.context,
+        kind,
+        id: "unavailable",
+        availability: "unavailable",
+      },
+    ];
+    await page.route("**/api/v2/contexts?*", (route) =>
+      route.fulfill({ json: { contexts, nextCursor: null } }),
+    );
+    await page.goto("/");
+    await expect(
+      page.getByRole("heading", { name: "No changes to review" }),
+    ).toBeVisible();
+    await expect(page).toHaveURL(/\/$/);
+    const trigger = page.getByRole("button", {
+      name: "Switch repository",
+      exact: true,
+    });
+    await expect(trigger).toHaveText(/Switch repository/);
+    await expect(trigger).not.toContainText("Local review");
+    expect(state.scopes).toEqual([]);
+    await trigger.click();
+    const dialog = page.getByRole("dialog", { name: "Switch repository" });
+    await expect(dialog.getByRole("option")).toHaveCount(0);
+    await dialog.getByRole("button", { name: "Filters", exact: true }).click();
+    await dialog.getByRole("checkbox", { name: "All", exact: true }).check();
+    await expect(dialog.getByRole("option")).toHaveCount(
+      kind === "observation" ? 1 : 3,
+    );
+    await page.keyboard.press("Escape");
+    await page.setViewportSize({ width: 360, height: 640 });
+    await expect(
+      page.getByRole("heading", { name: "No changes to review" }),
+    ).toBeVisible();
+    await page.reload();
+    await expect(
+      page.getByRole("heading", { name: "No changes to review" }),
+    ).toBeVisible();
+    await expect(page).toHaveURL(/\/$/);
+  });
+}
+
+test("landing redirects to the first usable diff across catalog pages", async ({
+  page,
+}) => {
+  const state = await localWorkspace(page);
+  await page.route("**/api/v2/contexts?*", (route) => {
+    const cursor = new URL(route.request().url()).searchParams.get("cursor");
+    return route.fulfill({
+      json: cursor
+        ? {
+            contexts: [state.context, { ...state.context, id: "later" }],
+            nextCursor: null,
+          }
+        : {
+            contexts: [
+              { ...state.context, id: "empty", changedFileCount: 0 },
+              { ...state.context, id: "unknown", changedFileCount: null },
+              {
+                ...state.context,
+                id: "unavailable",
+                availability: "unavailable",
+              },
+            ],
+            nextCursor: "next",
+          },
+    });
+  });
+  await page.goto("/");
+  await ready(page);
+  await expect(page).toHaveURL(/\/contexts\/local-review$/);
+});
+
+test("landing selects a diff when a catalog refresh adds changes", async ({
+  page,
+}) => {
+  const state = await localWorkspace(page);
+  state.context.changedFileCount = 0;
+  await page.route("**/api/v2/events", (route) => route.abort());
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "No changes to review" }),
+  ).toBeVisible();
+  state.context.changedFileCount = 1;
+  await page.evaluate(() =>
+    document.dispatchEvent(new Event("visibilitychange")),
+  );
+  await ready(page);
+  await expect(page).toHaveURL(/\/contexts\/local-review$/);
+});
+
+test("empty contexts remain accessible through the picker and direct URLs", async ({
+  page,
+}) => {
+  const state = await localWorkspace(page);
+  state.context.changedFileCount = 0;
+  await page.route("**/api/v2/contexts/*/diffs/current?*", (route) =>
+    route.fulfill({ json: { ...state.repository("all"), files: [] } }),
+  );
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "No changes to review" }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Switch repository", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Switch repository" });
+  await dialog.getByRole("button", { name: "Filters", exact: true }).click();
+  await dialog.getByRole("checkbox", { name: "All", exact: true }).check();
+  await dialog.getByRole("option", { name: /Local review/ }).click();
+  await expect(page).toHaveURL(/\/contexts\/local-review$/);
+  await expect(
+    page.getByRole("heading", { name: "No changes in this snapshot" }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "No changes in this snapshot" }),
+  ).toBeVisible();
+  await expect(page).toHaveURL(/\/contexts\/local-review$/);
+});
+
+test("deleting the last diff returns to landing when empty contexts remain", async ({
+  page,
+}) => {
+  const state = await deletableWorkspace(page, false, true);
+  state.contexts.push({
+    ...state.state.context,
+    id: "empty",
+    changedFileCount: 0,
+  });
+  await page.evaluate(() =>
+    document.dispatchEvent(new Event("visibilitychange")),
+  );
+  const trigger = page.getByRole("button", {
+    name: "Switch repository",
+    exact: true,
+  });
+  await trigger.click();
+  const picker = page.getByRole("dialog", { name: "Switch repository" });
+  await picker.getByRole("button", { name: "Filters", exact: true }).click();
+  await picker.getByRole("checkbox", { name: "All", exact: true }).check();
+  await expect(picker.getByRole("option")).toHaveCount(2);
+  await page.keyboard.press("Escape");
+  await page
+    .getByRole("button", { name: "Delete context", exact: true })
+    .click();
+  await page
+    .getByRole("dialog", { name: "Delete context?", exact: true })
+    .getByRole("button", { name: "Delete context", exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(
+    page.getByRole("heading", { name: "No changes to review" }),
+  ).toBeVisible();
+  await expect(page.locator("main.session-status")).toBeFocused();
+});
+
 test("unavailable context keeps the switcher usable", async ({ page }) => {
   const state = await localWorkspace(page);
   const unavailable: ApiContext = {
@@ -717,7 +887,7 @@ test("repository popup orders checkouts by changes and shares click and keyboard
   });
   await expect(trigger).toHaveAttribute("aria-haspopup", "dialog");
   await expect(trigger).toContainText("servediff");
-  await expect(trigger).toContainText("main");
+  await expect(trigger).toContainText("feature/picker");
   await trigger.click();
   const dialog = page.getByRole("dialog", { name: "Switch repository" });
   const search = dialog.getByRole("combobox", { name: "Search repositories" });
@@ -827,7 +997,7 @@ test("picker distinguishes unknown and unavailable status and refreshes change c
       },
     }),
   );
-  await page.goto("/");
+  await page.goto("/contexts/local-review");
   await ready(page);
   await page
     .getByRole("button", { name: "Switch repository", exact: true })
