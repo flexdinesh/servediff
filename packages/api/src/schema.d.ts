@@ -642,6 +642,11 @@ export interface components {
       id: string;
       /** @enum {string} */
       kind: "worktree" | "capture" | "observation";
+      /**
+       * @description Diff origin, independent of context kind and submission directory.
+       * @enum {string}
+       */
+      source?: "local" | "stdin";
       name: string;
       /** @description Checked-out branch, or detached HEAD label. Null for captures or unknown metadata. */
       branch: string | null;

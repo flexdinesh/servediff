@@ -448,7 +448,7 @@ test("session failure retries without reloading the page", async ({ page }) => {
   ).toBeVisible();
   fail = false;
   await page.getByRole("button", { name: "Retry" }).click();
-  await expect(page.getByRole("heading", { name: "Piped diff" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Piped" })).toBeVisible();
 });
 
 test("reset waits for pending marks and clears their collapse state", async ({

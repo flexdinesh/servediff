@@ -67,9 +67,9 @@ export function Header() {
       <div className="header-heading">
         <h1
           id="changes-title"
-          className={observation && !piped ? "sr-only" : undefined}
+          className={piped || observation ? "sr-only" : undefined}
         >
-          {piped ? "Piped diff" : observation ? "Changes" : "Local changes"}
+          {piped ? "Piped" : observation ? "Changes" : "Local changes"}
         </h1>
         <p
           id="repo-path"

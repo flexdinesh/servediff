@@ -936,6 +936,12 @@ h2 {
 .project-picker-option > svg {
   color: var(--muted);
 }
+.project-picker-option[data-piped-group] {
+  margin-top: var(--space-1);
+  border-top: 1px solid var(--border-muted);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
 .project-picker-option[aria-selected="true"] {
   background: var(--accent-bg);
 }
@@ -969,6 +975,11 @@ h2 {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: var(--weight-semibold);
+}
+.project-picker-option[data-piped-context] .project-picker-name {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .project-picker-branch {
   display: inline-flex;

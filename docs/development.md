@@ -92,7 +92,9 @@ mise run dev:server -- --no-browser
 
 `serve` collects its fixture before starting in the foreground and does not use
 the personal daemon. `review` and `pipe` collect once, submit to the configured
-server and exit. Use isolated
+server and exit. `CollectPatch` preserves the supplied patch without Git lookup;
+its absolute submission directory is provenance only, not repository identity.
+Use isolated
 runtime directories (`SERVEDIFF_RUNTIME_DIR`) and in-memory state for lifecycle tests; fixture processes
 must not register inputs in the personal service. `SERVEDIFF_EXIT_ON_STDIN_CLOSE`
 is a foreground development-process lifecycle hook.
@@ -128,12 +130,20 @@ geometry, and Pierre's measured rendering boundary.
 and workspace owners. Consumers subscribe through domain hooks for diff source,
 navigation, draft, review, reviewed files, and collapse state. One draft persists
 across scopes. Context selection uses the top-bar popup picker (also Cmd/Ctrl+K)
-and scopes every request. The picker first selects a repository, then an immutable
-observation, with branch, worktree, source/run, and collection-time metadata.
-Search includes repository, branch, worktree, hostname, and source/run labels.
+and scopes every request. The “Switch review” picker first selects a repository
+or Piped, then an immutable observation. Repository observations retain branch,
+worktree, source/run, and collection-time metadata. Global search is labeled
+“Search reviews” and includes repository, branch, worktree, hostname, and source/run
+labels. Piped history uses “Search Piped”, with collection timestamps newest first
+and no repository filters. The header identifies these reviews with a terminal
+icon, “Piped”, and collection time, without repository, branch, worktree, or directory.
+The optional API `Context.source` distinguishes `local` and `stdin` independently
+of `context.kind`; legacy captures also belong to Piped. Catalog presentation masks
+repository identity and stale state on legacy stdin observations. Repository
+freshness, host, branch, worktree, and status filters never exclude Piped imports.
 Catalog reads query stored metadata only; ingestion events, reconnect, and tab
 visibility reload the catalog without replacing the selected observation.
-Opening a review never discovers worktrees or reads Git. The picker defaults to
+Opening a review never discovers worktrees or reads Git. Repository results default to
 Latest snapshots with changes. All / Latest / Stale filters freshness; the
 right-aligned All checkbox also includes unavailable, empty, and unknown-status
 snapshots. A newer collection supersedes older snapshots for the same owner,

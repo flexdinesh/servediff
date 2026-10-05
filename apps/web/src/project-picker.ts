@@ -16,6 +16,35 @@ export const defaultPickerFilters: PickerFilters = {
   worktrees: [],
 };
 
+export const pipedGroupId = "piped";
+
+export function contextIsPiped(context: ApiContext) {
+  return context.source === "stdin" || context.kind === "capture";
+}
+
+export function contextTimestamp(context: ApiContext) {
+  return context.observation?.collectedAt ?? context.createdAt;
+}
+
+export function contextTimestampLabel(context: ApiContext, now = new Date()) {
+  const date = new Date(contextTimestamp(context));
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const day =
+    date.toDateString() === now.toDateString()
+      ? "Today"
+      : date.toDateString() === yesterday.toDateString()
+        ? "Yesterday"
+        : date.toLocaleDateString(undefined, {
+            month: "short",
+            day: "numeric",
+            ...(date.getFullYear() !== now.getFullYear()
+              ? { year: "numeric" }
+              : {}),
+          });
+  return `${day}, ${date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", second: "2-digit" })}`;
+}
+
 export function pickerFilterValues(context: ApiContext) {
   return {
     hosts: context.observation?.hostname ?? "",
@@ -25,7 +54,9 @@ export function pickerFilterValues(context: ApiContext) {
 }
 
 export function pickerFilterOptions(contexts: ApiContext[]) {
-  const values = contexts.map(pickerFilterValues);
+  const values = contexts
+    .filter((context) => !contextIsPiped(context))
+    .map(pickerFilterValues);
   const options = (key: "hosts" | "branches" | "worktrees") =>
     [...new Set(values.map((value) => value[key]).filter(Boolean))].sort(
       (left, right) => left.localeCompare(right),
@@ -38,6 +69,7 @@ export function pickerFilterOptions(contexts: ApiContext[]) {
 }
 
 function matchesFilters(context: ApiContext, filters: PickerFilters) {
+  if (contextIsPiped(context)) return true;
   if (!filters.includeAll && !contextHasChanges(context)) return false;
   if (
     filters.freshness !== "all" &&
@@ -55,12 +87,13 @@ function matchesFilters(context: ApiContext, filters: PickerFilters) {
 }
 
 export function contextDetail(context: ApiContext) {
-  return context.kind === "capture"
-    ? "Piped diff"
+  return contextIsPiped(context)
+    ? "Piped"
     : (context.branch ?? "Branch unknown");
 }
 
 export function contextIsLinkedWorktree(context: ApiContext) {
+  if (contextIsPiped(context)) return false;
   return context.observation
     ? context.observation.linkedWorktree === true
     : Boolean(context.worktreeName);
@@ -100,6 +133,7 @@ function matchScore(value: string, word: string): number {
 }
 
 function pickerRecency(context: ApiContext) {
+  if (contextIsPiped(context)) return contextTimestamp(context);
   return context.kind === "observation"
     ? context.lastSubmittedAt
     : context.lastChangedAt;
@@ -114,19 +148,28 @@ export function pickerResults(
   return contexts
     .filter((context) => matchesFilters(context, filters))
     .map((context) => {
-      const values = [
-        context.name,
-        context.branch,
-        context.worktreeName,
-        context.root,
-        context.observation?.repositoryName,
-        context.observation?.remoteUrl,
-        context.observation?.hostname,
-        context.observation?.sourceId,
-        context.observation?.runId,
-        context.observation?.agent,
-        context.observation?.trigger,
-      ]
+      const values = (
+        contextIsPiped(context)
+          ? [
+              "Piped",
+              contextTimestampLabel(context),
+              new Date(contextTimestamp(context)).toLocaleString(),
+              context.id,
+            ]
+          : [
+              context.name,
+              context.branch,
+              context.worktreeName,
+              context.root,
+              context.observation?.repositoryName,
+              context.observation?.remoteUrl,
+              context.observation?.hostname,
+              context.observation?.sourceId,
+              context.observation?.runId,
+              context.observation?.agent,
+              context.observation?.trigger,
+            ]
+      )
         .filter((value) => typeof value === "string")
         .map((value) => value.toLowerCase());
       const matches = words.map((word) =>
@@ -141,8 +184,12 @@ export function pickerResults(
     .filter(({ matches }) => matches.every((score) => score > 0))
     .sort(
       (left, right) =>
-        Number(contextHasChanges(right.context)) -
-          Number(contextHasChanges(left.context)) ||
+        Number(contextIsPiped(left.context)) -
+          Number(contextIsPiped(right.context)) ||
+        (contextIsPiped(left.context) && contextIsPiped(right.context)
+          ? 0
+          : Number(contextHasChanges(right.context)) -
+            Number(contextHasChanges(left.context))) ||
         pickerRecency(right.context) - pickerRecency(left.context) ||
         right.score - left.score ||
         left.context.name.localeCompare(right.context.name) ||
@@ -155,9 +202,9 @@ export function pickerResults(
 }
 
 export function observationSummary(context: ApiContext) {
+  if (contextIsPiped(context)) return contextTimestampLabel(context);
   const observation = context.observation;
-  if (!observation)
-    return context.root ?? context.submittedFrom ?? "Piped diff";
+  if (!observation) return context.root ?? context.submittedFrom ?? "Piped";
   const collected = new Date(observation.collectedAt).toLocaleString(
     undefined,
     {
@@ -184,11 +231,17 @@ export function observationDetail(context: ApiContext) {
 }
 
 export function contextDiagnostics(context: ApiContext) {
+  if (contextIsPiped(context))
+    return [
+      "Piped",
+      new Date(contextTimestamp(context)).toLocaleString(),
+      `Context: ${context.id}`,
+    ].join("\n");
   const observation = context.observation;
   return [
     `${context.name} · ${contextDetail(context)}`,
     context.kind !== "capture" ? contextCheckoutLabel(context) : "",
-    context.root ?? context.submittedFrom ?? "Piped diff",
+    context.root ?? context.submittedFrom ?? "Piped",
     observationSummary(context),
     observation ? `Source: ${observation.sourceId}` : "",
     observation?.runId ? `Run: ${observation.runId}` : "",
@@ -202,14 +255,14 @@ export function contextDiagnostics(context: ApiContext) {
 export type PickerEntry =
   | {
       id: string;
-      kind: "repository";
+      kind: "repository" | "piped";
       context: ApiContext;
       contexts: ApiContext[];
     }
   | { id: string; kind: "context"; context: ApiContext };
 
 export function pickerEntryAvailable(entry: PickerEntry) {
-  return entry.kind === "repository"
+  return entry.kind !== "context"
     ? entry.contexts.some((context) => context.availability === "available")
     : entry.context.availability === "available";
 }
@@ -229,7 +282,11 @@ export function pickerEntries(
   const results = pickerResults(contexts, query, filters);
   if (repositoryId)
     return results
-      .filter((context) => context.repositoryId === repositoryId)
+      .filter((context) =>
+        repositoryId === pipedGroupId
+          ? contextIsPiped(context)
+          : !contextIsPiped(context) && context.repositoryId === repositoryId,
+      )
       .map((context): PickerEntry => ({
         id: context.id,
         kind: "context",
@@ -237,7 +294,9 @@ export function pickerEntries(
       }));
   const entries: PickerEntry[] = [];
   const repositories = new Map<string, PickerEntry>();
+  const piped = results.filter(contextIsPiped);
   for (const context of results) {
+    if (contextIsPiped(context)) continue;
     if (context.kind !== "observation" || !context.repositoryId) {
       entries.push({ id: context.id, kind: "context", context });
       continue;
@@ -256,5 +315,13 @@ export function pickerEntries(
       entries.push(entry);
     }
   }
+  const firstPiped = piped[0];
+  if (firstPiped)
+    entries.push({
+      id: pipedGroupId,
+      kind: "piped",
+      context: firstPiped,
+      contexts: piped,
+    });
   return entries;
 }

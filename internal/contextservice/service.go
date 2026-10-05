@@ -26,6 +26,7 @@ type Context struct {
 	Observation      *ingestion.Metadata  `json:"observation,omitempty"`
 	ID               string               `json:"id"`
 	Kind             string               `json:"kind"`
+	Source           string               `json:"source"`
 	Name             string               `json:"name"`
 	Root             *string              `json:"root"`
 	LocationID       *string              `json:"locationId"`
@@ -314,16 +315,22 @@ func (service *Service) present(item reviewstore.ContextInfo) (Context, error) {
 		}
 		name := diffsource.RemoteRepositoryName(m.RemoteURL, m.RepositoryName)
 		if name == "" {
-			name = "Piped diff"
+			name = "Piped"
 		}
-		return Context{Stale: item.Stale, ID: item.ID, Kind: "observation", Name: name, Root: &m.Root, RepositoryID: item.RepositoryID, CreatedAt: item.CreatedAt, LastSubmittedAt: item.LastSubmittedAt, LastChangedAt: m.CollectedAt, ExpiresAt: item.ExpiresAt, ChangedFileCount: item.ChangedFileCount, SubmittedFrom: item.SubmittedFrom, Observation: m, Branch: &m.Branch, WorktreeName: &m.WorktreeName, Availability: "available", Capabilities: storedCapabilities(scopes, snapshot.Source == "local")}, nil
+		value := Context{Source: snapshot.Source, Stale: item.Stale, ID: item.ID, Kind: "observation", Name: name, Root: &m.Root, RepositoryID: item.RepositoryID, CreatedAt: item.CreatedAt, LastSubmittedAt: item.LastSubmittedAt, LastChangedAt: m.CollectedAt, ExpiresAt: item.ExpiresAt, ChangedFileCount: item.ChangedFileCount, SubmittedFrom: item.SubmittedFrom, Observation: m, Branch: &m.Branch, WorktreeName: &m.WorktreeName, Availability: "available", Capabilities: storedCapabilities(scopes, snapshot.Source == "local")}
+		if snapshot.Source == "stdin" {
+			value.Name, value.Stale = "Piped", false
+			value.Root, value.RepositoryID, value.Branch, value.WorktreeName = nil, nil, nil, nil
+		}
+		return value, nil
 	}
 	var branch, worktreeName *string
 	lastChangedAt := item.LastSubmittedAt
 	changedFileCount := item.ChangedFileCount
 	availability := "available"
-	name := "Piped diff · " + time.UnixMilli(item.CreatedAt).Format("2006-01-02 15:04") + " · " + item.ID[:min(8, len(item.ID))]
+	name, source := "Piped", "stdin"
 	if item.Kind == "worktree" {
+		source = "local"
 		lastChangedAt = 0
 		changedFileCount = nil
 		availability = "unavailable"
@@ -331,7 +338,7 @@ func (service *Service) present(item reviewstore.ContextInfo) (Context, error) {
 			name = filepath.Base(*item.Root)
 		}
 	}
-	return Context{ID: item.ID, Kind: item.Kind, Name: name, Branch: branch, WorktreeName: worktreeName, Root: item.Root, LocationID: item.LocationID,
+	return Context{ID: item.ID, Kind: item.Kind, Source: source, Name: name, Branch: branch, WorktreeName: worktreeName, Root: item.Root, LocationID: item.LocationID,
 		RepositoryID: item.RepositoryID, CreatedAt: item.CreatedAt, LastSubmittedAt: item.LastSubmittedAt, LastChangedAt: lastChangedAt, ChangedFileCount: changedFileCount,
 		ExpiresAt: item.ExpiresAt, SubmittedFrom: item.SubmittedFrom, Capabilities: capabilities(item.Kind), Availability: availability}, nil
 }
