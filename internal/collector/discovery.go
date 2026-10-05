@@ -114,7 +114,7 @@ func Discover(ctx context.Context, input, sourceID, base string) (Discovery, err
 	if err := scan(input, 0); err != nil {
 		return result, err
 	}
-	seenRepositories, seenSources := make(map[string]bool), make(map[string]bool)
+	seenRepositories, seenSources := make(map[string]bool), make(map[string]string)
 	sourceLimitReported := false
 	limitReached := func() bool {
 		if len(result.Sources) < discoveryLimit {
@@ -135,8 +135,12 @@ func Discover(ctx context.Context, input, sourceID, base string) (Discovery, err
 			result.Diagnostics = append(result.Diagnostics, fmt.Sprintf("identify %s branch %q: %v", root, branch, err))
 			return
 		}
-		if !seenSources[identity] {
-			seenSources[identity] = true
+		if previous, exists := seenSources[identity]; exists {
+			if previous != root {
+				result.Diagnostics = append(result.Diagnostics, fmt.Sprintf("collector identity copied across %s and %s; duplicate source skipped, use separate source IDs", previous, root))
+			}
+		} else {
+			seenSources[identity] = root
 			result.Sources = append(result.Sources, DiscoverySource{InputPath: input, Path: root, Branch: branch, Base: comparison, Identity: identity})
 		}
 	}

@@ -74,6 +74,34 @@ func TestDiscoveryIncludesIndependentClonesWithSameRemote(t *testing.T) {
 	}
 }
 
+func TestDiscoveryReportsCopiedGitIdentity(t *testing.T) {
+	workspace := t.TempDir()
+	original := repository(t)
+	write(t, original, "file.txt", "before\n")
+	git(t, original, "add", ".")
+	git(t, original, "commit", "-m", "initial")
+	if _, err := SourceIdentity(t.Context(), original, "machine", "", "auto"); err != nil {
+		t.Fatal(err)
+	}
+	first, second := filepath.Join(workspace, "first"), filepath.Join(workspace, "second")
+	if err := os.CopyFS(first, os.DirFS(original)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.CopyFS(second, os.DirFS(original)); err != nil {
+		t.Fatal(err)
+	}
+	result, err := Discover(t.Context(), workspace, "machine", "auto")
+	if err != nil || len(result.Sources) != 1 {
+		t.Fatalf("copied identity discovery: %#v %v %v", result.Sources, result.Diagnostics, err)
+	}
+	for _, diagnostic := range result.Diagnostics {
+		if strings.Contains(diagnostic, "identity copied") && strings.Contains(diagnostic, first) && strings.Contains(diagnostic, second) {
+			return
+		}
+	}
+	t.Fatalf("copied identities silently merged: %v", result.Diagnostics)
+}
+
 func TestDiscoveryLiveWorktreesSuppressObjectDuplicate(t *testing.T) {
 	root := repository(t)
 	write(t, root, "file.txt", "before\n")
