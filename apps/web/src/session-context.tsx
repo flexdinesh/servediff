@@ -23,6 +23,7 @@ interface Catalog {
   contexts: ApiContext[];
   selectedId: string;
   select: (id: string) => void;
+  deleteContext: (id: string) => Promise<void>;
   pickerOpen: boolean;
   openPicker: () => void;
   triggerRef: RefObject<HTMLButtonElement | null>;
@@ -68,6 +69,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [attempt, setAttempt] = useState(0);
   const [pickerOpen, setPickerOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const statusRef = useRef<HTMLElement>(null);
+  const catalogGeneration = useRef(0);
   const restorePickerFocus = useRef(false);
   const openPicker = useCallback(() => setPickerOpen(true), []);
   const select = useCallback((id: string) => {
@@ -77,6 +80,38 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setSelectedId(id);
     setState({ status: "loading" });
   }, []);
+  const deleteContext = useCallback(
+    async (id: string) => {
+      const { error, response } = await api.DELETE(
+        "/api/v2/contexts/{contextId}",
+        {
+          params: { path: { contextId: id } },
+        },
+      );
+      if (!response.ok && response.status !== 404)
+        throw new Error(
+          errorDetail(error, "Unable to delete review context. Try again."),
+        );
+      catalogGeneration.current++;
+      const remaining = contexts.filter((context) => context.id !== id);
+      setContexts((current) => current.filter((context) => context.id !== id));
+      if (contextFromUrl() === id) {
+        const next =
+          remaining.find((context) => context.availability === "available") ??
+          remaining[0];
+        restorePickerFocus.current = true;
+        window.history.replaceState(
+          null,
+          "",
+          next ? `/contexts/${encodeURIComponent(next.id)}` : "/",
+        );
+        setSelectedId(next?.id ?? "");
+        setState({ status: "loading" });
+      }
+      setAttempt((current) => current + 1);
+    },
+    [contexts],
+  );
   useEffect(() => {
     const handleNavigation = () => {
       setSelectedId(contextFromUrl());
@@ -96,6 +131,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         return;
       }
       busy = true;
+      const generation = catalogGeneration.current;
       try {
         const entries: ApiContext[] = [];
         let cursor: string | undefined;
@@ -112,6 +148,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           cursor = data.nextCursor ?? undefined;
         } while (cursor && !controller.signal.aborted);
         if (controller.signal.aborted) return;
+        if (generation !== catalogGeneration.current) {
+          pending = true;
+          return;
+        }
         setContexts(entries);
         setCatalogLoaded(true);
         setCatalogError("");
@@ -183,19 +223,22 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       contexts,
       selectedId,
       select,
+      deleteContext,
       pickerOpen,
       openPicker,
       triggerRef,
     }),
-    [contexts, selectedId, select, pickerOpen, openPicker],
+    [contexts, selectedId, select, deleteContext, pickerOpen, openPicker],
   );
   const ready = state.status === "ready" && state.session.id === selectedId;
   const empty = catalogLoaded && !contexts.length && !selectedId;
   useEffect(() => {
-    if (!restorePickerFocus.current || state.status === "loading") return;
+    if (!restorePickerFocus.current || (!empty && state.status === "loading"))
+      return;
     restorePickerFocus.current = false;
-    triggerRef.current?.focus();
-  }, [state]);
+    if (empty) statusRef.current?.focus();
+    else triggerRef.current?.focus();
+  }, [state, empty]);
   return (
     <CatalogContext value={catalog}>
       {ready ? (
@@ -209,7 +252,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             <Separator className="header-divider" orientation="vertical" />
             <ContextSwitcher />
           </header>
-          <main className="session-status" role="status">
+          <main
+            className="session-status"
+            role="status"
+            ref={statusRef}
+            tabIndex={-1}
+          >
             <h1>
               {empty
                 ? "No review contexts yet"
@@ -256,4 +304,10 @@ export function useSession() {
   const session = useContext(SessionContext);
   if (!session) throw new Error("Page components require SessionProvider");
   return session;
+}
+
+export function useDeleteContext() {
+  const catalog = useContext(CatalogContext);
+  if (!catalog) throw new Error("Context deletion requires SessionProvider");
+  return catalog.deleteContext;
 }

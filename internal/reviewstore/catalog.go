@@ -202,6 +202,37 @@ func (store *Store) Context(ownerID, id string, now time.Time) (ContextInfo, err
 	return item, nil
 }
 
+// DeleteContext removes the context and every scope's retained review data.
+// Stream heads intentionally survive so older observations remain stale.
+func (store *Store) DeleteContext(ownerID, id string) error {
+	transaction, err := store.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer transaction.Rollback()
+	var locationID, captureID *string
+	err = transaction.QueryRow(`SELECT location_id,capture_id FROM contexts WHERE owner_id=? AND id=?`, ownerID, id).Scan(&locationID, &captureID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if locationID != nil {
+		_, err = transaction.Exec(`DELETE FROM locations WHERE owner_id=? AND id=?`, ownerID, *locationID)
+	} else if captureID != nil {
+		// Delete extra scopes before the anchor cascades away their associations.
+		if _, err = transaction.Exec(`DELETE FROM diffs WHERE owner_id=? AND id<>? AND id IN (SELECT diff_id FROM observation_scopes WHERE context_id=?)`, ownerID, *captureID, id); err != nil {
+			return err
+		}
+		_, err = transaction.Exec(`DELETE FROM diffs WHERE owner_id=? AND id=?`, ownerID, *captureID)
+	}
+	if err != nil {
+		return err
+	}
+	return transaction.Commit()
+}
+
 // Contexts uses a keyset cursor; concurrent submissions may move an item across pages.
 func (store *Store) Contexts(ownerID string, limit int, beforeTime int64, beforeID string, now time.Time) ([]ContextInfo, error) {
 	query := contextSelect + ` WHERE c.owner_id=? AND (d.expires_at IS NULL OR d.expires_at>?)`

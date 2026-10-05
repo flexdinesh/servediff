@@ -148,6 +148,10 @@ repository grouping. Unavailable entries are disabled and skipped during keyboar
 navigation. Filter selections persist while navigating and reopening the picker.
 Switching disposes the previous workspace's request ownership and resets transient
 state.
+The header's delete action removes the selected snapshot or legacy context, all
+its stored diff scopes, comments, and reviewed-file marks after confirmation.
+Deletion preserves stream freshness history; older snapshots remain stale.
+It leaves Git files untouched, and a new collection can create a review again.
 `DiffWorkspace.tsx` owns Pierre rendering,
 versions, worker options, and measured geometry. `use-review.ts` and
 `use-reviewed-files.ts` own their REST requests and recovery; reads cannot settle

@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
+import { DeleteContextButton } from "./DeleteContextButton.tsx";
 import { useDiffSource } from "./app-state.tsx";
 import { useAppearance } from "./appearance-context.tsx";
 import { useSidebarState } from "./sidebar-context.tsx";
@@ -88,6 +89,7 @@ export function Header() {
         </p>
       </div>
       <div className="header-actions">
+        <DeleteContextButton />
         <Button
           type="button"
           id="refresh"

@@ -42,6 +42,18 @@ func (provider *testProvider) Get(ctx context.Context, id string) (contextservic
 	active, err := provider.Resolve(ctx, id)
 	return contextservice.Context{ID: id, Kind: "capture", Name: "patch", Capabilities: active.Capabilities, Availability: "available"}, err
 }
+func (provider *testProvider) Delete(ctx context.Context, id string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	for index, active := range provider.sessions {
+		if active.ContextID == id {
+			provider.sessions = append(provider.sessions[:index], provider.sessions[index+1:]...)
+			return nil
+		}
+	}
+	return diffsource.Error(404, "Context not found")
+}
 func (provider *testProvider) List(ctx context.Context, limit int, _ string) (contextservice.Page, error) {
 	page := contextservice.Page{Contexts: make([]contextservice.Context, 0)}
 	for _, active := range provider.sessions {

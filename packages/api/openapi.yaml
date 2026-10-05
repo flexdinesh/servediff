@@ -489,6 +489,16 @@ paths:
   /api/v2/contexts/{contextId}:
     parameters:
       - $ref: "#/components/parameters/ContextId"
+    delete:
+      operationId: deleteContext
+      description: Permanently delete this context or snapshot, including all scopes, comments, review marks, and retained diff data. Repository files are unchanged.
+      responses:
+        "204":
+          description: Context and its review data deleted.
+        "404":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
     get:
       operationId: getContext
       responses:

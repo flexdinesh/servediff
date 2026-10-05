@@ -92,6 +92,18 @@ func (service *Service) Close() error {
 
 func (service *Service) UserID() string { return service.user.ID }
 
+func (service *Service) Delete(ctx context.Context, id string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := service.store.DeleteContext(service.user.ID, id); err != nil {
+		return requestError(err)
+	}
+	service.invalidateSource(id)
+	service.events.publish(id)
+	return nil
+}
+
 func (service *Service) Register(ctx context.Context, requestID, path string) (Submission, error) {
 	if err := validateRequest(ctx, requestID); err != nil {
 		return Submission{}, err
