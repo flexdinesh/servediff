@@ -27,6 +27,37 @@ func TestHelpDocumentsServiceWithoutInternalFlags(t *testing.T) {
 	}
 }
 
+func TestHarnessOptionPreservesDirectoryAndMetadata(t *testing.T) {
+	for _, arguments := range [][]string{
+		{"--harness", "codex", ".", "--run-id", "session"},
+		{".", "--harness", "codex", "--run-id", "session"},
+		{".", "--harness=codex", "--run-id=session"},
+	} {
+		values, err := parseOptions(arguments, io.Discard)
+		if err != nil || values.directory != "." || !values.repositorySet || values.agent != "codex" || values.runID != "session" {
+			t.Fatalf("arguments %v: %#v, %v", arguments, values, err)
+		}
+	}
+}
+
+func TestOptionsRejectRemovedAgentFlag(t *testing.T) {
+	if _, err := parseOptions([]string{"--agent", "codex"}, io.Discard); err == nil || !strings.Contains(err.Error(), "flag provided but not defined: -agent") {
+		t.Fatalf("removed flag: %v", err)
+	}
+}
+
+func TestHelpDocumentsHarnessFlag(t *testing.T) {
+	for _, arguments := range [][]string{{}, {"review", "--help"}, {"hook", "--help"}} {
+		var output bytes.Buffer
+		if err := run(t.Context(), arguments, nil, &output, &output); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(output.String(), "-harness") || strings.Contains(output.String(), "-agent") {
+			t.Fatalf("help for %v: %s", arguments, output.String())
+		}
+	}
+}
+
 func TestInternalDefaultPortIsNotAPublicPort(t *testing.T) {
 	if _, err := parseOptions([]string{"--port", "-1"}, io.Discard); err == nil {
 		t.Fatal("negative port accepted")

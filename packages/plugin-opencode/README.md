@@ -3,7 +3,7 @@
 Requires OpenCode 2.0.22 and an installed servediff binary.
 Uses the V2 server plugin API. Earlier V1 plugin APIs are unsupported. Event location selects the checkout when events originate from another worktree.
 
-Completion queues `servediff hook --agent opencode`. The CLI detaches collection,
+Completion queues `servediff hook --harness opencode`. The CLI detaches collection,
 health checks, local startup and ingestion; the hook waits only for scheduling.
 Failures never request continuation or write into the conversation.
 

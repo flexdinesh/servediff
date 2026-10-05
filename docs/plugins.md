@@ -24,6 +24,9 @@ restart active sessions after installing or updating.
 Restart the local servediff service with the updated binary too; older running
 servers cannot accept the new branch identity metadata.
 
+CLI harness selection uses `--harness`; `--agent` is no longer accepted. Update
+existing plugins and scripts alongside the servediff executable.
+
 ### Codex
 
 Register the repository marketplace, then install its plugin:
@@ -222,7 +225,7 @@ Inspect and recover queued work:
 servediff collector status
 servediff collector retry
 tail -n 50 ~/.local/state/servediff/hooks/hooks.log
-servediff hook --agent codex --retry
+servediff hook --harness codex --retry
 ```
 
 Status prints JSON. Retry schedules a finite pass over incomplete work for the
@@ -244,12 +247,28 @@ base to auto, and ignores the current checkout's dirty files. Deleted uncommitte
 files cannot be recovered unless a payload was captured first. Renamed/deleted
 refs also require surviving commits or a previously saved payload.
 
-Manual adapter invocation for diagnosis:
+Manually invoke the hook handler for any supported harness:
 
 ```sh
-servediff hook --agent pi --path /path/to/checkout --run-id session-id
+servediff hook --harness codex --path /path/to/checkout
+servediff hook --harness pi --path /path/to/checkout --run-id session-id
 ```
 
-Codex/Claude command hooks instead provide a JSON event with `cwd` and
-`session_id` on stdin. Scheduling success means the request was recorded, not
-that ingestion committed. Inspect the dashboard or hook log for delivery state.
+Supported harnesses are `codex`, `claude`, `opencode`, and `pi`. `--run-id` is
+optional session metadata for logs and search; it does not affect deduplication
+or identify edits made during that session. With `--path` and no `--run-id`, the
+run ID stays empty. Reused reviews retain their original metadata.
+
+Without `--path`, Codex/Claude command hooks provide a JSON event with `cwd` and
+`session_id` on stdin; `session_id` supplies the run ID unless `--run-id` overrides
+it. To simulate that input:
+
+```sh
+printf '%s\n' '{"cwd":"/path/to/checkout","session_id":"session-id"}' | servediff hook --harness codex
+```
+
+Hooks default to `--base auto`, never open a browser, and return after scheduling.
+Scheduling success does not confirm ingestion; hooks log failures and exit
+successfully. Inspect the dashboard or hook log for delivery state. Manual
+`servediff review` waits for submission, reports failures directly, and defaults
+to HEAD; use `--base auto` to match the hook baseline.

@@ -10,7 +10,7 @@ publication, turn baselines, watcher, or frontend changes.
 
 ## Contracts and ownership
 
-- `servediff hook --agent NAME`: command hooks provide `cwd` and `session_id`
+- `servediff hook --harness NAME`: command hooks provide `cwd` and `session_id`
   on JSON stdin. Embedded extensions pass `--path` and `--run-id` explicitly.
   Optional `--config-file` selects machine settings. Hook failures never request
   agent continuation; diagnostics go to private local logs.

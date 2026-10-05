@@ -75,7 +75,7 @@ func runCollector(arguments []string, stdout io.Writer) error {
 		}
 		return json.NewEncoder(stdout).Encode(statuses)
 	case "retry":
-		event, err := parseHookEvent(append([]string{"--agent", "codex", "--retry"}, arguments[1:]...), nil, stdout)
+		event, err := parseHookEvent(append([]string{"--harness", "codex", "--retry"}, arguments[1:]...), nil, stdout)
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
 		}
@@ -92,14 +92,14 @@ func parseHookEvent(arguments []string, stdin io.Reader, stdout io.Writer) (hook
 	var event hooks.Event
 	flags := flag.NewFlagSet("servediff hook", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	flags.StringVar(&event.Agent, "agent", "", "codex, claude, opencode or pi")
+	flags.StringVar(&event.Agent, "harness", "", "codex, claude, opencode or pi")
 	flags.StringVar(&event.Path, "path", "", "checkout path; defaults to hook input cwd")
 	flags.StringVar(&event.RunID, "run-id", "", "agent session identity")
 	flags.StringVar(&event.ConfigFile, "config-file", "", "machine JSON configuration path")
 	flags.StringVar(&event.Base, "base", "auto", "comparison baseline: auto, HEAD, or Git ref")
 	flags.BoolVar(&event.Retry, "retry", false, "retry queued collector work without a new collection")
 	flags.Usage = func() {
-		fmt.Fprintln(stdout, "Usage: servediff hook --agent {codex|claude|opencode|pi} [--path DIRECTORY] [--run-id ID] [--config-file FILE]")
+		fmt.Fprintln(stdout, "Usage: servediff hook --harness {codex|claude|opencode|pi} [--path DIRECTORY] [--run-id ID] [--config-file FILE]")
 	}
 	if err := flags.Parse(arguments); err != nil {
 		return event, err
@@ -110,7 +110,7 @@ func parseHookEvent(arguments []string, stdin io.Reader, stdout io.Writer) (hook
 	switch event.Agent {
 	case "codex", "claude", "opencode", "pi":
 	default:
-		return event, errors.New("hook requires a supported agent name")
+		return event, errors.New("hook requires a supported harness name")
 	}
 	if event.Path == "" && !event.Retry {
 		if stdin == nil {

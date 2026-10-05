@@ -29,7 +29,7 @@ function requestSync(directory: string, sessionID: string): void {
   try {
     const args = [
       "hook",
-      "--agent",
+      "--harness",
       "pi",
       "--path",
       directory,

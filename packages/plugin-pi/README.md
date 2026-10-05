@@ -3,7 +3,7 @@
 Requires Pi 1.0.0 and an installed servediff binary.
 Uses `agent_settled`, after retries, compaction and queued continuations finish. The earlier `agent_end` event is intentionally unused.
 
-Completion queues `servediff hook --agent pi`. The CLI detaches collection,
+Completion queues `servediff hook --harness pi`. The CLI detaches collection,
 health checks, local startup and ingestion; the hook waits only for scheduling.
 Failures never request continuation or write into the conversation.
 
