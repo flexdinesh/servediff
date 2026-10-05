@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,53 @@ import (
 	"testing"
 	"time"
 )
+
+func TestRunHarnessSelection(t *testing.T) {
+	i, _ := testInstaller(t)
+	t.Setenv("HOME", i.home)
+	t.Setenv("USERPROFILE", i.home)
+	t.Setenv("XDG_DATA_HOME", i.data)
+	t.Setenv("XDG_CONFIG_HOME", i.config)
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(i.home, ".claude"))
+	put(t, i.binary, "unused executable")
+	if err := os.Chmod(i.binary, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := i.install("claude"); err != nil {
+		t.Fatal(err)
+	}
+	for _, action := range []string{"install", "remove"} {
+		var output bytes.Buffer
+		if err := run([]string{action, "--harness", "opencode", "--source", i.source, "--binary", i.binary}, &output); err != nil {
+			t.Fatal(err)
+		}
+		if got, want := output.String(), "opencode: "+action+" complete\n"; got != want {
+			t.Fatalf("output = %q, want %q", got, want)
+		}
+		if _, err := os.Stat(i.root("claude")); err != nil {
+			t.Fatalf("unselected plugin changed: %v", err)
+		}
+		_, err := os.Stat(i.openCodeFile())
+		if action == "install" && err != nil {
+			t.Fatalf("selected plugin not installed: %v", err)
+		}
+		if action == "remove" && !os.IsNotExist(err) {
+			t.Fatalf("selected plugin not removed: %v", err)
+		}
+	}
+}
+
+func TestRunRejectsUnknownHarness(t *testing.T) {
+	for _, action := range []string{"install", "remove"} {
+		t.Run(action, func(t *testing.T) {
+			var output bytes.Buffer
+			err := run([]string{action, "--harness", "unknown"}, &output)
+			if err == nil || err.Error() != `unknown harness "unknown"` {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
 
 func testInstaller(t *testing.T) (installer, *[][]string) {
 	t.Helper()

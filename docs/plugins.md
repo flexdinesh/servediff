@@ -10,20 +10,20 @@ From a development checkout, install dependencies and a chosen plugin:
 
 ```sh
 mise exec -- pnpm install --frozen-lockfile
-mise run plugins:install --host codex
-mise run plugins:install --host claude
-mise run plugins:install --host opencode
-mise run plugins:install --host pi
-mise run plugins:remove --host pi
+mise run plugins:install --harness codex
+mise run plugins:install --harness claude
+mise run plugins:install --harness opencode
+mise run plugins:install --harness pi
+mise run plugins:remove --harness pi
 ```
 
-Omit `--host` to select all four. Installing builds the CLI and plugin artifacts,
+Omit `--harness` to select all four. Installing builds the CLI and plugin artifacts,
 then copies them to private user directories; publishing is unnecessary. The
 installer captures an absolute CLI path, so GUI sessions need not inherit the
 same PATH. Keep that executable in place, or reinstall with another binary:
 
 ```sh
-mise run plugins:install --host codex --binary /path/to/servediff --config-file /path/to/config.json
+mise run plugins:install --harness codex --binary /path/to/servediff --config-file /path/to/config.json
 ```
 
 Repeated installation/removal preserves unrelated host settings and plugins.

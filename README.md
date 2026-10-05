@@ -81,7 +81,7 @@ Locally install Codex, Claude Code, OpenCode or Pi plugins to synchronize each
 worktree automatically after agent completion:
 
 ```sh
-mise run plugins:install --host codex
+mise run plugins:install --harness codex
 ```
 
 The plugin returns after scheduling; a detached Go worker collects and submits
