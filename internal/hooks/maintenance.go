@@ -114,8 +114,12 @@ func (engine Engine) prune() {
 		if err != nil {
 			continue
 		}
-		if os.Remove(file.path) == nil {
-			total -= file.size
+		// A worker may have replaced its failed observation after the scan.
+		if info, err := os.Stat(file.path); err == nil {
+			total += info.Size() - file.size
+			if (total > maxPendingBytes || time.Since(info.ModTime()) >= pendingTTL) && os.Remove(file.path) == nil {
+				total -= info.Size()
+			}
 		}
 		_ = lock.Close()
 	}
