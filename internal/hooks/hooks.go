@@ -254,7 +254,8 @@ func (engine Engine) sync(ctx context.Context, directory string, event Event) er
 	if err != nil {
 		return err
 	}
-	if hasPending && fingerprint != "" && saved.Fingerprint == fingerprint {
+	replayed := hasPending && fingerprint != "" && saved.Fingerprint == fingerprint
+	if replayed {
 		request = saved.Request
 	} else {
 		saved = pending{state: state{Target: target, Fingerprint: fingerprint, At: time.Now()}, Request: request}
@@ -265,6 +266,28 @@ func (engine Engine) sync(ctx context.Context, directory string, event Event) er
 	contextID, err := engine.Deliver(ctx, target, request)
 	if err != nil {
 		return err
+	}
+	if replayed && engine.Confirm != nil {
+		current, err := engine.Confirm(ctx, target, contextID)
+		if err != nil {
+			return err
+		}
+		if !current {
+			// Replays retain capture time and cannot supersede a newer external
+			// observation. Capture once more with a fresh submission identity.
+			request, fingerprint, err = engine.Collect(ctx, event, "")
+			if err != nil {
+				return err
+			}
+			saved = pending{state: state{Target: target, Fingerprint: fingerprint, At: time.Now()}, Request: request}
+			if err := writeJSON(pendingPath, saved); err != nil {
+				return err
+			}
+			contextID, err = engine.Deliver(ctx, target, request)
+			if err != nil {
+				return err
+			}
+		}
 	}
 	if err := writeJSON(ackPath, state{Target: target, ContextID: contextID, Fingerprint: fingerprint, At: time.Now()}); err != nil {
 		return err

@@ -604,3 +604,48 @@ func TestAcknowledgementWithoutContextRecollects(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestStalePendingReplayCapturesAndPromotesLatestInSameSync(t *testing.T) {
+	engine, job := fixture(t)
+	latest := ""
+	collections, confirmations := 0, 0
+	engine.Collect = func(_ context.Context, _ Event, previous string) (ingestion.Request, string, error) {
+		collections++
+		if previous != "" {
+			t.Fatalf("unexpected previous fingerprint: %q", previous)
+		}
+		return ingestion.Request{SubmissionID: fmt.Sprintf("capture-%d", collections)}, "state-A", nil
+	}
+	var submissions []string
+	engine.Deliver = func(_ context.Context, _ Target, request ingestion.Request) (string, error) {
+		submissions = append(submissions, request.SubmissionID)
+		if len(submissions) == 1 {
+			latest = "A"
+			return "", errors.New("durable receipt lost")
+		}
+		if request.SubmissionID != "capture-1" {
+			latest = "A"
+		}
+		return "context-A", nil
+	}
+	engine.Confirm = func(_ context.Context, _ Target, contextID string) (bool, error) {
+		confirmations++
+		if contextID != "context-A" {
+			t.Fatalf("wrong replay context: %q", contextID)
+		}
+		return latest == "A", nil
+	}
+	trigger(t, engine)
+	if err := engine.Run(context.Background(), *job); err == nil {
+		t.Fatal("lost receipt ignored")
+	}
+	// An external producer advances the stream while A's retry is pending.
+	latest = "B"
+	trigger(t, engine)
+	if err := engine.Run(context.Background(), *job); err != nil {
+		t.Fatal(err)
+	}
+	if latest != "A" || collections != 3 || confirmations != 1 || strings.Join(submissions, ",") != "capture-1,capture-1,capture-3" {
+		t.Fatalf("latest=%q collections=%d confirmations=%d submissions=%v", latest, collections, confirmations, submissions)
+	}
+}
