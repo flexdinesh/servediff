@@ -57,12 +57,12 @@ description = "Build self-contained agent plugin adapters"
 run = "pnpm --recursive --filter '@servediff/plugin-*' --if-present build"
 
 [tasks."plugins:install"]
-description = "Install local agent plugins (--host codex|claude|opencode|pi|all)"
+description = "Install local agent plugins (--harness codex|claude|opencode|pi|all)"
 depends = ["build", "plugins:build"]
 run = "go run ./tools/install-plugins install"
 
 [tasks."plugins:remove"]
-description = "Remove managed local agent plugins (--host NAME)"
+description = "Remove managed local agent plugins (--harness NAME)"
 run = "go run ./tools/install-plugins remove"
 
 [tasks."dev:server"]

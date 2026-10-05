@@ -38,11 +38,11 @@ func main() {
 
 func run(args []string, output io.Writer) error {
 	if len(args) == 0 || (args[0] != "install" && args[0] != "remove") {
-		return errors.New("usage: install-plugins install|remove --host codex|claude|opencode|pi|all [--source DIR] [--binary FILE] [--config-file FILE]")
+		return errors.New("usage: install-plugins install|remove --harness codex|claude|opencode|pi|all [--source DIR] [--binary FILE] [--config-file FILE]")
 	}
 	flags := flag.NewFlagSet("install-plugins "+args[0], flag.ContinueOnError)
 	flags.SetOutput(output)
-	host := flags.String("host", "all", "agent host, or all")
+	harness := flags.String("harness", "all", "agent harness, or all")
 	source := flags.String("source", ".", "servediff repository containing built plugin packages")
 	binary := flags.String("binary", "dist/servediff", "servediff executable; captured as an absolute path")
 	configFile := flags.String("config-file", "", "optional machine JSON config path")
@@ -53,15 +53,15 @@ func run(args []string, output io.Writer) error {
 		return err
 	}
 	if flags.NArg() != 0 {
-		return errors.New("unexpected arguments; use --host NAME")
+		return errors.New("unexpected arguments; use --harness NAME")
 	}
-	hosts := []string{*host}
-	if *host == "all" {
-		hosts = []string{"codex", "claude", "opencode", "pi"}
+	harnesses := []string{*harness}
+	if *harness == "all" {
+		harnesses = []string{"codex", "claude", "opencode", "pi"}
 	}
-	for _, name := range hosts {
+	for _, name := range harnesses {
 		if name != "codex" && name != "claude" && name != "opencode" && name != "pi" {
-			return fmt.Errorf("unknown host %q", name)
+			return fmt.Errorf("unknown harness %q", name)
 		}
 	}
 	home, err := os.UserHomeDir()
@@ -95,7 +95,7 @@ func run(args []string, output io.Writer) error {
 		}
 	}
 	var failures []error
-	for _, name := range hosts {
+	for _, name := range harnesses {
 		var err error
 		if args[0] == "install" {
 			err = i.install(name)
