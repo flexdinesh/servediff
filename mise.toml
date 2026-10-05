@@ -56,15 +56,6 @@ run = "pnpm dev:web"
 description = "Build self-contained agent plugin adapters"
 run = "pnpm --recursive --filter '@servediff/plugin-*' --if-present build"
 
-[tasks."plugins:install"]
-description = "Install local agent plugins (--harness codex|claude|opencode|pi|all)"
-depends = ["build", "plugins:build"]
-run = "go run ./tools/install-plugins install"
-
-[tasks."plugins:remove"]
-description = "Remove managed local agent plugins (--harness NAME)"
-run = "go run ./tools/install-plugins remove"
-
 [tasks."dev:server"]
 description = "Start a standalone Go fixture server"
 depends = ["web:build"]
@@ -108,13 +99,13 @@ description = "Run JavaScript checks, build, and test suites"
 run = "pnpm check:js"
 
 [tasks."check:generated"]
-description = "Reject uncommitted generated API types and embedded assets"
+description = "Reject uncommitted generated API types, embedded assets, and plugins"
 shell = "bash -e -o pipefail -c"
 run = '''
-generated_changes=$(git status --porcelain --untracked-files=all -- packages/api/src/schema.d.ts internal/webui/dist)
+generated_changes=$(git status --porcelain --untracked-files=all -- packages/api/src/schema.d.ts internal/webui/dist packages/plugin-opencode/dist packages/plugin-pi/dist)
 if [ -n "$generated_changes" ]; then
   printf '%s\n' "$generated_changes"
-  echo 'Commit generated API types and embedded web assets before pushing.' >&2
+  echo 'Commit generated API types, embedded web assets, and built plugins before pushing.' >&2
   exit 1
 fi
 '''

@@ -1,4 +1,4 @@
-# Local agent plugins
+# Agent plugins
 
 Install a plugin to synchronize the latest checkout after an agent finishes.
 Collection and ingestion run in a detached Go worker; the agent only schedules
@@ -6,46 +6,127 @@ work. The web UI's existing latest/stale filters cover all submitted worktrees.
 
 ## Install and remove
 
-From a development checkout, install dependencies and a chosen plugin:
+Install the servediff executable separately. For the current plugin contract,
+use the latest development version:
 
 ```sh
-mise exec -- pnpm install --frozen-lockfile
-mise run plugins:install --harness codex
-mise run plugins:install --harness claude
-mise run plugins:install --harness opencode
-mise run plugins:install --harness pi
-mise run plugins:remove --harness pi
+go install github.com/flexdinesh/servediff/cmd/servediff@main
 ```
 
-Omit `--harness` to select all four. Installing builds the CLI and plugin artifacts,
-then copies them to private user directories; publishing is unnecessary. The
-installer captures an absolute CLI path, so GUI sessions need not inherit the
-same PATH. Keep that executable in place, or reinstall with another binary:
+For CLI development, use `mise run install` instead. Ensure `servediff` is on
+the harness's PATH, including GUI sessions, or set `SERVEDIFF_BINARY` to its
+absolute path in the harness environment. All four adapters read that override
+at runtime; they do not capture an executable path during installation.
+
+The repository includes ready-to-use plugin artifacts. Installation requires no
+pnpm, mise or build step. Use each harness's own installer;
+restart active sessions after installing or updating.
+
+### Codex
+
+Register the repository marketplace, then install its plugin:
 
 ```sh
-mise run plugins:install --harness codex --binary /path/to/servediff --config-file /path/to/config.json
+codex plugin marketplace add /absolute/path/to/servediff
+codex plugin add servediff@servediff
 ```
 
-Repeated installation/removal preserves unrelated host settings and plugins.
-Existing unmanaged files at servediff's destination are not overwritten. Native
-Codex and Pi registration requires their CLIs on PATH. Restart active sessions
-after installing or replacing adapters.
+For a remote marketplace, replace the first command's path with
+`flexdinesh/servediff`. The marketplace manifest is
+`.agents/plugins/marketplace.json`. Remove the plugin with:
 
-| Host        | Supported baseline    | Completion event                  | User installation                                   |
-| ----------- | --------------------- | --------------------------------- | --------------------------------------------------- |
-| Codex       | CLI 0.160.0           | `Stop`                            | Private local marketplace, installed through Codex  |
-| Claude Code | 2.1.265               | `Stop`                            | `~/.claude/skills/servediff` plugin directory       |
-| OpenCode    | 2.0.22, V2 plugin API | `session.status` with idle status | `~/.config/opencode/plugins/servediff.js`           |
-| Pi          | 1.0.0                 | `agent_settled`                   | Private copied package registered with `pi install` |
+```sh
+codex plugin remove servediff@servediff
+```
+
+### Claude Code
+
+```sh
+claude plugin marketplace add /absolute/path/to/servediff
+claude plugin install servediff@servediff
+```
+
+For a remote marketplace, replace the first command's path with
+`flexdinesh/servediff`. The marketplace manifest is
+`.claude-plugin/marketplace.json`. Remove the plugin with:
+
+```sh
+claude plugin uninstall servediff@servediff
+```
+
+### Pi
+
+Install the ready-built package from a checkout:
+
+```sh
+pi install /absolute/path/to/servediff/packages/plugin-pi
+```
+
+Keep that checkout at the same path: Pi loads the local package there. Remove
+using the same source passed to install:
+
+```sh
+pi remove /absolute/path/to/servediff/packages/plugin-pi
+```
+
+### OpenCode
+
+OpenCode's native installer accepts npm and Git package specs. Install the
+package from this repository's `main` branch:
+
+```sh
+opencode plugin add 'github:flexdinesh/servediff#main::path:packages/plugin-opencode'
+```
+
+Remove that registration with:
+
+```sh
+opencode plugin remove 'github:flexdinesh/servediff#main::path:packages/plugin-opencode'
+```
+
+For a local checkout, add the absolute package directory to the `plugins` array
+in your `opencode.jsonc` instead; the CLI does not accept local paths:
+
+```jsonc
+{
+  "plugins": ["/absolute/path/to/servediff/packages/plugin-opencode"],
+}
+```
+
+Preserve existing configuration and plugin entries. Keep the checkout at that
+path. To remove a local install, remove only its `plugins` entry.
+
+| Host        | Supported baseline    | Completion event                  | Installation                       |
+| ----------- | --------------------- | --------------------------------- | ---------------------------------- |
+| Codex       | CLI 0.160.0           | `Stop`                            | Native marketplace/plugin CLI      |
+| Claude Code | 2.1.265               | `Stop`                            | Native marketplace/plugin CLI      |
+| OpenCode    | 2.0.22, V2 plugin API | `session.status` with idle status | Native Git install or local config |
+| Pi          | 1.0.0                 | `agent_settled`                   | Native local package install       |
 
 Codex requires enabling the plugin and approving its hook trust review; changing
 hook definitions can require another review. Host policies can disable hooks.
-Claude hooks must also be enabled. Claude's native loader was unavailable in the
-development environment; its package shape and command execution were verified.
-OpenCode V1 plugin APIs are not supported.
+Claude hooks must also be enabled. OpenCode V1 plugin APIs are not supported.
+Harness installers own plugin registration, updates and removal; their native
+configuration variables and installation scopes apply.
 
-Installation respects `CLAUDE_CONFIG_DIR`, `XDG_CONFIG_HOME`, and `XDG_DATA_HOME`;
-native Codex/Pi commands respect their host configuration variables.
+### Migrating from the repository installer
+
+Remove old registration before installing the native packages to avoid duplicate
+completion triggers:
+
+- Codex: run `codex plugin remove servediff@servediff-local`, then
+  `codex plugin marketplace remove servediff-local`.
+- Pi: use `pi list` to find the old private servediff package source, then
+  `pi remove` with that source.
+- Claude Code: remove the old `~/.claude/skills/servediff` directory only if its
+  `.servediff-local-install` marker identifies it as servediff's managed install.
+  Respect `CLAUDE_CONFIG_DIR` if set.
+- OpenCode: remove the old `~/.config/opencode/plugins/servediff.js` only if its
+  `// servediff managed local plugin` header identifies the old installer output.
+  Respect `XDG_CONFIG_HOME` if set.
+
+Leave other host files and plugins intact. The old `plugins:install` and
+`plugins:remove` mise tasks are no longer used.
 
 ## Configuration
 

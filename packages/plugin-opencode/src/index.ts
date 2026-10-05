@@ -1,13 +1,6 @@
 import { spawn } from "node:child_process";
 import type { Plugin } from "@opencode/plugin";
 
-type Settings = { binary: string; configFile?: string };
-let configuration: Settings | undefined;
-
-export function configure(settings: Settings): void {
-  configuration = { ...settings };
-}
-
 type Context = {
   location: { directory: string };
   event: {
@@ -74,14 +67,11 @@ function requestSync(directory: string, sessionID: string): void {
       "--run-id",
       sessionID,
     ];
-    if (configuration?.configFile !== undefined) {
-      args.push("--config-file", configuration.configFile);
-    }
-    const child = spawn(
-      configuration?.binary ?? process.env.SERVEDIFF_BINARY ?? "servediff",
-      args,
-      { detached: true, stdio: "ignore", shell: false },
-    );
+    const child = spawn(process.env.SERVEDIFF_BINARY ?? "servediff", args, {
+      detached: true,
+      stdio: "ignore",
+      shell: false,
+    });
     // Unref the deadline too: spawn's timeout option keeps Node hosts alive.
     const deadline = setTimeout(() => child.kill(), 5_000);
     deadline.unref();

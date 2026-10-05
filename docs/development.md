@@ -35,27 +35,25 @@ List available tasks with `mise tasks`. Keep personal overrides in
 
 ## Commands
 
-| Purpose                                                    | Command                                    |
-| ---------------------------------------------------------- | ------------------------------------------ |
-| Start Vite HMR with a managed Go fixture server            | `mise run dev` or `pnpm dev:web`           |
-| Start a standalone Go fixture server with built web assets | `mise run dev:server`                      |
-| Generate the TypeScript API types                          | `mise run generate`                        |
-| Build the web application                                  | `mise run web:build`                       |
-| Build the dependency-free CLI at `dist/servediff`          | `mise run build`                           |
-| Build and locally install the CLI                          | `mise run install`                         |
-| Build agent plugin adapters                                | `mise run plugins:build`                   |
-| Install a local agent plugin                               | `mise run plugins:install --harness codex` |
-| Remove a local agent plugin                                | `mise run plugins:remove --harness codex`  |
-| Install Playwright Chromium                                | `pnpm test:browser:install`                |
-| Run web unit and browser tests                             | `pnpm test:web`                            |
-| Run Go tests                                               | `mise run test:go`                         |
-| Run distribution API conformance tests                     | `mise run test:conformance`                |
-| Run TypeScript checks                                      | `pnpm typecheck`                           |
-| Run JavaScript linting                                     | `pnpm lint`                                |
-| Format supported files                                     | `pnpm format`                              |
-| Run every repository check                                 | `mise run check`                           |
-| Run all pre-push checks, including Go race tests           | `pnpm check:push`                          |
-| Run lightweight CI checks                                  | `mise run check:ci`                        |
+| Purpose                                                    | Command                          |
+| ---------------------------------------------------------- | -------------------------------- |
+| Start Vite HMR with a managed Go fixture server            | `mise run dev` or `pnpm dev:web` |
+| Start a standalone Go fixture server with built web assets | `mise run dev:server`            |
+| Generate the TypeScript API types                          | `mise run generate`              |
+| Build the web application                                  | `mise run web:build`             |
+| Build the dependency-free CLI at `dist/servediff`          | `mise run build`                 |
+| Build and locally install the CLI                          | `mise run install`               |
+| Build agent plugin adapters                                | `mise run plugins:build`         |
+| Install Playwright Chromium                                | `pnpm test:browser:install`      |
+| Run web unit and browser tests                             | `pnpm test:web`                  |
+| Run Go tests                                               | `mise run test:go`               |
+| Run distribution API conformance tests                     | `mise run test:conformance`      |
+| Run TypeScript checks                                      | `pnpm typecheck`                 |
+| Run JavaScript linting                                     | `pnpm lint`                      |
+| Format supported files                                     | `pnpm format`                    |
+| Run every repository check                                 | `mise run check`                 |
+| Run all pre-push checks, including Go race tests           | `pnpm check:push`                |
+| Run lightweight CI checks                                  | `mise run check:ci`              |
 
 Set `SERVEDIFF_TEST_PORT` for a separate browser-test server (default 4173), e.g. `SERVEDIFF_TEST_PORT=4183 mise exec -- pnpm --filter @servediff/web test:browser`.
 
@@ -158,6 +156,10 @@ across writes or owner disposal. Keep section-only state within its component.
 See [architecture.md](architecture.md) for repository boundaries and dependency
 rules.
 
-See [plugins.md](plugins.md) for local agent installation, asynchronous checkout
-sync, configuration precedence and hook diagnostics. Normal builds and checks
-compile the adapters; host SDK dependencies are development types only.
+See [plugins.md](plugins.md) for native harness installation, asynchronous
+checkout sync, configuration precedence and hook diagnostics. Normal builds and
+checks compile the adapters; host SDK dependencies are development types only.
+Pi and OpenCode's self-contained `dist/index.js` artifacts are committed so a
+clone is ready to install without a build. After changing adapter source, run
+`mise run plugins:build` and commit the regenerated artifacts. Codex and Claude
+load their checked-in hook definitions through the root marketplace manifests.

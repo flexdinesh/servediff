@@ -1,0 +1,17 @@
+{
+  "name": "servediff",
+  "plugins": [
+    {
+      "name": "servediff",
+      "source": {
+        "source": "local",
+        "path": "./packages/plugin-codex"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
