@@ -11,10 +11,12 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/flexdinesh/servediff/internal/contextservice"
+	"github.com/flexdinesh/servediff/internal/hooks"
 	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/review"
 )
@@ -248,5 +250,241 @@ func TestHookReturnsBeforeRemoteIngestionAndSkipsUnchangedUploads(t *testing.T) 
 	output, err := harness.run(nil, "service", "status", "--json")
 	if err == nil || !strings.Contains(string(output), "stopped") {
 		t.Fatalf("remote hook started a local service: %v %s", err, output)
+	}
+}
+
+func isolatedCollectorHarness(t *testing.T) serviceHarness {
+	t.Helper()
+	harness := newServiceHarness(t)
+	harness.environment = append(harness.environment,
+		"SERVEDIFF_SERVER_URL=", "SERVEDIFF_TOKEN=", "SERVEDIFF_SOURCE_ID=conformance-source",
+		"XDG_CONFIG_HOME="+t.TempDir(),
+	)
+	return harness
+}
+
+func collectorGit(t *testing.T, root string, arguments ...string) string {
+	t.Helper()
+	command := exec.Command("git", arguments...)
+	command.Dir = root
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", arguments, err, output)
+	}
+	return strings.TrimSpace(string(output))
+}
+
+func waitCollectorStatus(t *testing.T, harness serviceHarness, matches func(hooks.Activity) bool) hooks.Activity {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	var output []byte
+	for time.Now().Before(deadline) {
+		var err error
+		output, err = harness.run(nil, "collector", "status")
+		var statuses []hooks.Activity
+		if err == nil && json.Unmarshal(output, &statuses) == nil {
+			for _, status := range statuses {
+				if matches(status) {
+					return status
+				}
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	log, _ := os.ReadFile(filepath.Join(harness.runtimeDir, "hooks", "hooks.log"))
+	t.Fatalf("collector status never matched: %s\n%s", output, log)
+	return hooks.Activity{}
+}
+
+func collectorActivities(t *testing.T, harness serviceHarness) []hooks.Activity {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(harness.runtimeDir, "hooks", "hooks.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var activities []hooks.Activity
+	for _, line := range bytes.Split(bytes.TrimSpace(data), []byte("\n")) {
+		var activity hooks.Activity
+		if err := json.Unmarshal(line, &activity); err != nil || activity.Time.IsZero() {
+			t.Fatalf("invalid structured collector activity: %s: %v", line, err)
+		}
+		activities = append(activities, activity)
+	}
+	return activities
+}
+
+func TestHookDiscoversCommittedBranchFromParentWorkspace(t *testing.T) {
+	harness := isolatedCollectorHarness(t)
+	root := createWorktree(t, "renamed-repository")
+	collectorGit(t, root, "checkout", "--", "value.txt")
+	collectorGit(t, root, "branch", "-M", "main")
+	branch := "codex/recovered-feature"
+	collectorGit(t, root, "checkout", "-b", branch)
+	after := "committed feature\ncomplete captured contents\n"
+	if err := os.WriteFile(filepath.Join(root, "value.txt"), []byte(after), 0600); err != nil {
+		t.Fatal(err)
+	}
+	collectorGit(t, root, "add", "value.txt")
+	collectorGit(t, root, "commit", "--quiet", "-m", "feature")
+	collectorGit(t, root, "checkout", "main")
+	if dirty := collectorGit(t, root, "status", "--porcelain"); dirty != "" {
+		t.Fatalf("fixture checkout should be clean: %s", dirty)
+	}
+	configFile := filepath.Join(t.TempDir(), "machine.json")
+	config, err := json.Marshal(map[string]interface{}{"state": harness.state, "port": 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configFile, config, 0600); err != nil {
+		t.Fatal(err)
+	}
+	workspace := filepath.Dir(root)
+	promptHook(t, harness, hookInput(t, workspace), "--agent", "codex", "--config-file", configFile)
+	serverStatus, contexts := waitHookCatalog(t, harness, 2)
+	var recovered *contextservice.Context
+	for index := range contexts {
+		if contexts[index].Branch != nil && *contexts[index].Branch == branch {
+			recovered = &contexts[index]
+		}
+	}
+	if recovered == nil || recovered.ChangedFileCount == nil || *recovered.ChangedFileCount != 1 {
+		t.Fatalf("missing committed feature branch: %+v", contexts)
+	}
+	base := serverStatus.BrowserURL + "/api/v2/contexts/" + recovered.ID
+	var diff review.RepositoryDiff
+	requestJSON(t, base+"/diffs/current?scope=all", &diff)
+	if diff.Branch != branch || len(diff.Files) != 1 || diff.Files[0].Path != "value.txt" {
+		t.Fatalf("wrong branch diff: %+v", diff)
+	}
+	var contents review.FileContents
+	requestJSON(t, base+"/diffs/"+diff.ID+"/files/"+diff.Files[0].ID+"/contents?scope=all&versionId="+diff.VersionID+"&fileVersion="+diff.Files[0].Fingerprint, &contents)
+	if contents.Before != "before\n" || contents.After != after {
+		t.Fatalf("branch object contents incomplete: %+v", contents)
+	}
+	status := waitCollectorStatus(t, harness, func(activity hooks.Activity) bool {
+		return activity.Branch == branch && activity.Status == "complete"
+	})
+	if status.Path != root || status.InputPath != workspace || status.ContextID != recovered.ID || status.RepositoryKey == "" || status.CheckoutKey == "" || status.BranchID == "" {
+		t.Fatalf("branch source status lacks provenance: %+v", status)
+	}
+	discovered, captured, acknowledged := false, false, false
+	for _, activity := range collectorActivities(t, harness) {
+		if activity.Branch != branch {
+			continue
+		}
+		discovered = discovered || activity.Stage == "discovery" && activity.Status == "resolved" && activity.InputPath == workspace
+		captured = captured || activity.Stage == "captured" && activity.Status == "pending"
+		acknowledged = acknowledged || activity.Stage == "ingestion" && activity.Status == "complete" && activity.ContextID == recovered.ID
+	}
+	if !discovered || !captured || !acknowledged {
+		t.Fatalf("missing collector lifecycle: discovered=%v captured=%v acknowledged=%v", discovered, captured, acknowledged)
+	}
+}
+
+func TestCollectorRetryDeliversCaptureAfterHealthOutageAndCheckoutRemoval(t *testing.T) {
+	harness := isolatedCollectorHarness(t)
+	root := createWorktree(t, "ephemeral-checkout")
+	collectorGit(t, root, "branch", "-M", "main")
+	requests := make(chan ingestion.Request, 4)
+	var available atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v2/health" {
+			if !available.Load() {
+				paths, err := filepath.Glob(filepath.Join(harness.runtimeDir, "hooks", "jobs", "*", "capture.pending.json"))
+				if err != nil || len(paths) != 1 {
+					t.Errorf("health contacted before capture persisted: %v %v", paths, err)
+				} else {
+					data, readErr := os.ReadFile(paths[0])
+					var saved struct {
+						Request ingestion.Request `json:"request"`
+					}
+					if readErr != nil || json.Unmarshal(data, &saved) != nil || saved.Request.SubmissionID == "" {
+						t.Errorf("health contacted before complete immutable capture: %v %s", readErr, data)
+					}
+				}
+				http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(ingestion.Health{StateID: "recovered-database", ProtocolVersion: ingestion.ProtocolVersion})
+			return
+		}
+		if r.URL.Path != "/api/v2/ingestions" || r.Header.Get("X-Servediff-State") != "recovered-database" {
+			http.NotFound(w, r)
+			return
+		}
+		var input ingestion.Request
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			t.Error(err)
+			return
+		}
+		requests <- input
+		_ = json.NewEncoder(w).Encode(ingestion.Receipt{ContextID: "recovered-context", ReviewURL: "/contexts/recovered-context", MCPURL: "/mcp/contexts/recovered-context", Snapshot: input.Scopes[0].Snapshot})
+	}))
+	defer server.Close()
+	harness.environment = append(harness.environment, "SERVEDIFF_SERVER_URL="+server.URL, "SERVEDIFF_TOKEN=isolated-token")
+	promptHook(t, harness, hookInput(t, root), "--agent", "codex")
+	waitCollectorStatus(t, harness, func(activity hooks.Activity) bool { return activity.Status == "waiting" })
+	paths, err := filepath.Glob(filepath.Join(harness.runtimeDir, "hooks", "jobs", "*", "*.pending.json"))
+	if err != nil || len(paths) != 1 {
+		t.Fatalf("capture not persisted before health: %v %v", paths, err)
+	}
+	data, err := os.ReadFile(paths[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var captured struct {
+		Request ingestion.Request `json:"request"`
+	}
+	if err := json.Unmarshal(data, &captured); err != nil || captured.Request.SubmissionID == "" || len(captured.Request.Scopes) != 3 {
+		t.Fatalf("invalid durable capture: %v %s", err, data)
+	}
+	if err := os.RemoveAll(root); err != nil {
+		t.Fatal(err)
+	}
+	otherRequests := make(chan struct{}, 1)
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v2/health" {
+			_ = json.NewEncoder(w).Encode(ingestion.Health{StateID: "wrong-database", ProtocolVersion: ingestion.ProtocolVersion})
+			return
+		}
+		select {
+		case otherRequests <- struct{}{}:
+		default:
+		}
+		http.Error(w, "wrong destination", http.StatusBadRequest)
+	}))
+	defer other.Close()
+	wrong := harness
+	wrong.environment = append(append([]string(nil), harness.environment...), "SERVEDIFF_SERVER_URL="+other.URL)
+	wrong.requireRun(t, nil, "collector", "retry")
+	select {
+	case <-otherRequests:
+		t.Fatal("retry sent capture to wrong destination")
+	case <-time.After(300 * time.Millisecond):
+	}
+	available.Store(true)
+	harness.requireRun(t, nil, "collector", "retry")
+	var delivered ingestion.Request
+	select {
+	case delivered = <-requests:
+	case <-time.After(10 * time.Second):
+		log, _ := os.ReadFile(filepath.Join(harness.runtimeDir, "hooks", "hooks.log"))
+		t.Fatalf("retry lost removed checkout's capture: %s", log)
+	}
+	before, _ := json.Marshal(captured.Request)
+	after, _ := json.Marshal(delivered)
+	if !bytes.Equal(before, after) {
+		t.Fatalf("retry mutated immutable capture: before=%s after=%s", before, after)
+	}
+	status := waitCollectorStatus(t, harness, func(activity hooks.Activity) bool {
+		return activity.Status == "complete" && activity.ContextID == "recovered-context"
+	})
+	if status.SubmissionID != captured.Request.SubmissionID || status.Path != root {
+		t.Fatalf("retry acknowledgement lost source metadata: %+v", status)
+	}
+	for _, activity := range collectorActivities(t, harness) {
+		if strings.Contains(activity.Error, "isolated-token") || strings.Contains(activity.Destination, "isolated-token") {
+			t.Fatalf("collector activity leaked token: %+v", activity)
+		}
 	}
 }

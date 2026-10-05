@@ -996,6 +996,9 @@ components:
           type: string
         branch:
           type: string
+        branchId:
+          type: string
+          description: Stable producer branch identity, preserved through branch renames. Optional for older producers and detached HEAD.
         head:
           type: [string, "null"]
         collectedAt:

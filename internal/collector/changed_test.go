@@ -106,11 +106,14 @@ func TestCollectChangedTracksBranchHeadAndRepositoryMetadata(t *testing.T) {
 		t.Fatal("HEAD transition missing")
 	}
 	git(t, root, "remote", "add", "origin", "https://example.com/org/repository.git")
-	remoteRequest, remote := changed(t, root, head)
-	if remoteRequest.Metadata.RepositoryKey == headRequest.Metadata.RepositoryKey || remoteRequest.Metadata.RepositoryName != "repository" {
+	remoteRequest, err := Collect(t.Context(), root, Options{SourceID: "machine", Hostname: "host"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if remoteRequest.Metadata.RepositoryKey != headRequest.Metadata.RepositoryKey || remoteRequest.Metadata.RepositoryName != "repository" || remoteRequest.Metadata.RemoteURL == headRequest.Metadata.RemoteURL {
 		t.Fatal("repository metadata transition missing")
 	}
-	unchanged(t, root, remote)
+	unchanged(t, root, head)
 }
 
 func TestCollectChangedTracksUntrackedAndDeletedFiles(t *testing.T) {
@@ -219,6 +222,9 @@ func TestFingerprintUsesStableProvenance(t *testing.T) {
 	request.Metadata.RunID, request.Metadata.Agent, request.Metadata.Trigger = "another", "another", "another"
 	request.Metadata.CollectorVersion = "another"
 	request.Metadata.CollectedAt++
+	request.Metadata.Hostname, request.Metadata.Root, request.Metadata.WorktreeName = "another", "another", "another"
+	request.Metadata.RepositoryName, request.Metadata.RemoteURL = "another", "another"
+	request.Metadata.Branch = "another"
 	for index := range request.Scopes {
 		request.Scopes[index].Snapshot.Revision = "another"
 	}
@@ -228,10 +234,9 @@ func TestFingerprintUsesStableProvenance(t *testing.T) {
 	}
 	for _, change := range []func(*ingestion.Metadata){
 		func(metadata *ingestion.Metadata) { metadata.SourceID = "another" },
-		func(metadata *ingestion.Metadata) { metadata.Hostname = "another" },
 		func(metadata *ingestion.Metadata) { metadata.RepositoryKey = "another" },
 		func(metadata *ingestion.Metadata) { metadata.CheckoutKey = "another" },
-		func(metadata *ingestion.Metadata) { metadata.Root = "another" },
+		func(metadata *ingestion.Metadata) { metadata.BranchID = "another" },
 	} {
 		changed := request
 		change(&changed.Metadata)

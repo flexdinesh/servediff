@@ -116,7 +116,9 @@ func TestTargetReplacementInvalidatesAcknowledgementAndPending(t *testing.T) {
 		trigger(t, engine)
 		_ = engine.Run(context.Background(), *job)
 	}
-	if previous[0] != "" || previous[1] != "same" || previous[2] != "" || sent[1].SubmissionID == sent[2].SubmissionID {
+	// The content check now precedes health. Only the delivery may reuse a
+	// pending submission, and replacing the database must prevent that replay.
+	if len(sent) != 3 || previous[0] != "" || previous[1] != "same" || sent[1].SubmissionID == sent[2].SubmissionID {
 		t.Fatalf("replacement previous=%v sent=%v", previous, sent)
 	}
 }

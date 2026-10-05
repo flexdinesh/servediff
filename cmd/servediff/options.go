@@ -40,6 +40,8 @@ type options struct {
 	pathSet       bool
 	config        string
 	configFile    string
+	base          string
+	branch        string
 }
 
 func parseOptions(arguments []string, stderr io.Writer) (options, error) {
@@ -57,6 +59,8 @@ func parseOptionsMode(arguments []string, stderr io.Writer, internal bool, foreg
 	flags.StringVar(&values.agent, "agent", "", "agent name recorded with the observation")
 	flags.StringVar(&values.runID, "run-id", "", "agent or container run identity")
 	flags.StringVar(&values.sourceID, "source-id", "", "source identity; defaults to persistent local identity")
+	flags.StringVar(&values.base, "base", "", "comparison baseline: HEAD (default), auto, or Git ref")
+	flags.StringVar(&values.branch, "branch", "", "recover committed branch from Git objects; defaults base to auto")
 	if internal || (len(foreground) > 0 && foreground[0]) {
 		flags.StringVar(&values.host, "host", values.host, "IP address to bind (foreground/internal only)")
 	}
@@ -150,6 +154,7 @@ func normalizeArguments(arguments []string) []string {
 		"-p": true, "--port": true, "--host": true, "--fixture": true,
 		"--config": true, "--config-file": true, "--path": true, "--server": true, "--token": true, "--trigger": true, "--agent": true, "--run-id": true, "--source-id": true,
 		"--state": true, "--web-dir": true, "--capture": true, "--runtime-dir": true,
+		"--base": true, "--branch": true,
 	}
 	options, positionals := make([]string, 0, len(arguments)), make([]string, 0, 1)
 	for index := 0; index < len(arguments); index++ {

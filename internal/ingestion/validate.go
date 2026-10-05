@@ -29,7 +29,7 @@ func Validate(input Request) error {
 	if input.Metadata.Trigger != "manual" && input.Metadata.Trigger != "agent-hook" && input.Metadata.Trigger != "pipe" {
 		return fmt.Errorf("trigger must be manual, agent-hook, or pipe")
 	}
-	for _, value := range []string{input.Metadata.Hostname, input.Metadata.RunID, input.Metadata.Agent, input.Metadata.RepositoryKey, input.Metadata.RepositoryName, input.Metadata.RemoteURL, input.Metadata.CheckoutKey, input.Metadata.Root, input.Metadata.WorktreeName, input.Metadata.Branch, input.Metadata.CollectorVersion} {
+	for _, value := range []string{input.Metadata.Hostname, input.Metadata.RunID, input.Metadata.Agent, input.Metadata.RepositoryKey, input.Metadata.RepositoryName, input.Metadata.RemoteURL, input.Metadata.CheckoutKey, input.Metadata.Root, input.Metadata.WorktreeName, input.Metadata.Branch, input.Metadata.BranchID, input.Metadata.CollectorVersion} {
 		if len(value) > 32<<10 {
 			return fmt.Errorf("metadata value exceeds 32 KiB")
 		}

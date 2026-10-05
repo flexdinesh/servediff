@@ -23,6 +23,7 @@ type Metadata struct {
 	WorktreeName     string  `json:"worktreeName"`
 	LinkedWorktree   *bool   `json:"linkedWorktree,omitempty"`
 	Branch           string  `json:"branch"`
+	BranchID         string  `json:"branchId,omitempty"`
 	Head             *string `json:"head"`
 	CollectedAt      int64   `json:"collectedAt"`
 	CollectorVersion string  `json:"collectorVersion"`

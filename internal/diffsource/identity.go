@@ -23,25 +23,36 @@ func ContentHash(ctx context.Context, source Source, snapshots []review.Reposito
 	if !ok {
 		return "", nil
 	}
+	if err := git.verifyComparison(ctx); err != nil {
+		return "", err
+	}
 	_, base, err := git.headAndBase(ctx)
 	if err != nil {
 		return "", err
 	}
 	// Stage records preserve every conflict blob as well as staged contents.
-	index, err := runGit(ctx, git.root, 16<<20, "ls-files", "--stage", "-z")
-	if err != nil {
-		return "", err
+	index := ""
+	if !git.objectsOnly() {
+		index, err = runGit(ctx, git.root, 16<<20, "ls-files", "--stage", "-z")
+		if err != nil {
+			return "", err
+		}
 	}
 	hash := sha256.New()
 	encoder := json.NewEncoder(hash)
 	if err := encoder.Encode([]string{"git-content-v1", index}); err != nil {
 		return "", err
 	}
+	if git.comparison != nil {
+		if err := encoder.Encode([]any{"branch-comparison-v1", git.comparison.BaseOID, git.comparison.HeadOID, git.comparison.ObjectsOnly}); err != nil {
+			return "", err
+		}
+	}
 	scopes := append([]review.RepositoryDiff(nil), snapshots...)
 	sort.Slice(scopes, func(i, j int) bool { return scopes[i].Mode < scopes[j].Mode })
 	contents := make(map[string][]string)
 	for _, snapshot := range scopes {
-		raw, err := runGit(ctx, git.root, 16<<20, append(gitDiffArgs(snapshot.Mode, base), "--raw", "--no-abbrev", "-z", "--")...)
+		raw, err := runGit(ctx, git.root, 16<<20, append(git.diffArgs(snapshot.Mode, base), "--raw", "--no-abbrev", "-z", "--")...)
 		if err != nil {
 			return "", err
 		}
@@ -59,12 +70,12 @@ func ContentHash(ctx context.Context, source Source, snapshots []review.Reposito
 			if rawFile := files[file.Path]; rawFile != nil {
 				header = rawFile.Fingerprint
 				fields := strings.Fields(header)
-				if len(fields) < 5 || fields[0] == ":160000" || fields[1] == "160000" {
+				if len(fields) < 5 || !git.objectsOnly() && (fields[0] == ":160000" || fields[1] == "160000") {
 					return "", nil
 				}
 			}
 			var content []string
-			if snapshot.Mode != review.DiffStaged && (file.Status != "D" || file.Recreated) {
+			if !git.objectsOnly() && snapshot.Mode != review.DiffStaged && (file.Status != "D" || file.Recreated) {
 				var found bool
 				content, found = contents[file.Path]
 				if !found {
@@ -85,6 +96,9 @@ func ContentHash(ctx context.Context, source Source, snapshots []review.Reposito
 				return "", err
 			}
 		}
+	}
+	if err := git.verifyComparison(ctx); err != nil {
+		return "", err
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }

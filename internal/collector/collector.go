@@ -31,6 +31,9 @@ type Options struct {
 	Trigger          string
 	CollectorVersion string
 	SubmissionID     string
+	Base             string
+	Branch           string
+	OnSource         func(ingestion.Metadata, diffsource.Comparison)
 }
 
 func Collect(ctx context.Context, directory string, options Options) (ingestion.Request, error) {
@@ -47,16 +50,19 @@ var ErrUnchanged = errors.New("checkout unchanged")
 func CollectChanged(ctx context.Context, directory string, options Options, previousFingerprint string) (ingestion.Request, string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	source, err := diffsource.OpenRepository(ctx, directory)
-	if err != nil {
-		return ingestion.Request{}, "", err
-	}
-	options, err = defaults(options)
+	options, err := defaults(options)
 	if err != nil {
 		return ingestion.Request{}, "", err
 	}
 	for attempt := 0; attempt < 2; attempt++ {
+		source, err := diffsource.OpenComparison(ctx, directory, options.Base, options.Branch)
+		if err != nil {
+			return ingestion.Request{}, "", err
+		}
 		request, fingerprint, err := collectRepositoryChanged(ctx, source, options, previousFingerprint)
+		if isChanged(err) {
+			err = errChanged
+		}
 		if err == nil || !errors.Is(err, errChanged) {
 			return request, fingerprint, err
 		}
@@ -94,7 +100,25 @@ func collectRepositoryChanged(ctx context.Context, source diffsource.Source, opt
 		}
 		return ingestion.Request{}, "", err
 	}
-	metadata := repositoryMetadata(source.Root(), facts, snapshots[0], options)
+	metadata, err := repositoryMetadata(ctx, source.Root(), facts, snapshots[0], options)
+	if err != nil {
+		return ingestion.Request{}, "", err
+	}
+	if comparison, ok := diffsource.ComparisonInfo(source); ok && comparison.ObjectsOnly {
+		metadata.CheckoutKey = diffsource.BranchCheckoutKey(metadata.RepositoryKey, metadata.BranchID)
+		metadata.WorktreeName = "branch: " + metadata.Branch
+		metadata.LinkedWorktree = nil
+	}
+	if options.OnSource != nil {
+		comparison, compared := diffsource.ComparisonInfo(source)
+		if !compared {
+			comparison.BaseRef = "HEAD"
+			if metadata.Head != nil {
+				comparison.BaseOID, comparison.HeadOID = *metadata.Head, *metadata.Head
+			}
+		}
+		options.OnSource(metadata, comparison)
+	}
 	scopes := make([]ingestion.Scope, 0, len(snapshots))
 	for _, snapshot := range snapshots {
 		scopes = append(scopes, ingestion.Scope{Snapshot: snapshot})
@@ -159,6 +183,18 @@ func Fingerprint(request ingestion.Request) string {
 	metadata := request.Metadata
 	metadata.RunID, metadata.Agent, metadata.Trigger, metadata.CollectorVersion = "", "", "", ""
 	metadata.CollectedAt = 0
+	if metadata.SourceID != "" {
+		metadata.Hostname = ""
+	}
+	if metadata.RepositoryKey != "" {
+		metadata.RepositoryName, metadata.RemoteURL = "", ""
+	}
+	if metadata.CheckoutKey != "" {
+		metadata.Root, metadata.WorktreeName, metadata.LinkedWorktree = "", "", nil
+	}
+	if metadata.BranchID != "" {
+		metadata.Branch = ""
+	}
 	scopes := make([]string, 0, len(request.Scopes))
 	for _, scope := range request.Scopes {
 		scopes = append(scopes, scope.Snapshot.Source+":"+string(scope.Snapshot.Mode))
@@ -276,7 +312,10 @@ func CollectPatch(ctx context.Context, raw, directory string, options Options) (
 			if err != nil {
 				return ingestion.Request{}, err
 			}
-			metadata = repositoryMetadata(repository.Root(), facts, state, options)
+			metadata, err = repositoryMetadata(ctx, repository.Root(), facts, state, options)
+			if err != nil {
+				return ingestion.Request{}, err
+			}
 			snapshot.Root, snapshot.Name, snapshot.Branch, snapshot.Head = state.Root, state.Name, state.Branch, state.Head
 		} else if !errors.Is(err, diffsource.ErrNotRepository) {
 			return ingestion.Request{}, err
@@ -324,7 +363,7 @@ func baseMetadata(options Options) ingestion.Metadata {
 	return ingestion.Metadata{SourceID: options.SourceID, Hostname: options.Hostname, RunID: options.RunID, Agent: options.Agent, Trigger: options.Trigger, CollectorVersion: options.CollectorVersion, CollectedAt: time.Now().UnixMilli()}
 }
 
-func repositoryMetadata(root string, facts diffsource.RepositoryMetadata, snapshot review.RepositoryDiff, options Options) ingestion.Metadata {
+func repositoryMetadata(ctx context.Context, root string, facts diffsource.RepositoryMetadata, snapshot review.RepositoryDiff, options Options) (ingestion.Metadata, error) {
 	metadata := baseMetadata(options)
 	metadata.Root, metadata.WorktreeName = root, filepath.Base(root)
 	linked := facts.CommonDir != facts.GitDir
@@ -333,12 +372,12 @@ func repositoryMetadata(root string, facts diffsource.RepositoryMetadata, snapsh
 	metadata.RemoteURL = facts.RemoteURL
 	metadata.RepositoryName = filepath.Base(filepath.Dir(facts.CommonDir))
 	metadata.RepositoryName = diffsource.RemoteRepositoryName(facts.RemoteURL, metadata.RepositoryName)
-	metadata.RepositoryKey = hash("repository", options.SourceID, facts.CommonDir)
-	if facts.RemoteURL != "" {
-		metadata.RepositoryKey = hash("remote", facts.RemoteURL)
+	identity, err := diffsource.StableIdentity(ctx, root, options.SourceID, snapshot.Branch)
+	if err != nil {
+		return ingestion.Metadata{}, err
 	}
-	metadata.CheckoutKey = hash("checkout", options.SourceID, facts.GitDir)
-	return metadata
+	metadata.RepositoryKey, metadata.CheckoutKey, metadata.BranchID = identity.RepositoryKey, identity.CheckoutKey, identity.BranchID
+	return metadata, nil
 }
 
 func hash(parts ...string) string {

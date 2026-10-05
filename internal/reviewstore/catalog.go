@@ -166,9 +166,12 @@ const contextSelect = `SELECT c.id,c.kind,COALESCE(l.root,json_extract(o.metadat
 	COALESCE(head.context_id<>c.id,0)
 	FROM contexts c LEFT JOIN locations l ON l.id=c.location_id LEFT JOIN repositories r ON r.id=l.repository_id
 	LEFT JOIN diffs d ON d.id=c.capture_id LEFT JOIN observations o ON o.context_id=c.id
+	LEFT JOIN observation_branch_aliases branch_alias ON branch_alias.owner_id=o.owner_id AND branch_alias.source_id=o.source_id
+		AND branch_alias.repository_key=json_extract(o.metadata,'$.repositoryKey') AND branch_alias.checkout_key=json_extract(o.metadata,'$.checkoutKey')
+		AND branch_alias.branch=json_extract(o.metadata,'$.branch')
 	LEFT JOIN observation_stream_heads head ON head.owner_id=o.owner_id AND head.source_id=o.source_id
 		AND head.repository_key=json_extract(o.metadata,'$.repositoryKey') AND head.checkout_key=json_extract(o.metadata,'$.checkoutKey')
-		AND head.branch=json_extract(o.metadata,'$.branch')`
+		AND head.branch=COALESCE(NULLIF(json_extract(o.metadata,'$.branchId'),''),branch_alias.branch_id,json_extract(o.metadata,'$.branch'))`
 
 type scanner interface{ Scan(...any) error }
 
