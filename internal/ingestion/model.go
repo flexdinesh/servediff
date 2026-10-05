@@ -21,6 +21,7 @@ type Metadata struct {
 	CheckoutKey      string  `json:"checkoutKey"`
 	Root             string  `json:"root"`
 	WorktreeName     string  `json:"worktreeName"`
+	LinkedWorktree   *bool   `json:"linkedWorktree,omitempty"`
 	Branch           string  `json:"branch"`
 	Head             *string `json:"head"`
 	CollectedAt      int64   `json:"collectedAt"`

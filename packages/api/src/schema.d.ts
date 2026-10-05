@@ -594,6 +594,8 @@ export interface components {
       repositoryName: string;
       remoteUrl: string;
       checkoutKey: string;
+      /** @description True for a linked Git worktree, false for the primary checkout. Omitted when unknown in older snapshots. */
+      linkedWorktree?: boolean;
       /** @description Source-local path; the server does not access it. */
       root: string;
       worktreeName: string;

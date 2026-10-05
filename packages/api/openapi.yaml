@@ -976,6 +976,9 @@ components:
           type: string
         checkoutKey:
           type: string
+        linkedWorktree:
+          type: boolean
+          description: True for a linked Git worktree, false for the primary checkout. Omitted when unknown in older snapshots.
         root:
           type: string
           description: Source-local path; the server does not access it.

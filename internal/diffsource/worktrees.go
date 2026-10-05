@@ -29,7 +29,7 @@ func RepositoryWorktrees(ctx context.Context, root string) (string, []Worktree, 
 		name = filepath.Base(worktrees[0].Root)
 	}
 	if remote, err := runGit(ctx, root, 16*1024, "config", "--get", "remote.origin.url"); err == nil {
-		name = remoteRepositoryName(strings.TrimSpace(remote), name)
+		name = RemoteRepositoryName(strings.TrimSpace(remote), name)
 	}
 	return name, worktrees, nil
 }
@@ -138,8 +138,12 @@ func parseWorktrees(raw string) []Worktree {
 	return result
 }
 
-func remoteRepositoryName(remote, fallback string) string {
-	if parsed, err := url.Parse(remote); err == nil && parsed.Scheme != "" && parsed.Host != "" {
+// RemoteRepositoryName extracts the display name from URL and SCP-style remotes.
+func RemoteRepositoryName(remote, fallback string) string {
+	if remote == "" {
+		return fallback
+	}
+	if parsed, err := url.Parse(remote); err == nil && parsed.Scheme != "" && (parsed.Host != "" || parsed.Scheme == "file") {
 		remote = parsed.Path
 	} else if _, suffix, ok := strings.Cut(remote, ":"); ok {
 		remote = suffix

@@ -3,6 +3,11 @@ import { test } from "node:test";
 import type { ApiContext } from "@servediff/api";
 import {
   contextChangeLabel,
+  contextIsLinkedWorktree,
+  contextCheckoutLabel,
+  contextDiagnostics,
+  observationSummary,
+  observationDetail,
   pickerResults,
   pickerEntries,
   defaultPickerFilters,
@@ -244,6 +249,40 @@ function observation(id: string, hostname: string, runId: string): ApiContext {
     },
   };
 }
+
+test("snapshot header shows only hostname and time, with labeled IDs in diagnostics", () => {
+  const context = observation("context-id", "host", "session-id");
+  const summary = observationSummary(context);
+  assert.ok(summary.startsWith("host · "));
+  assert.ok(!summary.includes("session-id"));
+  assert.ok(!summary.includes("source-host"));
+  assert.ok(!summary.includes("Collected"));
+  assert.ok(observationDetail(context).includes("Run: session-id"));
+  const diagnostics = contextDiagnostics(context);
+  assert.ok(diagnostics.includes("Source: source-host"));
+  assert.ok(diagnostics.includes("Run: session-id"));
+  assert.ok(diagnostics.includes("Context: context-id"));
+  const anonymous = observation("context-id", "", "");
+  assert.ok(!observationSummary(anonymous).includes("source-"));
+  assert.ok(observationDetail(anonymous).includes("Source: source-"));
+});
+
+test("worktree indicator requires explicit checkout metadata for observations", () => {
+  const context = observation("context-id", "host", "");
+  assert.equal(contextIsLinkedWorktree(context), false);
+  assert.equal(contextCheckoutLabel(context), "Checkout type unknown");
+  assert.equal(contextIsLinkedWorktree(main), false);
+  assert.equal(contextIsLinkedWorktree(worktree), true);
+  if (!context.observation) throw new Error("Missing observation");
+  context.observation.linkedWorktree = false;
+  assert.equal(contextIsLinkedWorktree(context), false);
+  assert.equal(contextCheckoutLabel(context), "Primary checkout");
+  context.observation.linkedWorktree = true;
+  assert.equal(contextIsLinkedWorktree(context), true);
+  assert.equal(contextCheckoutLabel(context), "Linked worktree: main-worktree");
+  context.branch = "detached at abc123";
+  assert.equal(contextIsLinkedWorktree(context), true);
+});
 
 test("observation search distinguishes containers on the same branch and retains submissions", () => {
   const contexts = [

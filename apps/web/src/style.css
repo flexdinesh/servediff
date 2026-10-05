@@ -800,6 +800,22 @@ h2 {
   margin-left: var(--space-1);
   background: transparent;
 }
+.context-switcher-worktree {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+.context-switcher-worktree svg {
+  flex-shrink: 0;
+}
+.context-switcher-worktree-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 @media (min-width: 768px) and (max-width: 1011px) {
   .header-heading #repo-path {
     display: none;
@@ -1042,6 +1058,7 @@ h2 {
     padding-inline: var(--space-2);
   }
   .context-switcher-shortcut,
+  .context-switcher-worktree-name,
   .header-heading {
     display: none;
   }

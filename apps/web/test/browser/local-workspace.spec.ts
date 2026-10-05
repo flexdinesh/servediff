@@ -843,6 +843,7 @@ test("observation picker drills into repositories and searches independent sourc
         checkoutKey: "checkout",
         root: "/workspace/review",
         worktreeName: "main-checkout",
+        ...(id === "second" ? { linkedWorktree: true } : {}),
         branch: "main",
         head: "head",
         collectedAt,
@@ -880,7 +881,18 @@ test("observation picker drills into repositories and searches independent sourc
   await expect(
     page.getByRole("button", { name: "Refresh changes" }),
   ).toBeHidden();
-  await expect(page.locator("#changes-title")).toHaveText("Collected changes");
+  await expect(page.locator("#changes-title")).toHaveClass("sr-only");
+  await expect(page.locator("#repo-path")).toContainText("container-a");
+  await expect(page.locator("#repo-path")).not.toContainText("run-a");
+  await expect(page.locator("#repo-path")).not.toContainText(
+    "source-container-a",
+  );
+  await expect(page.locator("#repo-path")).not.toContainText("Collected");
+  await expect(page.locator("#repo-path")).toHaveAttribute(
+    "title",
+    /Context: first/,
+  );
+  await expect(page.locator(".context-switcher-worktree")).toHaveCount(0);
   const requests = state.scopes.length;
   const catalogReads = catalogRequests;
   await page.clock.fastForward(9000);
@@ -913,7 +925,18 @@ test("observation picker drills into repositories and searches independent sourc
   await search.press("Enter");
   await expect(page).toHaveURL(/\/contexts\/second$/);
   await expect(trigger).toBeFocused();
+  await expect(page.locator(".context-switcher-worktree")).toHaveAccessibleName(
+    "Linked worktree: main-checkout",
+  );
+  await expect(page.locator("#repo-path")).toContainText("container-b");
+  await expect(page.locator("#repo-path")).not.toContainText("run-b");
+  await expect(trigger).toHaveAttribute(
+    "title",
+    /Run: run-b[\s\S]*Context: second/,
+  );
   await page.setViewportSize({ width: 360, height: 640 });
+  await expect(page.locator(".context-switcher-worktree")).toBeVisible();
+  await expect(page.locator(".context-switcher-worktree-name")).toBeHidden();
   await trigger.click();
   await search.press("Enter");
   const bounds = await dialog.boundingBox();

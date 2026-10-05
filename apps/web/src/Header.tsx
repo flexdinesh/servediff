@@ -23,7 +23,7 @@ import {
   capabilityEnabled,
   useSession,
 } from "./session-context.tsx";
-import { observationDetail } from "./project-picker.ts";
+import { contextDiagnostics, observationSummary } from "./project-picker.ts";
 import { readThemePreference, type ThemePreference } from "./theme.ts";
 
 function themeLabel(theme: ThemePreference) {
@@ -64,21 +64,26 @@ export function Header() {
       <Separator className="header-divider" orientation="vertical" />
       <ContextSwitcher />
       <div className="header-heading">
-        <h1 id="changes-title">
-          {piped
-            ? "Piped diff"
-            : observation
-              ? "Collected changes"
-              : "Local changes"}
+        <h1
+          id="changes-title"
+          className={observation && !piped ? "sr-only" : undefined}
+        >
+          {piped ? "Piped diff" : observation ? "Changes" : "Local changes"}
         </h1>
         <p
           id="repo-path"
-          title={piped ? "Re-run your command to update" : repository?.root}
+          title={
+            observation
+              ? contextDiagnostics(session)
+              : piped
+                ? "Re-run your command to update"
+                : repository?.root
+          }
         >
           {piped
             ? "From stdin · Git unchanged"
             : observation
-              ? observationDetail(session)
+              ? observationSummary(session)
               : (repository?.root ?? "Reading your repository…")}
         </p>
       </div>

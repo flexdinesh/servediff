@@ -300,7 +300,7 @@ func (service *Service) present(item reviewstore.ContextInfo) (Context, error) {
 		if err != nil {
 			return Context{}, requestError(err)
 		}
-		name := m.RepositoryName
+		name := diffsource.RemoteRepositoryName(m.RemoteURL, m.RepositoryName)
 		if name == "" {
 			name = "Piped diff"
 		}
