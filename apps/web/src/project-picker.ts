@@ -60,6 +60,19 @@ export function contextDetail(context: ApiContext) {
     : (context.branch ?? "Branch unknown");
 }
 
+export function contextIsLinkedWorktree(context: ApiContext) {
+  return context.observation
+    ? context.observation.linkedWorktree === true
+    : Boolean(context.worktreeName);
+}
+
+export function contextCheckoutLabel(context: ApiContext) {
+  if (contextIsLinkedWorktree(context))
+    return `Linked worktree: ${context.worktreeName || context.observation?.worktreeName || "Unknown"}`;
+  if (context.observation?.linkedWorktree === false) return "Primary checkout";
+  return "Checkout type unknown";
+}
+
 export function contextHasChanges(context: ApiContext) {
   return (
     context.availability !== "unavailable" &&
@@ -141,7 +154,7 @@ export function pickerResults(
     .map(({ context }) => context);
 }
 
-export function observationDetail(context: ApiContext) {
+export function observationSummary(context: ApiContext) {
   const observation = context.observation;
   if (!observation)
     return context.root ?? context.submittedFrom ?? "Piped diff";
@@ -152,16 +165,38 @@ export function observationDetail(context: ApiContext) {
       day: "numeric",
       hour: "2-digit",
       minute: "2-digit",
-      second: "2-digit",
     },
   );
+  return [observation.hostname, collected].filter(Boolean).join(" · ");
+}
+
+export function observationDetail(context: ApiContext) {
+  const observation = context.observation;
   return [
-    observation.hostname || observation.sourceId,
-    observation.runId || observation.sourceId,
-    collected,
+    observationSummary(context),
+    observation?.runId ? `Run: ${observation.runId}` : "",
+    observation && !observation.hostname
+      ? `Source: ${observation.sourceId}`
+      : "",
   ]
     .filter(Boolean)
     .join(" · ");
+}
+
+export function contextDiagnostics(context: ApiContext) {
+  const observation = context.observation;
+  return [
+    `${context.name} · ${contextDetail(context)}`,
+    context.kind !== "capture" ? contextCheckoutLabel(context) : "",
+    context.root ?? context.submittedFrom ?? "Piped diff",
+    observationSummary(context),
+    observation ? `Source: ${observation.sourceId}` : "",
+    observation?.runId ? `Run: ${observation.runId}` : "",
+    observation?.agent ? `Agent: ${observation.agent}` : "",
+    `Context: ${context.id}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export type PickerEntry =

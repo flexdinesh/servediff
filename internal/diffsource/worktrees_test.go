@@ -53,8 +53,13 @@ func TestParseWorktreesPreservesNewlinesAndSkipsBareRepository(t *testing.T) {
 }
 
 func TestRemoteRepositoryName(t *testing.T) {
-	for _, remote := range []string{"git@host:owner/repo.git", "https://host/owner/repo.git", "ssh://git@host:2222/owner/repo.git", "https://host/owner/repo/", filepath.ToSlash(filepath.Join(os.TempDir(), "repo.git"))} {
-		if got := remoteRepositoryName(remote, "fallback"); got != "repo" {
+	for _, remote := range []string{"git@host:owner/repo.git", "host:owner/repo.git", "https://host/owner/repo.git", "ssh://git@host:2222/owner/repo.git", "https://host/owner/repo/", "file:///tmp/repo.git", filepath.ToSlash(filepath.Join(os.TempDir(), "repo.git"))} {
+		if got := RemoteRepositoryName(remote, "fallback"); got != "repo" {
+			t.Errorf("%q: %q", remote, got)
+		}
+	}
+	for _, remote := range []string{"", "https://host/", "."} {
+		if got := RemoteRepositoryName(remote, "fallback"); got != "fallback" {
 			t.Errorf("%q: %q", remote, got)
 		}
 	}

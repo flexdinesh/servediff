@@ -9,9 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -329,21 +327,15 @@ func baseMetadata(options Options) ingestion.Metadata {
 func repositoryMetadata(root string, facts diffsource.RepositoryMetadata, snapshot review.RepositoryDiff, options Options) ingestion.Metadata {
 	metadata := baseMetadata(options)
 	metadata.Root, metadata.WorktreeName = root, filepath.Base(root)
+	linked := facts.CommonDir != facts.GitDir
+	metadata.LinkedWorktree = &linked
 	metadata.Branch, metadata.Head = snapshot.Branch, snapshot.Head
 	metadata.RemoteURL = facts.RemoteURL
 	metadata.RepositoryName = filepath.Base(filepath.Dir(facts.CommonDir))
+	metadata.RepositoryName = diffsource.RemoteRepositoryName(facts.RemoteURL, metadata.RepositoryName)
 	metadata.RepositoryKey = hash("repository", options.SourceID, facts.CommonDir)
 	if facts.RemoteURL != "" {
 		metadata.RepositoryKey = hash("remote", facts.RemoteURL)
-		remotePath := facts.RemoteURL
-		if parsed, err := url.Parse(facts.RemoteURL); err == nil && parsed.Scheme != "" {
-			remotePath = parsed.Path
-		} else if _, suffix, ok := strings.Cut(facts.RemoteURL, ":"); ok {
-			remotePath = suffix
-		}
-		if name := strings.TrimSuffix(path.Base(strings.TrimRight(remotePath, "/")), ".git"); name != "" && name != "." && name != "/" {
-			metadata.RepositoryName = name
-		}
 	}
 	metadata.CheckoutKey = hash("checkout", options.SourceID, facts.GitDir)
 	return metadata

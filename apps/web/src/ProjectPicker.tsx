@@ -5,6 +5,7 @@ import {
   CheckIcon,
   FolderGit2Icon,
   GitBranchIcon,
+  GitForkIcon,
   SearchIcon,
   SquareTerminalIcon,
   SlidersHorizontalIcon,
@@ -23,6 +24,9 @@ import { Input } from "@/components/ui/input";
 import {
   contextChangeLabel,
   contextDetail,
+  contextDiagnostics,
+  contextIsLinkedWorktree,
+  contextCheckoutLabel,
   contextHasChanges,
   contextUnavailableReason,
   defaultPickerFilters,
@@ -62,11 +66,7 @@ export function ProjectPickerTrigger({
       aria-label="Switch repository"
       aria-haspopup="dialog"
       aria-expanded={open}
-      title={
-        current
-          ? `${current.name} · ${contextDetail(current)}${current.worktreeName ? ` · Worktree: ${current.worktreeName}` : ""}\n${observationDetail(current)}\n${current.root ?? "Piped diff"}`
-          : "Switch repository"
-      }
+      title={current ? contextDiagnostics(current) : "Switch repository"}
       onClick={onOpen}
     >
       {current && <ContextIcon context={current} />}
@@ -83,6 +83,20 @@ export function ProjectPickerTrigger({
             {contextDetail(current)}
           </span>
         </>
+      )}
+      {current && contextIsLinkedWorktree(current) && (
+        <span
+          className="context-switcher-worktree"
+          role="img"
+          aria-label={contextCheckoutLabel(current)}
+          title={contextCheckoutLabel(current)}
+        >
+          <GitForkIcon className="size-(--icon-sm)" aria-hidden="true" />
+          <span className="context-switcher-worktree-name" aria-hidden="true">
+            Worktree:{" "}
+            {current.worktreeName || current.observation?.worktreeName}
+          </span>
+        </span>
       )}
       <SearchIcon
         className="context-switcher-search size-(--icon-base)"
@@ -334,7 +348,7 @@ export function ProjectPicker({
                 aria-selected={entry.id === active?.id}
                 aria-disabled={!available}
                 disabled={!available}
-                title={`${context.root ?? context.name}\n${available ? observationDetail(context) : contextUnavailableReason(context)}`}
+                title={`${contextDiagnostics(context)}${available ? "" : `\n${contextUnavailableReason(context)}`}`}
                 onClick={() => choose(entry.id)}
                 onMouseMove={() => {
                   if (available) setHighlightedId(entry.id);
@@ -372,7 +386,7 @@ export function ProjectPicker({
                     </span>
                   )}
                   <span className="project-picker-path">
-                    {!context.observation && context.worktreeName && (
+                    {!grouped && contextIsLinkedWorktree(context) && (
                       <span className="project-picker-kind">Worktree · </span>
                     )}
                     {grouped

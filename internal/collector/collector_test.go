@@ -118,9 +118,16 @@ func TestLinkedWorktreeAndSourceIdentity(t *testing.T) {
 	git(t, root, "add", ".")
 	git(t, root, "commit", "-m", "initial")
 	linked := filepath.Join(t.TempDir(), "linked")
+	git(t, root, "remote", "add", "origin", "git@github.com:owner/project.git")
 	git(t, root, "worktree", "add", "-b", "feature", linked)
 	main := collect(t, root)
 	feature := collect(t, linked)
+	if main.Metadata.RepositoryName != "project" || feature.Metadata.RepositoryName != "project" {
+		t.Fatalf("remote repository names: main %+v linked %+v", main.Metadata, feature.Metadata)
+	}
+	if main.Metadata.LinkedWorktree == nil || *main.Metadata.LinkedWorktree || feature.Metadata.LinkedWorktree == nil || !*feature.Metadata.LinkedWorktree {
+		t.Fatalf("checkout kinds: main %+v linked %+v", main.Metadata, feature.Metadata)
+	}
 	if main.Metadata.RepositoryKey != feature.Metadata.RepositoryKey || main.Metadata.CheckoutKey == feature.Metadata.CheckoutKey || feature.Metadata.Branch != "feature" || feature.Metadata.WorktreeName != "linked" {
 		t.Fatalf("main %+v linked %+v", main.Metadata, feature.Metadata)
 	}

@@ -51,6 +51,31 @@ func TestCatalogContainsOnlySubmittedWorktreeObservations(t *testing.T) {
 	}
 }
 
+func TestOldObservationUsesRemoteNameWithoutReadingGit(t *testing.T) {
+	service := testService(t)
+	root := testRepo(t)
+	catalogGit(t, root, "remote", "add", "origin", "git@github.com:owner/servediff.git")
+	input, err := collector.Collect(t.Context(), root, collector.Options{SourceID: "source", SubmissionID: "old"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.Metadata.RepositoryName = "main"
+	input.Metadata.LinkedWorktree = nil
+	submitted, err := service.Ingest(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", t.TempDir())
+	opened, err := service.Get(t.Context(), submitted.Context.ID)
+	if err != nil || opened.Name != "servediff" || opened.Observation == nil || opened.Observation.LinkedWorktree != nil {
+		t.Fatalf("old snapshot presentation: %#v, %v", opened, err)
+	}
+	page, err := service.List(t.Context(), 100, "")
+	if err != nil || len(page.Contexts) != 1 || page.Contexts[0].Name != "servediff" {
+		t.Fatalf("old snapshot catalog: %#v, %v", page, err)
+	}
+}
+
 func TestCatalogSearchKeepsSameBranchSourcesSeparate(t *testing.T) {
 	service := testService(t)
 	root := testRepo(t)
