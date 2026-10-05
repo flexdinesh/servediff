@@ -103,48 +103,17 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 		return errors.New("trigger must be manual or agent-hook")
 	}
 	settings, explicit := daemon.DefaultSettings(), daemon.Explicit{}
-	if values.server == "" || command == "service" || command == "serve" || command == "__daemon" {
+	if command == "__daemon" {
+		// The parent passes a resolved snapshot; never reread file/environment.
 		settings, explicit, err = serverSettings(values)
-		if err != nil {
-			return err
-		}
-	}
-	if ((command == "review" || command == "pipe") && values.server == "") || (command == "service" && (action == "start" || action == "restart")) {
-		saved, loadErr := config.Load()
-		if loadErr != nil {
-			return loadErr
-		}
-		fields := map[string]interface{}{}
-		if values.portSet {
-			fields["port"] = values.port
-		}
-		if values.stateSet {
-			fields["state"] = settings.State
-		}
-		if values.webDirSet {
-			fields["webDir"] = settings.WebDir
-		}
-		raw, marshalErr := json.Marshal(fields)
-		if marshalErr != nil {
-			return marshalErr
-		}
-		saved, err = config.Merge(saved, string(raw))
-		if err != nil {
-			return err
-		}
-		if values.config != "" {
-			saved, err = config.Merge(saved, values.config)
-			if err != nil {
-				return err
-			}
-		}
-		settings, err = saved.Settings()
-		if err != nil {
-			return err
-		}
+	} else if (command == "service" && (action == "start" || action == "restart")) || command == "serve" || ((command == "review" || command == "pipe") && values.server == "") {
+		settings, explicit, err = resolvedServerSettings(values)
 		if command == "service" {
 			explicit = daemon.Explicit{Host: true, Port: true, State: true, WebDir: true}
 		}
+	}
+	if err != nil {
+		return err
 	}
 	if command == "__daemon" {
 		if values.runtimeDir == "" {
@@ -294,6 +263,40 @@ func submissionFailure(input daemon.InitialInput, status controlapi.Status, id s
 		return cause
 	}
 	return fmt.Errorf("submission %s may have been saved in %q; inspect its contexts before resubmitting: %w", id, status.Settings.State, cause)
+}
+
+func resolvedServerSettings(values options) (daemon.Settings, daemon.Explicit, error) {
+	saved, err := config.LoadFile(values.configFile)
+	if err != nil {
+		return daemon.Settings{}, daemon.Explicit{}, err
+	}
+	if values.config != "" {
+		saved, err = config.Merge(saved, values.config)
+		if err != nil {
+			return daemon.Settings{}, daemon.Explicit{}, err
+		}
+	}
+	if values.hostSet {
+		saved.Host = values.host
+	}
+	if values.portSet {
+		saved.Port = &values.port
+	}
+	if values.stateSet {
+		saved.State = values.state
+		if saved.State == "" {
+			defaults, err := config.Default()
+			if err != nil {
+				return daemon.Settings{}, daemon.Explicit{}, err
+			}
+			saved.State = defaults.State
+		}
+	}
+	if values.webDirSet {
+		saved.WebDir = values.webDir
+	}
+	settings, err := saved.Settings()
+	return settings, daemon.Explicit{Host: values.hostSet, Port: values.portSet, State: values.stateSet, WebDir: values.webDirSet}, err
 }
 
 func serverSettings(values options) (daemon.Settings, daemon.Explicit, error) {
