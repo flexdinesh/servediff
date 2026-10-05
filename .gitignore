@@ -1,5 +1,9 @@
 node_modules/
 dist/
+!packages/plugin-opencode/dist/
+!packages/plugin-opencode/dist/index.js
+!packages/plugin-pi/dist/
+!packages/plugin-pi/dist/index.js
 !internal/webui/dist/
 !internal/webui/dist/**
 .agents/ignore/

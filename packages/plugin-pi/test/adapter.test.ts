@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout } from "node:timers/promises";
@@ -139,20 +140,22 @@ test("agent host can exit while detached sync scheduling remains alive", async (
 });
 
 for (const agent of ["pi", "opencode"]) {
-  test(`${agent} installed configuration stays local to adapter and preserves host environment`, async () => {
+  test(`${agent} native package uses runtime binary/config environment without mutating it`, async () => {
     const temp = await mkdtemp(join(tmpdir(), "servediff-configured-"));
     const binary = join(temp, "servediff with spaces");
     const output = join(temp, "args.json");
     const configFile = join(temp, "custom config.json");
     await writeFile(
       binary,
-      `#!/usr/bin/env node\nimport { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(output)}, JSON.stringify(process.argv.slice(2)));\n`,
+      `#!/usr/bin/env node\nimport { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(output)}, JSON.stringify({args: process.argv.slice(2), config: process.env.SERVEDIFF_CONFIG_PATH}));\n`,
     );
     await chmod(binary, 0o700);
-    const source = new URL(
-      `../../plugin-${agent}/src/index.ts`,
-      import.meta.url,
-    ).href;
+    const packageRoot = new URL(`../../plugin-${agent}/`, import.meta.url);
+    await cp(new URL("package.json", packageRoot), join(temp, "package.json"));
+    await cp(new URL("dist", packageRoot), join(temp, "dist"), {
+      recursive: true,
+    });
+    const source = pathToFileURL(join(temp, "dist/index.js")).href;
     const trigger =
       agent === "pi"
         ? `adapter.register({ on(_event, handler) {
@@ -164,9 +167,6 @@ for (const agent of ["pi", "opencode"]) {
     const script = `import assert from 'node:assert/strict';
       import * as adapter from ${JSON.stringify(source)};
       const before = JSON.stringify({ ...process.env });
-      const settings = ${JSON.stringify({ binary, configFile })};
-      adapter.configure(settings);
-      settings.binary = '/wrong/mutated-binary';
       assert.equal(JSON.stringify({ ...process.env }) === before, true, "host environment changed");
       ${trigger}
       assert.equal(JSON.stringify({ ...process.env }) === before, true, "host environment changed");`;
@@ -177,8 +177,8 @@ for (const agent of ["pi", "opencode"]) {
         {
           env: {
             ...process.env,
-            SERVEDIFF_BINARY: "/wrong/environment-binary",
-            SERVEDIFF_CONFIG_PATH: "/host/config.json",
+            SERVEDIFF_BINARY: binary,
+            SERVEDIFF_CONFIG_PATH: configFile,
           },
           timeout: 750,
         },
@@ -194,17 +194,18 @@ for (const agent of ["pi", "opencode"]) {
           await setTimeout(20);
         }
       }
-      assert.deepEqual(JSON.parse(actual), [
-        "hook",
-        "--agent",
-        agent,
-        "--path",
-        "/worktree",
-        "--run-id",
-        "id",
-        "--config-file",
-        configFile,
-      ]);
+      assert.deepEqual(JSON.parse(actual), {
+        args: [
+          "hook",
+          "--agent",
+          agent,
+          "--path",
+          "/worktree",
+          "--run-id",
+          "id",
+        ],
+        config: configFile,
+      });
     } finally {
       await rm(temp, { recursive: true, force: true });
     }

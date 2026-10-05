@@ -68,7 +68,7 @@ servediff service restart --config '{"host":"127.0.0.1","port":4000}'
 
 Defaults are created in `~/.config/servediff/config.json`; `SERVEDIFF_CONFIG_PATH`
 or `--config-file` overrides the location. Environment variables override JSON
-settings; explicit flags override environment. See [local plugins](docs/plugins.md)
+settings; explicit flags override environment. See [agent plugins](docs/plugins.md)
 for the configuration variables. Restart after changing server settings.
 Start/restart JSON overrides apply to that invocation. The default
 listener binds to `127.0.0.1` and chooses a port from 7981 through 7990.
@@ -77,17 +77,21 @@ data to anyone who can reach it.
 
 ## Agent hooks and remote ingestion
 
-Locally install Codex, Claude Code, OpenCode or Pi plugins to synchronize each
+Install Codex, Claude Code, OpenCode or Pi plugins to synchronize each
 worktree automatically after agent completion:
 
 ```sh
-mise run plugins:install --harness codex
+codex plugin marketplace add flexdinesh/servediff
+codex plugin add servediff@servediff
 ```
 
 The plugin returns after scheduling; a detached Go worker collects and submits
 the latest checkout. Unchanged uploads are skipped, overlapping requests
 coalesce, and failures stay outside the agent conversation. See
-[local plugin setup](docs/plugins.md) for all hosts, configuration and removal.
+[plugin setup](docs/plugins.md) for native installation on all hosts,
+configuration and removal. Plugins are ready to install from the repository;
+the servediff executable is installed separately and must be available to the
+harness through PATH or `SERVEDIFF_BINARY`.
 
 An agent hook uses the same collection operation as a manual review:
 

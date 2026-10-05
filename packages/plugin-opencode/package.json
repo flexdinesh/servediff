@@ -13,10 +13,5 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node --test test/*.test.ts"
-  },
-  "devDependencies": {
-    "@opencode/plugin": "catalog:",
-    "@types/node": "catalog:",
-    "typescript": "catalog:"
   }
 }

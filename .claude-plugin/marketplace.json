@@ -1,0 +1,13 @@
+{
+  "name": "servediff",
+  "owner": {
+    "name": "servediff"
+  },
+  "plugins": [
+    {
+      "name": "servediff",
+      "source": "./packages/plugin-claude",
+      "description": "Sync latest worktree diffs after agent completion."
+    }
+  ]
+}

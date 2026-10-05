@@ -26,6 +26,8 @@
     "check": "mise run check"
   },
   "devDependencies": {
+    "@earendil-works/pi-coding-agent": "catalog:",
+    "@opencode/plugin": "catalog:",
     "@types/node": "catalog:",
     "husky": "catalog:",
     "oxfmt": "catalog:",

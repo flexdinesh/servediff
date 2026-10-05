@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "servediff hook --agent claude >/dev/null 2>&1 || true",
+            "command": "\"${SERVEDIFF_BINARY:-servediff}\" hook --agent claude >/dev/null 2>&1 || true",
             "timeout": 5
           }
         ]
