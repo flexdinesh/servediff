@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ProjectPicker, ProjectPickerTrigger } from "./ProjectPicker.tsx";
+import { contextHasChanges } from "./project-picker.ts";
 
 type LoadState =
   | { status: "loading" }
@@ -96,9 +97,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const remaining = contexts.filter((context) => context.id !== id);
       setContexts((current) => current.filter((context) => context.id !== id));
       if (contextFromUrl() === id) {
-        const next =
-          remaining.find((context) => context.availability === "available") ??
-          remaining[0];
+        const next = remaining.find(contextHasChanges);
         restorePickerFocus.current = true;
         window.history.replaceState(
           null,
@@ -155,7 +154,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setContexts(entries);
         setCatalogLoaded(true);
         setCatalogError("");
-        const first = entries[0];
+        const first = entries.find(contextHasChanges);
         if (!contextFromUrl() && first) {
           window.history.replaceState(
             null,
@@ -231,7 +230,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [contexts, selectedId, select, deleteContext, pickerOpen, openPicker],
   );
   const ready = state.status === "ready" && state.session.id === selectedId;
-  const empty = catalogLoaded && !contexts.length && !selectedId;
+  const empty = catalogLoaded && !selectedId;
   useEffect(() => {
     if (!restorePickerFocus.current || (!empty && state.status === "loading"))
       return;
@@ -260,7 +259,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           >
             <h1>
               {empty
-                ? "No review contexts yet"
+                ? contexts.length
+                  ? "No changes to review"
+                  : "No review contexts yet"
                 : state.status === "error" || catalogError
                   ? "Cannot load servediff"
                   : "Loading servediff"}
