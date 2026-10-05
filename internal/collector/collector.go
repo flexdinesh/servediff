@@ -244,7 +244,7 @@ func collectScope(ctx context.Context, source diffsource.Source, snapshot review
 				return ingestion.Scope{}, err
 			}
 		} else if !source.Support().FileContents && patch.Message == nil {
-			patch.Message = diffsource.Message("Full contents unavailable for piped diffs.")
+			patch.Message = diffsource.Message("Full contents unavailable for this snapshot.")
 		}
 		applyBudget(&patch, remaining)
 		patches[file.ID] = patch
@@ -277,8 +277,7 @@ func nonTextPreview(patch review.FilePatch) bool {
 	return strings.HasPrefix(*patch.Message, "Submodule or directory") || strings.HasPrefix(*patch.Message, "Special file") || strings.HasPrefix(*patch.Message, "File exceeds")
 }
 
-// CollectPatch attaches current Git provenance when available. Piped content
-// is immutable input; it never substitutes current checkout contents for it.
+// CollectPatch records immutable input with its submission directory as provenance.
 func CollectPatch(ctx context.Context, raw, directory string, options Options) (ingestion.Request, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -301,23 +300,10 @@ func CollectPatch(ctx context.Context, raw, directory string, options Options) (
 		return ingestion.Request{}, err
 	}
 	metadata := baseMetadata(options)
+	// The submission directory is provenance, not the patch's repository.
 	if directory != "" {
-		repository, err := diffsource.OpenRepository(ctx, directory)
-		if err == nil {
-			facts, err := diffsource.Metadata(ctx, repository.Root())
-			if err != nil {
-				return ingestion.Request{}, err
-			}
-			state, err := repository.Snapshot(ctx, review.DiffAll)
-			if err != nil {
-				return ingestion.Request{}, err
-			}
-			metadata, err = repositoryMetadata(ctx, repository.Root(), facts, state, options)
-			if err != nil {
-				return ingestion.Request{}, err
-			}
-			snapshot.Root, snapshot.Name, snapshot.Branch, snapshot.Head = state.Root, state.Name, state.Branch, state.Head
-		} else if !errors.Is(err, diffsource.ErrNotRepository) {
+		metadata.Root, err = filepath.Abs(directory)
+		if err != nil {
 			return ingestion.Request{}, err
 		}
 	}

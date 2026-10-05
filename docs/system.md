@@ -80,8 +80,8 @@ services directly rather than calling each other over HTTP.
 another checkout. An agent hook runs the same operation with
 `--trigger agent-hook`, optionally supplying agent, run and source identity.
 The trigger changes provenance and browser-opening behavior, not the ingestion
-model. `servediff pipe` submits an explicit patch from stdin, with optional Git
-provenance from its directory.
+model. `servediff pipe` submits an explicit patch from stdin without Git lookup;
+its absolute submission directory is provenance only.
 
 1. The producer captures metadata and complete diff data before submission.
    Git reviews contain all, staged and unstaged scopes. Piped patches contain

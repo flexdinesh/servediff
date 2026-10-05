@@ -28,7 +28,7 @@ test("disabled comments issue no requests and expose no comment UI", async ({
         id: new URL(route.request().url()).pathname.split("/").at(-1),
         kind: "capture",
         source: "stdin",
-        name: "Piped diff",
+        name: "Piped",
         root: "fixture",
         capabilities: {
           diff: {
@@ -86,7 +86,7 @@ test("renders and filters a piped diff", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 4_000 });
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "Piped diff" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Piped" })).toBeVisible();
   await expect(page.locator("#connection")).toHaveText("Fixed snapshot");
   await expect(page.locator("#file-count")).toHaveText("12");
 
@@ -1115,7 +1115,7 @@ test("display controls expose state and persist preferences", async ({
   page,
 }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Piped diff" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Piped" })).toBeVisible();
 
   await page.getByRole("tab", { name: /Review/ }).click();
   await expect(page.getByRole("tab", { name: /Review/ })).toHaveAttribute(

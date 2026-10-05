@@ -90,7 +90,7 @@ function WorkspaceProvider({ children }: { children: ReactNode }) {
   });
   const piped = repository?.source === "stdin";
   useEffect(() => {
-    document.title = `servediff · ${piped ? "Piped diff" : "Git diff"}`;
+    document.title = `servediff · ${piped ? "Piped" : "Git diff"}`;
   }, [piped]);
   const source = useMemo(
     () => ({ diff, repository, mode, piped, changeMode }),

@@ -161,7 +161,7 @@ func TestDetachedUnbornAndEmptySnapshots(t *testing.T) {
 	}
 }
 
-func TestPipeAttachesGitContextWithoutCollectingCurrentContents(t *testing.T) {
+func TestPipeKeepsDirectoryAsProvenanceWithoutAttachingGitIdentity(t *testing.T) {
 	root := repository(t)
 	write(t, root, "tracked", "original\n")
 	git(t, root, "add", ".")
@@ -173,7 +173,7 @@ func TestPipeAttachesGitContextWithoutCollectingCurrentContents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if request.Metadata.Branch != "main" || request.Metadata.RepositoryKey == "" || request.Metadata.CheckoutKey == "" || request.Metadata.Trigger != "pipe" {
+	if request.Metadata.Root != root || request.Metadata.Branch != "" || request.Metadata.RepositoryKey != "" || request.Metadata.CheckoutKey != "" || request.Metadata.Trigger != "pipe" || request.Scopes[0].Snapshot.Source != "stdin" || request.Scopes[0].Snapshot.Name != "Piped diff" {
 		t.Fatalf("pipe metadata: %+v", request.Metadata)
 	}
 	patch := patchFor(t, request, review.DiffAll, "tracked")

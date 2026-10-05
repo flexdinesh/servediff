@@ -1095,6 +1095,10 @@ components:
         kind:
           type: string
           enum: [worktree, capture, observation]
+        source:
+          type: string
+          enum: [local, stdin]
+          description: Diff origin, independent of context kind and submission directory.
         name:
           type: string
         branch:

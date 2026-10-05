@@ -127,7 +127,7 @@ func TestReviewManualAndAgentHookShareGitCollection(t *testing.T) {
 	}
 }
 
-func TestPipeCollectsGitMetadata(t *testing.T) {
+func TestPipeKeepsSubmissionDirectoryWithoutGitIdentity(t *testing.T) {
 	root := cliRepository(t)
 	patch, err := os.ReadFile("../../test/fixtures/sample.diff")
 	if err != nil {
@@ -137,7 +137,7 @@ func TestPipeCollectsGitMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if request.Metadata.RepositoryKey == "" || request.Metadata.Branch != "feature" || request.Metadata.Root != root || len(request.Scopes) != 1 {
+	if request.Metadata.RepositoryKey != "" || request.Metadata.Branch != "" || request.Metadata.Root != root || len(request.Scopes) != 1 || request.Scopes[0].Snapshot.Source != "stdin" {
 		t.Fatalf("pipe metadata: %#v", request)
 	}
 }

@@ -196,7 +196,7 @@ such detail into a token. New layout spacing must use the scale.
 - Header: `--topbar-height` (56 desktop, 48 narrow). Toolbar and sidebar tabs: `--toolbar-height`
   (44) as the desktop baseline. The narrow toolbar matches the 48px page header;
   its icon buttons match the header theme button's 32px control height.
-- Header uses `--panel`, a quiet brand, and the repository trigger as its primary
+- Header uses `--panel`, a quiet brand, and the review trigger as its primary
   context. Keep the secondary scope heading and muted monospace path inline;
   hide the path at 768–1011px and both below 768px. Group ghost Refresh/theme
   actions at the trailing edge; share `--hover` feedback with the trigger.
@@ -339,27 +339,35 @@ such detail into a token. New layout spacing must use the scale.
 ### Overlays
 
 - Project navigation uses a compact borderless ghost action after the brand
-  divider, with a semibold repository name, quieter branch, and repository/capture
+  divider, with a semibold repository name, quieter branch, and repository
   icon. Give the repository name priority when long context labels truncate.
+  Piped reviews use a terminal icon, “Piped”, and collection time; omit repository,
+  branch, worktree, and directory identity.
   Use a search icon and shortcut hint, never a dropdown chevron. Click and
-  Cmd/Ctrl+K open the same searchable “Switch repository” dialog. Position it at
+  Cmd/Ctrl+K open the same searchable “Switch review” dialog. Position it at
   `--topbar-height` plus `--space-6` on desktop (80px default), `--space-4` on
   mobile (16px default). Bound picker width to 35rem and viewport gutters. The
   picker owns focus and stays available during context errors.
-- Search leads the picker; keep “Switch repository” as its screen-reader title.
+- Search leads the picker; keep “Switch review” as its screen-reader title.
+  Label global search “Search reviews” and Piped history search “Search Piped”.
   Use one integrated field (36px input) with close at its right edge and the
   focus ring around its entire boundary.
   Use a flat, scrollable result list with changed checkouts first, then recency
   within each group; search preserves that order, using match strength to break
   recency ties. Compact rows (about 48px) put repository name and branch on
   one line, with a muted monospace path below; truncate long text to single lines.
-  Mark linked paths with “Worktree”; captures show “Snapshot” in the same list.
-  Distinguish the current checkout with a check and accessible “Current repository”
+  Mark linked paths with “Worktree”. Group retained imports under a separate
+  “Piped” entry after repositories, with a quiet separator and snapshot count.
+  Its history shows collection timestamps newest first, including legacy captures;
+  changed-file counts remain secondary. Show “Piped · Newest first” below search
+  and omit repository filters from this history. Repository freshness, host,
+  branch, worktree, and status filters never hide Piped imports.
+  Distinguish the current review with a check and accessible “Current review”
   text; retain explicit “Unavailable” feedback. Keep the footer to a short result
   count and keyboard hints.
   Show a compact trailing changed-file count across staged, unstaged, and
   untracked changes, independent of the current scope. Empty checkouts show
-  “No changes”; unknown metadata shows “Status unknown”. The picker defaults to
+  “No changes”; unknown metadata shows “Status unknown”. Repository results default to
   Latest snapshots with changes. Put All / Latest / Stale in a compact segmented
   control below search, with a right-aligned All checkbox that includes unavailable,
   empty, and unknown-status snapshots. Keep freshness independent of that checkbox.
@@ -368,7 +376,7 @@ such detail into a token. New layout spacing must use the scale.
   Keep names readable and truncate paths before status, including on mobile.
 
 - Use the controlled shadcn `Dialog` built on Base UI. General dialogs retain a
-  visible accessible title; the repository picker uses the screen-reader title
+  visible accessible title; the review picker uses the screen-reader title
   above. Keep focus inside while open, support Escape, and restore focus on close.
 - Use `--surface-raised`, `--radius-lg`, `--shadow-overlay`, and `--backdrop`.
   Shadows communicate actual elevation only; no resting button/card shadows.
@@ -399,7 +407,7 @@ Do not add motion for decoration. New animation must honor
 - Keep scope and desktop layout choice visible. View options and collapse/expand
   all are adjacent icon buttons with action titles. Put wrap, inline detail,
   code theme, and narrow layout choice in View options.
-- Mobile retains the project trigger's repository/branch context; truncate long
+- Mobile retains the review trigger's repository/branch or Piped/time context; truncate long
   labels and hide its shortcut hint. Hide the secondary heading/path and refresh
   text, preserving accessible labels and theme/sidebar controls.
 - Collapse navigation to the toggle-controlled modal drawer; its width is

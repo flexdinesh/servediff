@@ -2,6 +2,7 @@ package contextservice
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -73,6 +74,46 @@ func TestOldObservationUsesRemoteNameWithoutReadingGit(t *testing.T) {
 	page, err := service.List(t.Context(), 100, "")
 	if err != nil || len(page.Contexts) != 1 || page.Contexts[0].Name != "servediff" {
 		t.Fatalf("old snapshot catalog: %#v, %v", page, err)
+	}
+}
+
+func TestPipedCatalogSeparatesNewAndLegacyImportsFromRepositories(t *testing.T) {
+	service := testService(t)
+	root := testRepo(t)
+	local, err := collector.Collect(t.Context(), root, collector.Options{SourceID: "source", SubmissionID: "local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Ingest(t.Context(), local); err != nil {
+		t.Fatal(err)
+	}
+	for index, patch := range []string{testPatch, testPatch + "\n"} {
+		input, err := collector.CollectPatch(t.Context(), patch, root, collector.Options{SourceID: "source", SubmissionID: fmt.Sprintf("piped-%d", index)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if index == 0 {
+			// Older producers attached the invoking repository's metadata.
+			input.Metadata = local.Metadata
+			input.Metadata.Trigger = "manual"
+		}
+		submitted, err := service.Ingest(t.Context(), input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		item, err := service.Get(t.Context(), submitted.Context.ID)
+		if err != nil || item.Source != "stdin" || item.Name != "Piped" || item.RepositoryID != nil || item.Root != nil || item.Branch != nil || item.WorktreeName != nil || item.Stale {
+			t.Fatalf("piped catalog identity: %#v, %v", item, err)
+		}
+	}
+	page, err := service.List(t.Context(), 100, "")
+	if err != nil || len(page.Contexts) != 3 {
+		t.Fatalf("retained imports: %#v, %v", page, err)
+	}
+	for _, item := range page.Contexts {
+		if item.Source == "stdin" && (item.RepositoryID != nil || item.Stale) {
+			t.Fatalf("piped import grouped or superseded: %#v", item)
+		}
 	}
 }
 

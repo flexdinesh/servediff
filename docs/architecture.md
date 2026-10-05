@@ -10,8 +10,9 @@ Git-aware producer pipeline. Node is a frontend build/test dependency only.
 
 `servediff review` collects a checkout once. Bundled agent plugins invoke
 `servediff hook`, which schedules a detached, finite worker using the same Go
-collector and ingestion operation. `servediff pipe` collects a supplied patch and attaches Git metadata
-when its submission directory is a checkout. There is no watcher.
+collector and ingestion operation. `servediff pipe` collects a supplied patch
+without Git lookup; its absolute submission directory is provenance only.
+There is no watcher.
 
 The producer captures repository, branch, HEAD, worktree, source, hostname,
 agent/run, trigger and collection metadata together with all/staged/unstaged

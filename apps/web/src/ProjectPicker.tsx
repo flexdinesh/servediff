@@ -28,11 +28,14 @@ import {
   contextIsLinkedWorktree,
   contextCheckoutLabel,
   contextHasChanges,
+  contextIsPiped,
+  contextTimestampLabel,
   contextUnavailableReason,
   defaultPickerFilters,
   pickerEntryAvailable,
   pickerFilterOptions,
   pickerEntries,
+  pipedGroupId,
   observationDetail,
 } from "./project-picker.ts";
 import {
@@ -42,7 +45,7 @@ import {
 } from "./PickerFilters.tsx";
 
 function ContextIcon({ context }: { context: ApiContext }) {
-  const Icon = context.kind === "capture" ? SquareTerminalIcon : FolderGit2Icon;
+  const Icon = contextIsPiped(context) ? SquareTerminalIcon : FolderGit2Icon;
   return <Icon className="size-(--icon-base)" aria-hidden="true" />;
 }
 
@@ -63,17 +66,26 @@ export function ProjectPickerTrigger({
       type="button"
       variant="ghost"
       className="context-switcher"
-      aria-label="Switch repository"
+      aria-label="Switch review"
       aria-haspopup="dialog"
       aria-expanded={open}
-      title={current ? contextDiagnostics(current) : "Switch repository"}
+      title={current ? contextDiagnostics(current) : "Switch review"}
       onClick={onOpen}
     >
       {current && <ContextIcon context={current} />}
       <span className="context-switcher-name">
-        {current?.name ?? "Switch repository"}
+        {current
+          ? contextIsPiped(current)
+            ? "Piped"
+            : current.name
+          : "Switch review"}
       </span>
-      {current && current.kind !== "capture" && (
+      {current && contextIsPiped(current) && (
+        <span className="context-switcher-branch">
+          · {contextTimestampLabel(current)}
+        </span>
+      )}
+      {current && !contextIsPiped(current) && (
         <>
           <span className="context-switcher-separator" aria-hidden="true">
             /
@@ -126,6 +138,7 @@ export function ProjectPicker({
 }) {
   const [query, setQuery] = useState("");
   const [repositoryId, setRepositoryId] = useState("");
+  const piped = repositoryId === pipedGroupId;
   const [highlightedId, setHighlightedId] = useState("");
   const [filters, setFilters] = useState(defaultPickerFilters);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -140,9 +153,10 @@ export function ProjectPicker({
   const active =
     selectable.find((context) => context.id === highlightedId) ??
     (!query.trim()
-      ? selectable.find(
-          (entry) =>
-            entry.kind === "context" && entry.context.id === selectedId,
+      ? selectable.find((entry) =>
+          entry.kind === "context"
+            ? entry.context.id === selectedId
+            : entry.contexts.some((context) => context.id === selectedId),
         )
       : undefined) ??
     selectable[0];
@@ -158,8 +172,13 @@ export function ProjectPicker({
   const choose = (id: string) => {
     const entry = results.find((result) => result.id === id);
     if (!entry || !pickerEntryAvailable(entry)) return;
-    if (entry?.kind === "repository") {
-      setRepositoryId(entry.context.repositoryId ?? "");
+    if (entry.kind !== "context") {
+      setRepositoryId(
+        entry.kind === "piped"
+          ? pipedGroupId
+          : (entry.context.repositoryId ?? ""),
+      );
+      if (entry.kind === "piped") setQuery("");
       setHighlightedId("");
       searchRef.current?.focus();
       return;
@@ -212,11 +231,11 @@ export function ProjectPicker({
         finalFocus={triggerRef}
         showCloseButton={false}
       >
-        <DialogTitle className="sr-only">Switch repository</DialogTitle>
+        <DialogTitle className="sr-only">Switch review</DialogTitle>
         <DialogDescription className="sr-only">
-          Choose a repository, then a collected snapshot. Search branches,
-          worktrees, hosts, and runs. Use arrow keys to navigate and Enter to
-          choose.
+          Choose a repository or Piped, then a collected snapshot. Search
+          branches, worktrees, hosts, and runs. Use arrow keys to navigate and
+          Enter to choose.
         </DialogDescription>
         <div className="project-picker-header">
           <div className="project-picker-search">
@@ -226,7 +245,7 @@ export function ProjectPicker({
                 variant="ghost"
                 size="icon-sm"
                 onClick={back}
-                aria-label="Back to repositories"
+                aria-label="Back to reviews"
               >
                 <ArrowLeftIcon aria-hidden="true" />
               </Button>
@@ -236,15 +255,17 @@ export function ProjectPicker({
             <Input
               ref={searchRef}
               role="combobox"
-              aria-label="Search repositories"
+              aria-label={piped ? "Search Piped" : "Search reviews"}
               aria-autocomplete="list"
               aria-expanded={open}
               aria-controls={listId}
               aria-activedescendant={activeOptionId}
               placeholder={
-                repositoryId
-                  ? `Search ${repository?.name ?? "observations"}…`
-                  : "Search repositories, branches, hosts…"
+                piped
+                  ? "Search Piped…"
+                  : repositoryId
+                    ? `Search ${repository?.name ?? "observations"}…`
+                    : "Search repositories or Piped…"
               }
               value={query}
               onChange={(event) => {
@@ -282,24 +303,26 @@ export function ProjectPicker({
                 }
               }}
             />
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Filters"
-              title="Filter repositories"
-              aria-expanded={filtersOpen}
-              aria-controls={filtersId}
-              onClick={() => setFiltersOpen((value) => !value)}
-            >
-              <SlidersHorizontalIcon aria-hidden="true" />
-            </Button>
+            {!piped && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Filters"
+                title="Filter repositories"
+                aria-expanded={filtersOpen}
+                aria-controls={filtersId}
+                onClick={() => setFiltersOpen((value) => !value)}
+              >
+                <SlidersHorizontalIcon aria-hidden="true" />
+              </Button>
+            )}
             <DialogClose render={<Button variant="ghost" size="icon-sm" />}>
               <XIcon aria-hidden="true" />
               <span className="sr-only">Close</span>
             </DialogClose>
           </div>
-          <div id={filtersId} hidden={!filtersOpen}>
+          <div id={filtersId} hidden={piped || !filtersOpen}>
             <PickerFilterControls
               filters={filters}
               options={pickerFilterOptions(contexts)}
@@ -309,33 +332,43 @@ export function ProjectPicker({
               }}
             />
           </div>
-          <div className="project-picker-filter-summary">
-            <span title={pickerFilterSummary(filters)}>
-              {pickerFilterSummary(filters)}
-            </span>
-            {pickerFiltersChanged(filters) && (
-              <Button
-                variant="ghost"
-                size="xs"
-                onClick={() => {
-                  setFilters(defaultPickerFilters);
-                  setHighlightedId("");
-                }}
-              >
-                Clear filters
-              </Button>
-            )}
-          </div>
+          {!piped && (
+            <div className="project-picker-filter-summary">
+              <span title={pickerFilterSummary(filters)}>
+                {pickerFilterSummary(filters)}
+              </span>
+              {pickerFiltersChanged(filters) && (
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={() => {
+                    setFilters(defaultPickerFilters);
+                    setHighlightedId("");
+                  }}
+                >
+                  Clear filters
+                </Button>
+              )}
+            </div>
+          )}
+          {piped && (
+            <div className="project-picker-filter-summary">
+              Piped · Newest first
+            </div>
+          )}
         </div>
         <div
           id={listId}
           className="project-picker-results"
           role="listbox"
-          aria-label={repositoryId ? "Collected snapshots" : "Repositories"}
+          aria-label={
+            piped ? "Piped" : repositoryId ? "Collected snapshots" : "Reviews"
+          }
         >
           {results.map((entry) => {
             const context = entry.context;
-            const grouped = entry.kind === "repository";
+            const grouped = entry.kind !== "context";
+            const pipedContext = contextIsPiped(context);
             const available = pickerEntryAvailable(entry);
             return (
               <button
@@ -345,6 +378,8 @@ export function ProjectPicker({
                 id={optionId(entry.id)}
                 key={entry.id}
                 className="project-picker-option"
+                data-piped-group={entry.kind === "piped" || undefined}
+                data-piped-context={(!grouped && pipedContext) || undefined}
                 aria-selected={entry.id === active?.id}
                 aria-disabled={!available}
                 disabled={!available}
@@ -358,44 +393,52 @@ export function ProjectPicker({
                 <span className="project-picker-copy">
                   <span className="project-picker-label">
                     <span className="project-picker-name">
-                      {grouped
-                        ? context.name
-                        : context.observation
-                          ? context.worktreeName || context.name
-                          : context.name}
+                      {entry.kind === "piped"
+                        ? "Piped"
+                        : pipedContext
+                          ? contextTimestampLabel(context)
+                          : grouped
+                            ? context.name
+                            : context.observation
+                              ? context.worktreeName || context.name
+                              : context.name}
                     </span>
-                    <span className="project-picker-branch">
-                      {!grouped && context.kind !== "capture" && (
-                        <GitBranchIcon
-                          className="size-(--icon-sm)"
-                          aria-hidden="true"
-                        />
-                      )}
-                      <span>
-                        {grouped
-                          ? `${entry.contexts.length} ${entry.contexts.length === 1 ? "snapshot" : "snapshots"}`
-                          : context.kind === "capture"
-                            ? "Snapshot"
+                    {(!pipedContext || grouped) && (
+                      <span className="project-picker-branch">
+                        {!grouped && !pipedContext && (
+                          <GitBranchIcon
+                            className="size-(--icon-sm)"
+                            aria-hidden="true"
+                          />
+                        )}
+                        <span>
+                          {grouped
+                            ? `${entry.contexts.length} ${entry.contexts.length === 1 ? "snapshot" : "snapshots"}`
                             : contextDetail(context)}
+                        </span>
                       </span>
-                    </span>
+                    )}
                   </span>
                   {!available && (
                     <span className="project-picker-unavailable-reason">
                       {contextUnavailableReason(context)}
                     </span>
                   )}
-                  <span className="project-picker-path">
-                    {!grouped && contextIsLinkedWorktree(context) && (
-                      <span className="project-picker-kind">Worktree · </span>
-                    )}
-                    {grouped
-                      ? context.observation?.remoteUrl ||
-                        "Choose a collected snapshot"
-                      : observationDetail(context)}
-                  </span>
+                  {(!pipedContext || grouped) && (
+                    <span className="project-picker-path">
+                      {!grouped && contextIsLinkedWorktree(context) && (
+                        <span className="project-picker-kind">Worktree · </span>
+                      )}
+                      {entry.kind === "piped"
+                        ? "Choose a snapshot"
+                        : grouped
+                          ? context.observation?.remoteUrl ||
+                            "Choose a collected snapshot"
+                          : observationDetail(context)}
+                    </span>
+                  )}
                 </span>
-                {!grouped && context.stale && (
+                {!grouped && !pipedContext && context.stale && (
                   <span className="project-picker-stale">Stale</span>
                 )}
                 {!grouped && (
@@ -404,7 +447,7 @@ export function ProjectPicker({
                     data-has-changes={contextHasChanges(context)}
                     data-availability={context.availability}
                     title={
-                      context.kind === "capture"
+                      pipedContext
                         ? "Changed files in this snapshot"
                         : "Changed files across staged, unstaged, and untracked changes"
                     }
@@ -424,9 +467,7 @@ export function ProjectPicker({
                       className="size-(--icon-base)"
                       aria-hidden="true"
                     />
-                    <span className="sr-only">
-                      Current<span className="sr-only"> repository</span>
-                    </span>
+                    <span className="sr-only">Current review</span>
                   </span>
                 )}
               </button>
@@ -434,9 +475,7 @@ export function ProjectPicker({
           })}
           {!results.length && (
             <div className="project-picker-empty">
-              <p>
-                {repositoryId ? "No snapshots found" : "No repositories found"}
-              </p>
+              <p>{repositoryId ? "No snapshots found" : "No reviews found"}</p>
               <span>Try another search or clear filters.</span>
             </div>
           )}
@@ -447,7 +486,7 @@ export function ProjectPicker({
               ? `${results.length} ${results.length === 1 ? "result" : "results"}`
               : repositoryId
                 ? "No matching snapshots"
-                : "No matching repositories"}
+                : "No matching reviews"}
           </p>
           <div className="project-picker-shortcuts">
             <span>
