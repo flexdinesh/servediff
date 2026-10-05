@@ -375,10 +375,36 @@ paths:
           description: Review mark deleted.
         default:
           $ref: "#/components/responses/Problem"
+  /api/v2/health:
+    get:
+      operationId: getIngestionHealth
+      description: Check authenticated database readiness and ingestion compatibility. State identity changes when the account database is replaced.
+      responses:
+        "200":
+          description: Ingestion is available.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [stateId, protocolVersion]
+                properties:
+                  stateId:
+                    type: string
+                  protocolVersion:
+                    type: integer
+        default:
+          $ref: "#/components/responses/Problem"
   /api/v2/ingestions:
     post:
       operationId: ingestSnapshot
       description: Commit an immutable Git-aware observation. Retrying the same submission ID and payload returns its original receipt. Fresh submissions with matching source, checkout, branch, HEAD and stable content reuse an unexpired snapshot and reset its seven-day TTL.
+      parameters:
+        - name: X-Servediff-State
+          in: header
+          description: Optional destination state identity from the health endpoint. A changed database rejects submission with HTTP 409.
+          schema:
+            type: string
       requestBody:
         required: true
         content:

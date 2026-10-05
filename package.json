@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "prepare": "husky",
-    "build": "pnpm generate:api && pnpm --filter @servediff/web build",
+    "build": "pnpm generate:api && pnpm --filter @servediff/web build && pnpm --recursive --filter '@servediff/plugin-*' --if-present build",
     "dev:web": "pnpm --filter @servediff/web dev",
     "generate:api": "pnpm --filter @servediff/api generate",
     "typecheck": "pnpm --recursive --if-present typecheck && tsc --noEmit -p test/conformance/tsconfig.json",

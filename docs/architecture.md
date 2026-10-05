@@ -8,9 +8,9 @@ Git-aware producer pipeline. Node is a frontend build/test dependency only.
 
 ## Collection and ingestion
 
-`servediff review` collects a checkout once. Agent plugins invoke that same
-command with `--trigger agent-hook`, or submit the same ingestion contract
-directly. `servediff pipe` collects a supplied patch and attaches Git metadata
+`servediff review` collects a checkout once. Bundled agent plugins invoke
+`servediff hook`, which schedules a detached, finite worker using the same Go
+collector and ingestion operation. `servediff pipe` collects a supplied patch and attaches Git metadata
 when its submission directory is a checkout. There is no watcher.
 
 The producer captures repository, branch, HEAD, worktree, source, hostname,
@@ -89,10 +89,11 @@ requires no Git executable, repository mount or collector process. A configured
 remote endpoint never starts a local service.
 
 Remote auth, account resolution, future storage adapters and optional queue
-infrastructure belong at composition boundaries. A future queue must distinguish
-acceptance from durable publication rather than silently changing receipt
-semantics. There is no upstream relay or durable producer upload queue in this
-iteration. Network failures are reported; producers decide when to retry.
+infrastructure belong at composition boundaries. Hook scheduling records a
+request, while a receipt still means durable publication. Hook workers retain
+bounded pending payloads locally and retry on subsequent completion triggers;
+there is no upstream relay or perpetual upload process. Manual collection
+commands continue reporting network failures directly.
 
 ## Migration
 
@@ -109,6 +110,7 @@ processes may not honor current ownership locks.
 - `cmd/servediff`, `cmd/servediff-server`: local/remote composition roots.
 - `internal/ingestion`: producer/server wire contract and HTTP client.
 - `internal/collector`: Git-aware collection shared by manual/agent triggers.
+- `internal/hooks`: detached sync scheduling, coalescing, retry state and cooldown.
 - `internal/contextservice`: ingestion orchestration and database-backed catalog.
 - `internal/reviewservice`: shared review operations.
 - `internal/reviewstore`: SQLite migrations, atomic observations and review state.
@@ -117,6 +119,7 @@ processes may not honor current ownership locks.
 - `internal/diffsource`: producer-side Git/patch adapters and stored sources.
 - `packages/api`: canonical OpenAPI and generated TypeScript client.
 - `packages/shared`: TypeScript review/UI behavior.
+- `packages/plugin-*`: native local agent adapters; Go owns collection/ingestion.
 
 Transports compose shared application operations; they do not call each other.
 Cross-language contracts use OpenAPI and serialized fixtures. Add storage or

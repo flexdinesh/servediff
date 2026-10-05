@@ -30,6 +30,12 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 		writeHelp(stdout)
 		return nil
 	}
+	if arguments[0] == "hook" {
+		return runHook(arguments[1:], stdin, stdout)
+	}
+	if arguments[0] == "__hook-worker" {
+		return runHookWorker(ctx, arguments[1:])
+	}
 	command := ""
 	if len(arguments) > 0 {
 		switch arguments[0] {
@@ -352,6 +358,7 @@ func main() {
 func writeHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "  Usage: servediff review [--path DIRECTORY] [options]")
 	fmt.Fprintln(writer, "         servediff pipe [--path DIRECTORY] [options]")
+	fmt.Fprintln(writer, "         servediff hook --agent NAME [--path DIRECTORY] [--config-file FILE]")
 	fmt.Fprintln(writer, "         servediff service {start|stop|restart|status} [options]")
 	fmt.Fprintln(writer, "         servediff service config {set KEY VALUE|get KEY|remove KEY}")
 	fmt.Fprintln(writer, "         servediff serve [directory | --fixture FILE] [options]")

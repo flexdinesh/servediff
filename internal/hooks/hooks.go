@@ -29,6 +29,7 @@ type Event struct {
 	Agent      string `json:"agent"`
 	RunID      string `json:"runId,omitempty"`
 	ConfigFile string `json:"configFile,omitempty"`
+	Routing    string `json:"routing,omitempty"`
 }
 
 // Identity identifies the server's persistent database (or memory instance).
@@ -114,7 +115,7 @@ func (engine Engine) Schedule(event Event) error {
 			return err
 		}
 	}
-	job := key(path, event.ConfigFile)
+	job := key(path, event.ConfigFile, event.Routing)
 	directory, _ := engine.jobPath(job)
 	lock, err := processlock.Acquire(filepath.Join(directory, "queue.lock"))
 	if err != nil {

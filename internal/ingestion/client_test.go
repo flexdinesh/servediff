@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestClientReceiptURLsAndBearer(t *testing.T) {
@@ -96,5 +97,70 @@ func TestClientPreservesHTTPProblemStatus(t *testing.T) {
 	var problem *Problem
 	if !errors.As(err, &problem) || problem.Status != 409 || !strings.Contains(problem.Detail, "identity") {
 		t.Fatalf("HTTP problem: %v", err)
+	}
+}
+
+func TestHealthChecksIdentityProtocolAndAuthentication(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		body string
+		code int
+		ok   bool
+	}{
+		{"ready", `{"stateId":"database-account","protocolVersion":1}`, 200, true},
+		{"missing identity", `{"protocolVersion":1}`, 200, false},
+		{"incompatible", `{"stateId":"database-account","protocolVersion":2}`, 200, false},
+		{"trailing data", `{"stateId":"database-account","protocolVersion":1} {}`, 200, false},
+		{"authentication", `Unauthorized`, 401, false},
+		{"redirect", ``, 307, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || r.URL.Path != "/api/v2/health" || r.Header.Get("Authorization") != "Bearer secret" {
+					t.Errorf("health request: %s %s", r.Method, r.URL)
+				}
+				w.WriteHeader(test.code)
+				_, _ = fmt.Fprint(w, test.body)
+			}))
+			defer server.Close()
+			health, err := NewClient(server.URL, "secret").Health(t.Context())
+			if (err == nil) != test.ok || (test.ok && health.StateID != "database-account") {
+				t.Fatalf("health %#v, error %v", health, err)
+			}
+		})
+	}
+}
+
+func TestObservationCurrentRequiresExplicitFreshnessAndExpiry(t *testing.T) {
+	future := time.Now().Add(time.Hour).UnixMilli()
+	for _, test := range []struct {
+		name    string
+		body    string
+		code    int
+		current bool
+		err     bool
+	}{
+		{"latest", fmt.Sprintf(`{"id":"context","kind":"observation","availability":"available","stale":false,"expiresAt":%d}`, future), 200, true, false},
+		{"stale", fmt.Sprintf(`{"id":"context","kind":"observation","availability":"available","stale":true,"expiresAt":%d}`, future), 200, false, false},
+		{"expired", `{"id":"context","kind":"observation","availability":"available","stale":false,"expiresAt":1}`, 200, false, false},
+		{"missing freshness", fmt.Sprintf(`{"id":"context","kind":"observation","availability":"available","expiresAt":%d}`, future), 200, false, true},
+		{"wrong identity", `{"id":"other","stale":false}`, 200, false, true},
+		{"pruned", `{}`, 404, false, false},
+		{"unavailable", `{}`, 503, false, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/api/v2/contexts/context" || r.Header.Get("Authorization") != "Bearer secret" {
+					t.Errorf("context probe: %s", r.URL)
+				}
+				w.WriteHeader(test.code)
+				_, _ = fmt.Fprint(w, test.body)
+			}))
+			defer server.Close()
+			current, err := NewClient(server.URL, "secret").ObservationCurrent(t.Context(), "context")
+			if current != test.current || (err != nil) != test.err {
+				t.Fatalf("current=%v error=%v", current, err)
+			}
+		})
 	}
 }

@@ -67,12 +67,27 @@ servediff service restart --config '{"host":"127.0.0.1","port":4000}'
 ```
 
 Defaults are created in `~/.config/servediff/config.json`; `SERVEDIFF_CONFIG_PATH`
-overrides the location. Start/restart JSON overrides apply to that invocation. The default
+or `--config-file` overrides the location. Environment variables override JSON
+settings; explicit flags override environment. See [local plugins](docs/plugins.md)
+for the configuration variables. Restart after changing server settings.
+Start/restart JSON overrides apply to that invocation. The default
 listener binds to `127.0.0.1` and chooses a port from 7981 through 7990.
 The local API is unauthenticated: a non-loopback listener exposes its review
 data to anyone who can reach it.
 
 ## Agent hooks and remote ingestion
+
+Locally install Codex, Claude Code, OpenCode or Pi plugins to synchronize each
+worktree automatically after agent completion:
+
+```sh
+mise run plugins:install --host codex
+```
+
+The plugin returns after scheduling; a detached Go worker collects and submits
+the latest checkout. Unchanged uploads are skipped, overlapping requests
+coalesce, and failures stay outside the agent conversation. See
+[local plugin setup](docs/plugins.md) for all hosts, configuration and removal.
 
 An agent hook uses the same collection operation as a manual review:
 
@@ -108,7 +123,8 @@ servediff review --server https://reviews.example.com --no-browser
 
 Remote submission does not start a local server. The remote server needs no Git
 installation or repository mount: all queries read committed SQLite data.
-Plugins may instead submit the same `POST /api/v2/ingestions` request directly.
+Other producers can submit the same `POST /api/v2/ingestions` contract directly;
+the bundled plugins invoke the Go collector.
 
 ## Reviewing changes
 
