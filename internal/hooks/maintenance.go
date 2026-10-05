@@ -22,10 +22,13 @@ const maxLogBytes = 128 << 10
 // starting, since another worker may have started the service while waiting.
 func (engine Engine) Start(ctx context.Context, destination string, start func(context.Context) error) error {
 	directory := filepath.Join(engine.Directory, "startup", key(destination))
-	lock, err := processlock.TryAcquire(filepath.Join(directory, "startup.lock"))
-	if errors.Is(err, processlock.ErrLocked) {
-		return ErrCooldown
+	timeout := engine.Timeout
+	if timeout <= 0 {
+		timeout = defaultTimeout
 	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	lock, err := startupLock(ctx, filepath.Join(directory, "startup.lock"))
 	if err != nil {
 		return err
 	}
@@ -44,6 +47,25 @@ func (engine Engine) Start(ctx context.Context, destination string, start func(c
 	}
 	_ = os.Remove(path)
 	return nil
+}
+
+func startupLock(ctx context.Context, path string) (*processlock.Lock, error) {
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		lock, err := processlock.TryAcquire(path)
+		if !errors.Is(err, processlock.ErrLocked) {
+			return lock, err
+		}
+		timer := time.NewTimer(10 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 // Log never writes into the agent's conversation or inherits its output pipes.

@@ -3,6 +3,7 @@ package hooks
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -236,6 +237,92 @@ func TestStartupCooldownSharedAcrossCheckouts(t *testing.T) {
 	}
 }
 
+func TestConcurrentStartupWaitsForSharedSuccess(t *testing.T) {
+	engine, _ := fixture(t)
+	started, release := make(chan struct{}), make(chan struct{})
+	first := make(chan error, 1)
+	go func() {
+		first <- engine.Start(context.Background(), "local", func(context.Context) error {
+			close(started)
+			<-release
+			return nil
+		})
+	}()
+	<-started
+	var secondCalls atomic.Int32
+	second := make(chan error, 1)
+	go func() {
+		second <- engine.Start(context.Background(), "local", func(context.Context) error {
+			secondCalls.Add(1)
+			return nil
+		})
+	}()
+	select {
+	case err := <-second:
+		t.Fatalf("second worker dropped before startup completed: %v", err)
+	case <-time.After(30 * time.Millisecond):
+	}
+	close(release)
+	if err := <-first; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-second; err != nil || secondCalls.Load() != 1 {
+		t.Fatalf("second worker did not continue: %v calls=%d", err, secondCalls.Load())
+	}
+}
+
+func TestConcurrentStartupFailureAttemptsOnce(t *testing.T) {
+	engine, _ := fixture(t)
+	started, release := make(chan struct{}), make(chan struct{})
+	first := make(chan error, 1)
+	go func() {
+		first <- engine.Start(context.Background(), "local", func(context.Context) error {
+			close(started)
+			<-release
+			return errors.New("failed startup")
+		})
+	}()
+	<-started
+	var secondCalls atomic.Int32
+	second := make(chan error, 1)
+	go func() {
+		second <- engine.Start(context.Background(), "local", func(context.Context) error {
+			secondCalls.Add(1)
+			return nil
+		})
+	}()
+	select {
+	case err := <-second:
+		t.Fatalf("second worker did not wait for outcome: %v", err)
+	case <-time.After(30 * time.Millisecond):
+	}
+	close(release)
+	if err := <-first; err == nil {
+		t.Fatal("startup succeeded unexpectedly")
+	}
+	if err := <-second; !errors.Is(err, ErrCooldown) || secondCalls.Load() != 0 {
+		t.Fatalf("second worker retried failed startup: %v calls=%d", err, secondCalls.Load())
+	}
+}
+
+func TestStartupLockWaitHonorsDeadline(t *testing.T) {
+	engine, _ := fixture(t)
+	path := filepath.Join(engine.Directory, "startup", key("local"), "startup.lock")
+	lock, err := processlock.TryAcquire(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if err := engine.Start(ctx, "local", func(context.Context) error {
+		t.Fatal("startup callback called without ownership")
+		return nil
+	}); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("startup wait error = %v", err)
+	}
+}
+
 func TestPrunePendingRetentionAndPrivateFiles(t *testing.T) {
 	engine, job := fixture(t)
 	trigger(t, engine)
@@ -301,17 +388,17 @@ func TestNestedCheckoutReschedulesBeforeCollection(t *testing.T) {
 	}
 }
 
-func TestUnknownFingerprintRetryUploadsOnce(t *testing.T) {
+func TestUnknownFingerprintRetryAlsoUploadsLatestState(t *testing.T) {
 	engine, job := fixture(t)
 	collections, uploads := 0, 0
 	engine.Collect = func(context.Context, Event, string) (ingestion.Request, string, error) {
 		collections++
-		return ingestion.Request{SubmissionID: "immutable"}, "", nil
+		return ingestion.Request{SubmissionID: fmt.Sprintf("observation-%d", collections)}, "", nil
 	}
 	engine.Deliver = func(_ context.Context, _ Target, request ingestion.Request) error {
 		uploads++
-		if request.SubmissionID != "immutable" {
-			t.Fatalf("replaced immutable retry: %v", request)
+		if (uploads <= 2 && request.SubmissionID != "observation-1") || (uploads == 3 && request.SubmissionID != "observation-2") {
+			t.Fatalf("retry/latest observation: %v", request)
 		}
 		if uploads == 1 {
 			return errors.New("receipt lost")
@@ -324,7 +411,7 @@ func TestUnknownFingerprintRetryUploadsOnce(t *testing.T) {
 	if err := engine.Run(context.Background(), *job); err != nil {
 		t.Fatal(err)
 	}
-	if collections != 1 || uploads != 2 {
+	if collections != 2 || uploads != 3 {
 		t.Fatalf("collections=%d uploads=%d", collections, uploads)
 	}
 }

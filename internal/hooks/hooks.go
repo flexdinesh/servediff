@@ -220,7 +220,13 @@ func (engine Engine) sync(ctx context.Context, directory string, event Event) er
 		if err := writeJSON(ackPath, state{Target: target, At: time.Now()}); err != nil {
 			return err
 		}
-		return os.Remove(pendingPath)
+		if err := os.Remove(pendingPath); err != nil {
+			return err
+		}
+		// Without a verified full-content fingerprint, the checkout may have
+		// changed since capture. Retry first, then capture its latest state.
+		hasPending = false
+		previous = ""
 	}
 	request, fingerprint, err := engine.Collect(ctx, event, previous)
 	if errors.Is(err, ErrUnchanged) {
