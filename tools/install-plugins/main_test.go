@@ -27,13 +27,27 @@ func testInstaller(t *testing.T) (installer, *[][]string) {
 		*calls = append(*calls, append([]string{name}, args...))
 		return nil
 	}
+	i.query = func(name string, args ...string) ([]byte, error) {
+		registered := false
+		for _, call := range *calls {
+			if len(call) >= 4 && call[0] == "codex" && call[2] == "marketplace" {
+				registered = call[3] == "add"
+			}
+		}
+		if registered {
+			return json.Marshal(map[string]any{"marketplaces": []any{map[string]any{
+				"name": marketplace, "root": i.root("codex"), "marketplaceSource": map[string]string{"sourceType": "local"},
+			}}})
+		}
+		return []byte(`{"marketplaces":[]}`), nil
+	}
 	for _, host := range []string{"codex", "claude", "opencode", "pi"} {
 		packageRoot := filepath.Join(i.source, "packages", "plugin-"+host)
 		if host == "codex" || host == "claude" {
 			put(t, filepath.Join(packageRoot, "hooks", "hooks.json"), `{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"servediff hook --agent `+host+` >/dev/null 2>&1 || true","timeout":5}]}]}}`)
 			put(t, filepath.Join(packageRoot, "."+host+"-plugin", "plugin.json"), `{"name":"servediff"}`)
 		} else {
-			put(t, filepath.Join(packageRoot, "dist", "index.js"), `export default function () { return process.env.SERVEDIFF_BINARY; }`)
+			put(t, filepath.Join(packageRoot, "dist", "index.js"), `let settings; export function configure(value) {settings=value;} export default function () { return settings; }`)
 			put(t, filepath.Join(packageRoot, "package.json"), `{"type":"module","pi":{"extensions":["./dist/index.js"]}}`)
 		}
 		put(t, filepath.Join(packageRoot, "node_modules", "workspace-package", "index.js"), "not portable")
@@ -224,6 +238,35 @@ func TestFailedPluginRegistrationRetriesWithoutReregisteringMarketplace(t *testi
 	}
 }
 
+func TestCodexRegistrationRepairsRemovedMarketplaceAndPreservesConflicts(t *testing.T) {
+	i, calls := testInstaller(t)
+	if err := i.install("codex"); err != nil {
+		t.Fatal(err)
+	}
+	// An external native uninstall invalidates registration independently of files.
+	if err := i.run("codex", "plugin", "marketplace", "remove", marketplace); err != nil {
+		t.Fatal(err)
+	}
+	if err := i.install("codex"); err != nil {
+		t.Fatal(err)
+	}
+	if last := (*calls)[len(*calls)-2]; last[2] != "marketplace" || last[3] != "add" {
+		t.Fatalf("marketplace was not repaired: %v", *calls)
+	}
+	i.query = func(string, ...string) ([]byte, error) {
+		return []byte(`{"marketplaces":[{"name":"servediff-local","root":"/unrelated/user/marketplace","marketplaceSource":{"sourceType":"local"}}]}`), nil
+	}
+	before := len(*calls)
+	for _, action := range []func(string) error{i.install, i.remove} {
+		if err := action("codex"); err == nil {
+			t.Fatal("unrelated marketplace accepted")
+		}
+	}
+	if len(*calls) != before {
+		t.Fatal("unrelated marketplace changed")
+	}
+}
+
 func TestHostDirectoryOverrides(t *testing.T) {
 	i, _ := testInstaller(t)
 	i.env = func(key string) string {
@@ -256,7 +299,7 @@ func TestNativeLocalInstall(t *testing.T) {
 			if err := os.MkdirAll(isolatedConfig, 0700); err != nil {
 				t.Fatal(err)
 			}
-			i.run = func(name string, args ...string) error {
+			i.query = func(name string, args ...string) ([]byte, error) {
 				ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 				defer cancel()
 				command := exec.CommandContext(ctx, name, args...)
@@ -266,11 +309,15 @@ func TestNativeLocalInstall(t *testing.T) {
 					}
 				}
 				command.Env = append(command.Env, varKey+"="+isolatedConfig, "PI_OFFLINE=1", "PI_TELEMETRY=0")
-				output, err := command.CombinedOutput()
+				output, err := command.Output()
 				if err != nil {
-					return errors.New(string(output) + err.Error())
+					return nil, err
 				}
-				return nil
+				return output, nil
+			}
+			i.run = func(name string, args ...string) error {
+				_, err := i.query(name, args...)
+				return err
 			}
 			for range 2 {
 				if err := i.install(host); err != nil {
@@ -281,6 +328,127 @@ func TestNativeLocalInstall(t *testing.T) {
 				if err := i.remove(host); err != nil {
 					t.Fatal(err)
 				}
+			}
+		})
+	}
+}
+
+func TestNativeCodexChangedHomeAndExternalRemoval(t *testing.T) {
+	if os.Getenv("SERVEDIFF_TEST_NATIVE_HOSTS") != "1" {
+		t.Skip("set SERVEDIFF_TEST_NATIVE_HOSTS=1 to exercise installed Codex CLI")
+	}
+	if _, err := exec.LookPath("codex"); err != nil {
+		t.Skip("Codex unavailable")
+	}
+	i, _ := testInstaller(t)
+	configuration := filepath.Join(i.home, "old codex")
+	i.query = func(name string, args ...string) ([]byte, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		command := exec.CommandContext(ctx, name, args...)
+		for _, value := range os.Environ() {
+			if !strings.HasPrefix(value, "CODEX_HOME=") {
+				command.Env = append(command.Env, value)
+			}
+		}
+		command.Env = append(command.Env, "CODEX_HOME="+configuration)
+		return command.Output()
+	}
+	i.run = func(name string, args ...string) error {
+		_, err := i.query(name, args...)
+		return err
+	}
+	for _, name := range []string{"old codex", "new codex"} {
+		configuration = filepath.Join(i.home, name)
+		if err := os.MkdirAll(configuration, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := i.install("codex"); err != nil {
+			t.Fatalf("install in %s: %v", name, err)
+		}
+		if registered, err := i.codexRegistered(i.root("codex")); err != nil || !registered {
+			t.Fatalf("registration missing in %s: %v", name, err)
+		}
+	}
+	if err := i.run("codex", "plugin", "marketplace", "remove", marketplace); err != nil {
+		t.Fatal(err)
+	}
+	if err := i.install("codex"); err != nil {
+		t.Fatalf("repair external removal: %v", err)
+	}
+	if err := i.remove("codex"); err != nil {
+		t.Fatal(err)
+	}
+	if registered, err := i.codexRegistered(i.root("codex")); err != nil || registered {
+		t.Fatalf("marketplace remains: %v", err)
+	}
+}
+
+func TestInstalledAdaptersPreserveEnvironmentAndLaunchConfiguredCollector(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix executable fixture")
+	}
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("Node unavailable")
+	}
+	source := os.Getenv("SERVEDIFF_TEST_PLUGIN_SOURCE")
+	if source == "" {
+		source, err = filepath.Abs("../..")
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, host := range []string{"opencode", "pi"} {
+		t.Run(host, func(t *testing.T) {
+			if _, err := os.Stat(filepath.Join(source, "packages", "plugin-"+host, "dist", "index.js")); err != nil {
+				t.Skip("build adapters with mise run plugins:build first")
+			}
+			i, _ := testInstaller(t)
+			i.source = source
+			capture := filepath.Join(i.home, "collector arguments.json")
+			captureJSON, _ := json.Marshal(capture)
+			put(t, i.binary, "#!/usr/bin/env node\nrequire('node:fs').writeFileSync("+string(captureJSON)+", JSON.stringify(process.argv.slice(2)));\n")
+			if err := os.Chmod(i.binary, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := i.install(host); err != nil {
+				t.Fatal(err)
+			}
+			entry := filepath.Join(i.root(host), "dist", "index.js")
+			if host == "opencode" {
+				entry = i.openCodeFile()
+			}
+			script := `import assert from 'node:assert/strict';
+import {pathToFileURL} from 'node:url';
+import {readFile} from 'node:fs/promises';
+import {setTimeout} from 'node:timers/promises';
+const before = {...process.env};
+const plugin = await import(pathToFileURL(process.argv[1]));
+assert.deepEqual({...process.env}, before);
+if (process.argv[2] === 'pi') {
+  plugin.default({on(_event, handler) {handler({}, {cwd:'/checkout with spaces', sessionManager:{getSessionId:()=>'session-id'}});}});
+} else {
+  async function* events() {yield {type:'session.status', data:{sessionID:'session-id',status:{type:'idle'}}};}
+  const cleanup = plugin.default.setup({location:{directory:'/checkout with spaces'},event:{subscribe(){return events();}}});
+  await setTimeout(20); cleanup();
+}
+assert.deepEqual({...process.env}, before);
+for(let attempt=0; attempt<100; attempt++) {try {await readFile(process.argv[3]); break;} catch {await setTimeout(20);}}
+`
+			command := exec.Command(node, "--input-type=module", "-e", script, entry, host, capture)
+			command.Dir = i.home
+			command.Env = append(os.Environ(), "SERVEDIFF_BINARY=/unrelated/binary", "SERVEDIFF_CONFIG_PATH=/unrelated/config.json")
+			if output, err := command.CombinedOutput(); err != nil || len(output) != 0 {
+				t.Fatalf("installed module: %v %s", err, output)
+			}
+			var arguments []string
+			if err := json.Unmarshal([]byte(read(t, capture)), &arguments); err != nil {
+				t.Fatal(err)
+			}
+			expected := []string{"hook", "--agent", host, "--path", "/checkout with spaces", "--run-id", "session-id", "--config-file", i.configFile}
+			if !reflect.DeepEqual(arguments, expected) {
+				t.Fatalf("configured launch: %v", arguments)
 			}
 		})
 	}

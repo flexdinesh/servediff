@@ -26,6 +26,7 @@ type installer struct {
 	source, binary, configFile, home, data, config string
 	env                                            func(string) string
 	run                                            func(string, ...string) error
+	query                                          func(string, ...string) ([]byte, error)
 }
 
 func main() {
@@ -67,7 +68,7 @@ func run(args []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
-	i := installer{home: home, env: os.Getenv, run: runHost}
+	i := installer{home: home, env: os.Getenv, run: runHost, query: queryHost}
 	i.data = i.location("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
 	i.config = i.location("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	i.source, err = filepath.Abs(*source)
@@ -114,19 +115,28 @@ func run(args []string, output io.Writer) error {
 }
 
 func runHost(name string, args ...string) error {
+	_, err := queryHost(name, args...)
+	return err
+}
+
+func queryHost(name string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
 	// Do not inherit stdin: installation must never start an interactive agent.
-	output, err := cmd.CombinedOutput()
+	output, err := cmd.Output()
 	if err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			output = append(output, exit.Stderr...)
+		}
 		text := strings.TrimSpace(string(output))
 		if len(text) > 2048 {
 			text = text[:2048]
 		}
-		return fmt.Errorf("%s %s: %w %s", name, strings.Join(args, " "), err, text)
+		return nil, fmt.Errorf("%s %s: %w %s", name, strings.Join(args, " "), err, text)
 	}
-	return nil
+	return output, nil
 }
 
 func (i installer) location(key, fallback string) string {
@@ -171,6 +181,13 @@ func (i installer) install(host string) error {
 	if err != nil {
 		return err
 	}
+	registered := false
+	if host == "codex" {
+		registered, err = i.codexRegistered(root)
+		if err != nil {
+			return err
+		}
+	}
 	if err := os.MkdirAll(filepath.Dir(root), 0700); err != nil {
 		return err
 	}
@@ -196,7 +213,9 @@ func (i installer) install(host string) error {
 		if err != nil {
 			return fmt.Errorf("built plugin missing; build plugin packages first: %w", err)
 		}
-		if err := os.WriteFile(entry, append([]byte(i.jsPrefix()), contents...), 0600); err != nil {
+		installed := append([]byte(jsMarker), contents...)
+		installed = append(installed, []byte(i.jsConfiguration())...)
+		if err := os.WriteFile(entry, installed, 0600); err != nil {
 			return err
 		}
 	}
@@ -212,25 +231,13 @@ func (i installer) install(host string) error {
 	if err := os.WriteFile(filepath.Join(temporary, ownership), []byte(marker), 0600); err != nil {
 		return err
 	}
-	// Persist successful registration across package refreshes.
-	if previous {
-		if contents, err := os.ReadFile(filepath.Join(root, ".marketplace-added")); err == nil {
-			if err := os.WriteFile(filepath.Join(temporary, ".marketplace-added"), contents, 0600); err != nil {
-				return err
-			}
-		}
-	}
 	if err := replaceDirectory(temporary, root, previous); err != nil {
 		return err
 	}
 	switch host {
 	case "codex":
-		registered := filepath.Join(root, ".marketplace-added")
-		if _, err := os.Stat(registered); os.IsNotExist(err) {
+		if !registered {
 			if err := i.run("codex", "plugin", "marketplace", "add", root); err != nil {
-				return err
-			}
-			if err := os.WriteFile(registered, []byte(marker), 0600); err != nil {
 				return err
 			}
 		}
@@ -309,14 +316,55 @@ func copyPackage(source, destination string) error {
 	})
 }
 
-func (i installer) jsPrefix() string {
-	binary, _ := json.Marshal(i.binary)
-	prefix := jsMarker + "process.env.SERVEDIFF_BINARY = " + string(binary) + ";\n"
-	if i.configFile != "" {
-		config, _ := json.Marshal(i.configFile)
-		prefix += "process.env.SERVEDIFF_CONFIG_PATH = " + string(config) + ";\n"
+func (i installer) jsConfiguration() string {
+	settings := struct {
+		Binary     string `json:"binary"`
+		ConfigFile string `json:"configFile,omitempty"`
+	}{i.binary, i.configFile}
+	configuration, _ := json.Marshal(settings)
+	return "\nconfigure(" + string(configuration) + ");\n"
+}
+
+func (i installer) codexRegistered(root string) (bool, error) {
+	output, err := i.query("codex", "plugin", "marketplace", "list", "--json")
+	if err != nil {
+		return false, err
 	}
-	return prefix
+	var document struct {
+		Marketplaces *[]struct {
+			Name              string `json:"name"`
+			Root              string `json:"root"`
+			MarketplaceSource struct {
+				SourceType string `json:"sourceType"`
+			} `json:"marketplaceSource"`
+		} `json:"marketplaces"`
+	}
+	if err := json.Unmarshal(output, &document); err != nil {
+		return false, fmt.Errorf("read Codex marketplaces: %w", err)
+	}
+	if document.Marketplaces == nil {
+		return false, errors.New("Codex marketplace list omitted marketplaces")
+	}
+	for _, entry := range *document.Marketplaces {
+		if entry.Name != marketplace {
+			continue
+		}
+		if entry.MarketplaceSource.SourceType != "local" || !samePath(entry.Root, root) {
+			return false, fmt.Errorf("refusing unrelated Codex marketplace %s at %s", marketplace, entry.Root)
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+func samePath(first, second string) bool {
+	if resolved, err := filepath.EvalSymlinks(first); err == nil {
+		first = resolved
+	}
+	if resolved, err := filepath.EvalSymlinks(second); err == nil {
+		second = resolved
+	}
+	return filepath.Clean(first) == filepath.Clean(second)
 }
 
 func (i installer) rewriteHook(root, host string) error {
@@ -390,7 +438,11 @@ func (i installer) remove(host string) error {
 	}
 	switch host {
 	case "codex":
-		if _, err := os.Stat(filepath.Join(root, ".marketplace-added")); err == nil {
+		registered, err := i.codexRegistered(root)
+		if err != nil {
+			return err
+		}
+		if registered {
 			if err := i.run("codex", "plugin", "remove", "servediff@"+marketplace); err != nil {
 				return err
 			}
