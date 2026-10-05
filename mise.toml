@@ -52,6 +52,19 @@ description = "Start Vite HMR and its managed Go fixture server"
 alias = "dev:web"
 run = "pnpm dev:web"
 
+[tasks."plugins:build"]
+description = "Build self-contained agent plugin adapters"
+run = "pnpm --recursive --filter '@servediff/plugin-*' --if-present build"
+
+[tasks."plugins:install"]
+description = "Install local agent plugins (--host codex|claude|opencode|pi|all)"
+depends = ["build", "plugins:build"]
+run = "go run ./tools/install-plugins install"
+
+[tasks."plugins:remove"]
+description = "Remove managed local agent plugins (--host NAME)"
+run = "go run ./tools/install-plugins remove"
+
 [tasks."dev:server"]
 description = "Start a standalone Go fixture server"
 depends = ["web:build"]
