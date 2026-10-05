@@ -18,6 +18,7 @@ import (
 	"github.com/flexdinesh/servediff/internal/contextservice"
 	"github.com/flexdinesh/servediff/internal/controlapi"
 	"github.com/flexdinesh/servediff/internal/daemon"
+	"github.com/flexdinesh/servediff/internal/hooks"
 	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/reviewstore"
 	buildversion "github.com/flexdinesh/servediff/internal/version"
@@ -25,13 +26,16 @@ import (
 
 var errServiceStopped = errors.New("service is stopped")
 
-func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr io.Writer) error {
+func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr io.Writer) (failure error) {
 	if len(arguments) == 0 {
 		writeHelp(stdout)
 		return nil
 	}
 	if arguments[0] == "hook" {
 		return runHook(arguments[1:], stdin, stdout)
+	}
+	if arguments[0] == "collector" {
+		return runCollector(arguments[1:], stdout)
 	}
 	if arguments[0] == "__hook-worker" {
 		return runHookWorker(ctx, arguments[1:])
@@ -98,6 +102,12 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 	}
 	if command == "pipe" && (values.fixture != "" || values.capture != "") {
 		return errors.New("pipe only accepts a diff from stdin")
+	}
+	if command != "review" && (values.base != "" || values.branch != "") {
+		return errors.New("base and branch are only supported by review")
+	}
+	if values.capture != "" && (values.base != "" || values.branch != "") {
+		return errors.New("capture cannot be combined with base or branch")
 	}
 	if values.capture != "" && values.server != "" && command == "review" {
 		return errors.New("capture reopening is only available on the local service")
@@ -187,6 +197,11 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 		return nil
 	}
 	started := time.Now()
+	defer func() {
+		if failure != nil {
+			recordCollectorActivity(hooks.Activity{Stage: "submission", Status: "failed", InputPath: values.directory, Destination: values.server, Error: failure.Error()}, values.token)
+		}
+	}()
 	operationCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	var input daemon.InitialInput
@@ -208,6 +223,7 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 	}
 	connection, err := client.EnsureConnection(operationCtx, settings, explicit)
 	if err != nil {
+		recordCollectorActivity(hooks.Activity{Stage: "ingestion", Status: "waiting", Reason: "local service unavailable", Error: err.Error()})
 		return err
 	}
 	requestID := newSubmissionID()
@@ -218,10 +234,13 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 	var firstFailure error
 	uncertain := false
 	for attempt := 0; attempt < 2; attempt++ {
+		recordCollectorActivity(hooks.Activity{Stage: "ingestion", Status: "started", SubmissionID: requestID, Attempt: attempt + 1, Destination: connection.Status().BrowserURL})
 		submitted, err = submitInput(operationCtx, connection, requestID, input)
 		if err == nil {
+			recordCollectorActivity(hooks.Activity{Stage: "ingestion", Status: "acknowledged", SubmissionID: requestID, ContextID: submitted.Context.ID, Attempt: attempt + 1, Destination: connection.Status().BrowserURL})
 			break
 		}
+		recordCollectorActivity(hooks.Activity{Stage: "ingestion", Status: "failed", SubmissionID: requestID, Attempt: attempt + 1, Error: err.Error()})
 		retry, ambiguous := retryableSubmission(err)
 		uncertain = uncertain || ambiguous
 		if !retry || operationCtx.Err() != nil || attempt == 1 {
@@ -359,6 +378,7 @@ func writeHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "  Usage: servediff review [--path DIRECTORY] [options]")
 	fmt.Fprintln(writer, "         servediff pipe [--path DIRECTORY] [options]")
 	fmt.Fprintln(writer, "         servediff hook --agent NAME [--path DIRECTORY] [--config-file FILE]")
+	fmt.Fprintln(writer, "         servediff collector {status|retry} [--config-file FILE]")
 	fmt.Fprintln(writer, "         servediff service {start|stop|restart|status} [options]")
 	fmt.Fprintln(writer, "         servediff service config {set KEY VALUE|get KEY|remove KEY}")
 	fmt.Fprintln(writer, "         servediff serve [directory | --fixture FILE] [options]")
@@ -370,10 +390,13 @@ func submitRemote(ctx context.Context, command string, values options, request i
 	var err, firstFailure error
 	uncertain := false
 	for attempt := 0; attempt < 2; attempt++ {
+		recordCollectorActivity(hooks.Activity{Stage: "ingestion", Status: "started", SubmissionID: request.SubmissionID, Attempt: attempt + 1, Destination: values.server})
 		receipt, err = client.Submit(ctx, request)
 		if err == nil {
+			recordCollectorActivity(hooks.Activity{Stage: "ingestion", Status: "acknowledged", SubmissionID: request.SubmissionID, ContextID: receipt.ContextID, Attempt: attempt + 1, Destination: values.server})
 			break
 		}
+		recordCollectorActivity(hooks.Activity{Stage: "ingestion", Status: "failed", SubmissionID: request.SubmissionID, Attempt: attempt + 1, Error: err.Error()}, values.token)
 		var transportError *url.Error
 		retry := errors.As(err, &transportError)
 		uncertain = uncertain || retry

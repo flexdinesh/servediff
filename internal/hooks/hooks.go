@@ -18,6 +18,7 @@ import (
 
 var ErrUnchanged = errors.New("checkout unchanged")
 var ErrCooldown = errors.New("service startup cooling down")
+var ErrUnavailable = errors.New("collection source unavailable")
 
 const defaultTimeout = 30 * time.Second
 const acknowledgementTTL = 24 * time.Hour
@@ -26,6 +27,12 @@ const maxPendingBytes = 256 << 20
 
 type Event struct {
 	Path       string `json:"path"`
+	InputPath  string `json:"inputPath,omitempty"`
+	Identity   string `json:"identity,omitempty"`
+	Branch     string `json:"branch,omitempty"`
+	Base       string `json:"base,omitempty"`
+	Resolved   bool   `json:"resolved,omitempty"`
+	Retry      bool   `json:"-"`
 	Agent      string `json:"agent"`
 	RunID      string `json:"runId,omitempty"`
 	ConfigFile string `json:"configFile,omitempty"`
@@ -41,11 +48,13 @@ type Target struct {
 }
 
 type Engine struct {
-	Directory string
-	Normalize func(context.Context, Event) (Event, error)
-	Resolve   func(context.Context, Event) (Target, error)
-	Collect   func(context.Context, Event, string) (ingestion.Request, string, error)
-	Deliver   func(context.Context, Target, ingestion.Request) (string, error)
+	Directory        string
+	Expand           func(context.Context, Event) ([]Event, error)
+	ValidateLocation func(Event, Event) error
+	Normalize        func(context.Context, Event) (Event, error)
+	Resolve          func(context.Context, Event) (Target, error)
+	Collect          func(context.Context, Event, string) (ingestion.Request, string, error)
+	Deliver          func(context.Context, Target, ingestion.Request) (string, error)
 	// Confirm checks cached context freshness only after collection reports
 	// unchanged. Production callers provide it to detect other producers.
 	Confirm func(context.Context, Target, string) (bool, error)
@@ -115,7 +124,36 @@ func (engine Engine) Schedule(event Event) error {
 			return err
 		}
 	}
-	job := key(path, event.ConfigFile, event.Routing)
+	if event.InputPath == "" {
+		event.InputPath = event.Path
+	}
+	identity := path
+	if event.Identity != "" {
+		identity = event.Identity
+		locationPath := filepath.Join(engine.Directory, "locations", key(identity)+".json")
+		locationLock, err := processlock.Acquire(locationPath + ".lock")
+		if err != nil {
+			return err
+		}
+		var previous Event
+		if readJSON(locationPath, &previous) == nil && engine.ValidateLocation != nil {
+			if err := engine.ValidateLocation(previous, event); err != nil {
+				_ = locationLock.Close()
+				engine.Record(Activity{Stage: "identity", Status: "waiting", Path: path, Error: err.Error()})
+				return err
+			}
+		}
+		err = writeJSON(locationPath, event)
+		_ = locationLock.Close()
+		if err != nil {
+			return err
+		}
+	}
+	job := key(identity, event.ConfigFile, event.Routing, event.Branch, event.Base)
+	// A stable branch identity already carries its branch; its label may change.
+	if event.Identity != "" {
+		job = key(identity, event.ConfigFile, event.Routing, event.Base)
+	}
 	directory, _ := engine.jobPath(job)
 	lock, err := processlock.Acquire(filepath.Join(directory, "queue.lock"))
 	if err != nil {
@@ -126,10 +164,15 @@ func (engine Engine) Schedule(event Event) error {
 	if err := writeJSON(filepath.Join(directory, "request.json"), request); err != nil {
 		return err
 	}
+	engine.RecordJob(job, event, Activity{Stage: "scheduled", Status: "queued"})
 	if engine.Launch == nil {
 		return errors.New("hook worker launcher unavailable")
 	}
-	return engine.Launch(job)
+	if err := engine.Launch(job); err != nil {
+		engine.RecordJob(job, event, Activity{Stage: "launch", Status: "failed", Error: err.Error()})
+		return err
+	}
+	return nil
 }
 
 // Run owns one checkout until all observed requests are processed. Queue writes
@@ -141,6 +184,7 @@ func (engine Engine) Run(ctx context.Context, job string) error {
 	}
 	worker, err := processlock.TryAcquire(filepath.Join(directory, "worker.lock"))
 	if errors.Is(err, processlock.ErrLocked) {
+		engine.Record(Activity{Job: job, Stage: "coalesced", Status: "running"})
 		return nil
 	}
 	if err != nil {
@@ -162,7 +206,12 @@ func (engine Engine) Run(ctx context.Context, job string) error {
 		}
 		syncErr := engine.sync(ctx, directory, request.Event)
 		if syncErr != nil {
-			engine.Log(syncErr)
+			var activity Activity
+			_ = readJSON(filepath.Join(directory, "status.json"), &activity)
+			activity.Time = time.Now().UTC()
+			activity.Stage, activity.Status = "worker", "waiting"
+			activity.Error, activity.Reason = syncErr.Error(), "retry on next completion or collector retry"
+			engine.RecordJob(job, request.Event, activity)
 		}
 		queue, err := processlock.Acquire(filepath.Join(directory, "queue.lock"))
 		if err != nil {
@@ -184,118 +233,6 @@ func (engine Engine) Run(ctx context.Context, job string) error {
 	}
 }
 
-func (engine Engine) sync(ctx context.Context, directory string, event Event) error {
-	if engine.Resolve == nil || engine.Collect == nil || engine.Deliver == nil {
-		return errors.New("hook worker callbacks unavailable")
-	}
-	if engine.Normalize != nil {
-		normalized, err := engine.Normalize(ctx, event)
-		if errors.Is(err, ErrUnchanged) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if path, err := filepath.EvalSymlinks(normalized.Path); err == nil {
-			normalized.Path = path
-		}
-		if normalized.Path != event.Path {
-			return engine.Schedule(normalized)
-		}
-		event = normalized
-	}
-	target, err := engine.Resolve(ctx, event)
-	if err != nil {
-		return err
-	}
-	stream := key(target.Destination, target.SourceID)
-	ackPath := filepath.Join(directory, stream+".ack.json")
-	pendingPath := filepath.Join(directory, stream+".pending.json")
-	var ack state
-	previous := ""
-	if readJSON(ackPath, &ack) == nil && target.Identity != "" && ack.Target == target && (engine.Confirm == nil || ack.ContextID != "") && time.Since(ack.At) < acknowledgementTTL {
-		previous = ack.Fingerprint
-	}
-	var saved pending
-	hasPending := readJSON(pendingPath, &saved) == nil && target.Identity != "" && saved.Target == target && time.Since(saved.At) < pendingTTL
-	if hasPending && saved.Fingerprint == "" {
-		contextID, err := engine.Deliver(ctx, target, saved.Request)
-		if err != nil {
-			return err
-		}
-		if err := writeJSON(ackPath, state{Target: target, ContextID: contextID, At: time.Now()}); err != nil {
-			return err
-		}
-		if err := os.Remove(pendingPath); err != nil {
-			return err
-		}
-		// Without a verified full-content fingerprint, the checkout may have
-		// changed since capture. Retry first, then capture its latest state.
-		hasPending = false
-		previous = ""
-	}
-	request, fingerprint, err := engine.Collect(ctx, event, previous)
-	if errors.Is(err, ErrUnchanged) {
-		current := true
-		if engine.Confirm != nil {
-			current, err = engine.Confirm(ctx, target, ack.ContextID)
-			if err != nil {
-				return err
-			}
-		}
-		if current {
-			// A failed observation is now obsolete (e.g. reverted edits).
-			_ = os.Remove(pendingPath)
-			return nil
-		}
-		// Another collector advanced the stream or retention removed our
-		// context. Recollect even though local files still match our cache.
-		request, fingerprint, err = engine.Collect(ctx, event, "")
-	}
-	if err != nil {
-		return err
-	}
-	replayed := hasPending && fingerprint != "" && saved.Fingerprint == fingerprint
-	if replayed {
-		request = saved.Request
-	} else {
-		saved = pending{state: state{Target: target, Fingerprint: fingerprint, At: time.Now()}, Request: request}
-		if err := writeJSON(pendingPath, saved); err != nil {
-			return err
-		}
-	}
-	contextID, err := engine.Deliver(ctx, target, request)
-	if err != nil {
-		return err
-	}
-	if replayed && engine.Confirm != nil {
-		current, err := engine.Confirm(ctx, target, contextID)
-		if err != nil {
-			return err
-		}
-		if !current {
-			// Replays retain capture time and cannot supersede a newer external
-			// observation. Capture once more with a fresh submission identity.
-			request, fingerprint, err = engine.Collect(ctx, event, "")
-			if err != nil {
-				return err
-			}
-			saved = pending{state: state{Target: target, Fingerprint: fingerprint, At: time.Now()}, Request: request}
-			if err := writeJSON(pendingPath, saved); err != nil {
-				return err
-			}
-			contextID, err = engine.Deliver(ctx, target, request)
-			if err != nil {
-				return err
-			}
-		}
-	}
-	if err := writeJSON(ackPath, state{Target: target, ContextID: contextID, Fingerprint: fingerprint, At: time.Now()}); err != nil {
-		return err
-	}
-	return os.Remove(pendingPath)
-}
-
 func writeJSON(path string, value interface{}) error {
 	data, err := json.Marshal(value)
 	if err != nil {
@@ -313,6 +250,10 @@ func writeJSON(path string, value interface{}) error {
 	}
 	defer os.Remove(file.Name())
 	if _, err := file.Write(data); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err := file.Sync(); err != nil {
 		_ = file.Close()
 		return err
 	}

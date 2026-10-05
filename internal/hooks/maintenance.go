@@ -3,7 +3,6 @@ package hooks
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -36,16 +35,20 @@ func (engine Engine) Start(ctx context.Context, destination string, start func(c
 	path := filepath.Join(directory, "failure.json")
 	var failed time.Time
 	if readJSON(path, &failed) == nil && time.Since(failed) < startupCooldown {
+		engine.Record(Activity{Stage: "startup", Status: "waiting", Destination: destination, Reason: "startup cooldown"})
 		return ErrCooldown
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	engine.Record(Activity{Stage: "startup", Status: "running", Destination: destination})
 	if err := start(ctx); err != nil {
 		_ = writeJSON(path, time.Now())
+		engine.Record(Activity{Stage: "startup", Status: "waiting", Destination: destination, Error: err.Error()})
 		return err
 	}
 	_ = os.Remove(path)
+	engine.Record(Activity{Stage: "startup", Status: "complete", Destination: destination})
 	return nil
 }
 
@@ -73,26 +76,7 @@ func (engine Engine) Log(err error) {
 	if err == nil {
 		return
 	}
-	lock, lockErr := processlock.TryAcquire(filepath.Join(engine.Directory, "log.lock"))
-	if lockErr != nil {
-		return
-	}
-	defer lock.Close()
-	path := filepath.Join(engine.Directory, "hooks.log")
-	flags := os.O_CREATE | os.O_WRONLY | os.O_APPEND
-	if info, err := os.Stat(path); err == nil && info.Size() >= maxLogBytes {
-		flags = os.O_CREATE | os.O_WRONLY | os.O_TRUNC
-	}
-	file, openErr := os.OpenFile(path, flags, 0o600)
-	if openErr != nil {
-		return
-	}
-	defer file.Close()
-	message := strings.ReplaceAll(err.Error(), "\n", " ")
-	if len(message) > 4096 {
-		message = message[:4096]
-	}
-	_, _ = fmt.Fprintf(file, "%s %s\n", time.Now().UTC().Format(time.RFC3339), message)
+	engine.Record(Activity{Stage: "collector", Status: "error", Error: err.Error()})
 }
 
 // Payloads are disposable, locks are not: unlinking a live lock creates two

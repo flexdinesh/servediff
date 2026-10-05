@@ -86,12 +86,24 @@ codex plugin add servediff@servediff
 ```
 
 The plugin returns after scheduling; a detached Go worker collects and submits
-the latest checkout. Unchanged uploads are skipped, overlapping requests
+the checkout plus committed feature-branch changes. It discovers nearby
+workspace checkouts and recovers unmerged branches after worktree removal.
+Persistent Git identities survive checkout moves and branch renames.
+Unchanged uploads are skipped, overlapping requests
 coalesce, and failures stay outside the agent conversation. See
 [plugin setup](docs/plugins.md) for native installation on all hosts,
 configuration and removal. Plugins are ready to install from the repository;
 the servediff executable is installed separately and must be available to the
 harness through PATH or `SERVEDIFF_BINARY`.
+
+Inspect collection/delivery activity and retry waiting payloads:
+
+```sh
+servediff collector status
+servediff collector retry
+tail -n 50 ~/.local/state/servediff/hooks/hooks.log
+servediff review --branch feature --base main --no-browser
+```
 
 An agent hook uses the same collection operation as a manual review:
 
@@ -165,7 +177,8 @@ The OpenAPI contract is served at `/openapi.yaml`. `POST /api/v2/ingestions`
 validates and atomically commits an observation; acknowledgement means commit,
 not collection scheduled. Replaying the same source/submission identity and
 payload returns its original receipt. Reusing it with different payload fails.
-There is no durable upload queue in the collector; failures are reported.
+Hooks persist bounded immutable payloads before delivery and retry after later
+triggers or `servediff collector retry`. Manual commands report failures directly.
 
 `/api/v2/contexts` lists stored observations with `q`, `repository`, `branch`,
 `worktree`, `hostname`, `sourceId` and `runId` filters. Scoped review operations

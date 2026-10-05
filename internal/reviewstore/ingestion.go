@@ -24,8 +24,11 @@ func initializeIngestion(tx *sql.Tx) error {
 		// Stream heads outlive snapshot retention. Backfill newest arrivals first;
 		// an existing head must never regress when its snapshot has been pruned.
 		`CREATE TABLE IF NOT EXISTS observation_stream_heads (owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, source_id TEXT NOT NULL, repository_key TEXT NOT NULL, checkout_key TEXT NOT NULL, branch TEXT NOT NULL, context_id TEXT NOT NULL, collected_at INTEGER NOT NULL, PRIMARY KEY(owner_id,source_id,repository_key,checkout_key,branch))`,
+		// Alias only the first stable branch adopting a legacy label. Reusing a
+		// deleted branch name must not attach its history to the new branch ID.
+		`CREATE TABLE IF NOT EXISTS observation_branch_aliases (owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, source_id TEXT NOT NULL, repository_key TEXT NOT NULL, checkout_key TEXT NOT NULL, branch TEXT NOT NULL, branch_id TEXT NOT NULL, PRIMARY KEY(owner_id,source_id,repository_key,checkout_key,branch))`,
 		`INSERT INTO observation_stream_heads(owner_id,source_id,repository_key,checkout_key,branch,context_id,collected_at)
-			SELECT owner_id,source_id,json_extract(metadata,'$.repositoryKey'),json_extract(metadata,'$.checkoutKey'),json_extract(metadata,'$.branch'),context_id,json_extract(metadata,'$.collectedAt')
+			SELECT owner_id,source_id,json_extract(metadata,'$.repositoryKey'),json_extract(metadata,'$.checkoutKey'),COALESCE(NULLIF(json_extract(metadata,'$.branchId'),''),json_extract(metadata,'$.branch')),context_id,json_extract(metadata,'$.collectedAt')
 			FROM observation_submissions WHERE json_extract(metadata,'$.repositoryKey')<>'' AND json_extract(metadata,'$.checkoutKey')<>''
 			ORDER BY json_extract(metadata,'$.collectedAt') DESC,rowid DESC ON CONFLICT DO NOTHING`,
 		`CREATE TABLE IF NOT EXISTS observation_identities (owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, identity_hash TEXT NOT NULL, context_id TEXT NOT NULL REFERENCES observations(context_id) ON DELETE CASCADE, PRIMARY KEY(owner_id,identity_hash))`,
@@ -72,12 +75,26 @@ func (store *Store) Ingest(ownerID string, request ingestion.Request) (Binding, 
 		return Binding{}, err
 	}
 	now := time.Now().UnixMilli()
-	identity, err := observationIdentity(request)
+	branch, _, err := adoptObservationBranch(tx, ownerID, request.Metadata)
+	if err != nil {
+		return Binding{}, err
+	}
+	identityRequest := request
+	identityRequest.Metadata.BranchID = branch
+	identity, err := observationIdentity(identityRequest)
 	if err != nil {
 		return Binding{}, err
 	}
 	if identity != "" {
 		err = tx.QueryRow(`SELECT i.context_id FROM observation_identities i JOIN contexts c ON c.id=i.context_id JOIN diffs d ON d.id=c.capture_id WHERE i.owner_id=? AND i.identity_hash=? AND d.expires_at>?`, ownerID, identity, now).Scan(&id)
+		if errors.Is(err, sql.ErrNoRows) {
+			id, err = legacyObservationIdentity(tx, ownerID, request, branch, now)
+			if err == nil {
+				if _, err := tx.Exec(`INSERT INTO observation_identities(owner_id,identity_hash,context_id) VALUES(?,?,?) ON CONFLICT DO NOTHING`, ownerID, identity, id); err != nil {
+					return Binding{}, err
+				}
+			}
+		}
 		if err == nil {
 			if _, err := tx.Exec(`UPDATE contexts SET last_submitted_at=? WHERE id=?`, now, id); err != nil {
 				return Binding{}, err
@@ -202,7 +219,11 @@ func observationIdentity(request ingestion.Request) (string, error) {
 	}
 	sort.Strings(modes)
 	metadata := request.Metadata
-	encoded, err := json.Marshal([]any{metadata.SourceID, metadata.RepositoryKey, metadata.CheckoutKey, metadata.Branch, metadata.Head, request.Scopes[0].Snapshot.Source, modes, request.ContentHash})
+	branch := metadata.Branch
+	if metadata.BranchID != "" {
+		branch = metadata.BranchID
+	}
+	encoded, err := json.Marshal([]any{metadata.SourceID, metadata.RepositoryKey, metadata.CheckoutKey, branch, metadata.Head, request.Scopes[0].Snapshot.Source, modes, request.ContentHash})
 	if err != nil {
 		return "", err
 	}
@@ -219,11 +240,88 @@ func putObservationSubmission(tx *sql.Tx, ownerID, contextID, hash string, reque
 	if err != nil || request.Metadata.RepositoryKey == "" || request.Metadata.CheckoutKey == "" {
 		return err
 	}
+	branch, _, err := adoptObservationBranch(tx, ownerID, request.Metadata)
+	if err != nil {
+		return err
+	}
 	// Equal collection times use arrival order. Retries bypass this write.
 	_, err = tx.Exec(`INSERT INTO observation_stream_heads(owner_id,source_id,repository_key,checkout_key,branch,context_id,collected_at) VALUES(?,?,?,?,?,?,?)
 		ON CONFLICT(owner_id,source_id,repository_key,checkout_key,branch) DO UPDATE SET context_id=excluded.context_id,collected_at=excluded.collected_at
-		WHERE excluded.collected_at>=observation_stream_heads.collected_at`, ownerID, request.Metadata.SourceID, request.Metadata.RepositoryKey, request.Metadata.CheckoutKey, request.Metadata.Branch, contextID, request.Metadata.CollectedAt)
+		WHERE excluded.collected_at>=observation_stream_heads.collected_at`, ownerID, request.Metadata.SourceID, request.Metadata.RepositoryKey, request.Metadata.CheckoutKey, branch, contextID, request.Metadata.CollectedAt)
 	return err
+}
+
+// Adoption updates only indexes, never immutable observations or retry hashes.
+func adoptObservationBranch(tx *sql.Tx, ownerID string, metadata ingestion.Metadata) (string, bool, error) {
+	arguments := []any{ownerID, metadata.SourceID, metadata.RepositoryKey, metadata.CheckoutKey, metadata.Branch}
+	var known string
+	err := tx.QueryRow(`SELECT branch_id FROM observation_branch_aliases WHERE owner_id=? AND source_id=? AND repository_key=? AND checkout_key=? AND branch=?`, arguments...).Scan(&known)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return "", false, err
+	}
+	if metadata.BranchID == "" {
+		if known != "" {
+			return known, false, nil
+		}
+		return metadata.Branch, false, nil
+	}
+	if known != "" {
+		return metadata.BranchID, false, nil
+	}
+	var existing int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM observation_branch_aliases WHERE owner_id=? AND source_id=? AND repository_key=? AND checkout_key=? AND branch_id=?`, ownerID, metadata.SourceID, metadata.RepositoryKey, metadata.CheckoutKey, metadata.BranchID).Scan(&existing); err != nil {
+		return "", false, err
+	}
+	if _, err := tx.Exec(`INSERT INTO observation_branch_aliases(owner_id,source_id,repository_key,checkout_key,branch,branch_id) VALUES(?,?,?,?,?,?)`, append(arguments, metadata.BranchID)...); err != nil {
+		return "", false, err
+	}
+	if existing == 0 {
+		// Merge the legacy head into the new stream without regressing a newer
+		// collection, including when a delayed snapshot triggers adoption.
+		if _, err := tx.Exec(`INSERT INTO observation_stream_heads(owner_id,source_id,repository_key,checkout_key,branch,context_id,collected_at)
+			SELECT owner_id,source_id,repository_key,checkout_key,?,context_id,collected_at FROM observation_stream_heads WHERE owner_id=? AND source_id=? AND repository_key=? AND checkout_key=? AND branch=?
+			ON CONFLICT(owner_id,source_id,repository_key,checkout_key,branch) DO UPDATE SET context_id=excluded.context_id,collected_at=excluded.collected_at WHERE excluded.collected_at>=observation_stream_heads.collected_at`, append([]any{metadata.BranchID}, arguments...)...); err != nil {
+			return "", false, err
+		}
+	}
+	return metadata.BranchID, existing == 0, nil
+}
+
+func legacyObservationIdentity(tx *sql.Tx, ownerID string, request ingestion.Request, branchID string, now int64) (string, error) {
+	metadata := request.Metadata
+	rows, err := tx.Query(`SELECT branch FROM observation_branch_aliases WHERE owner_id=? AND source_id=? AND repository_key=? AND checkout_key=? AND branch_id=?`, ownerID, metadata.SourceID, metadata.RepositoryKey, metadata.CheckoutKey, branchID)
+	if err != nil {
+		return "", err
+	}
+	labels := make([]string, 0)
+	for rows.Next() {
+		var label string
+		if err := rows.Scan(&label); err != nil {
+			rows.Close()
+			return "", err
+		}
+		labels = append(labels, label)
+	}
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		return "", err
+	}
+	for _, label := range labels {
+		legacy := request
+		legacy.Metadata.BranchID, legacy.Metadata.Branch = "", label
+		identity, err := observationIdentity(legacy)
+		if err != nil {
+			return "", err
+		}
+		var id string
+		err = tx.QueryRow(`SELECT i.context_id FROM observation_identities i JOIN contexts c ON c.id=i.context_id JOIN diffs d ON d.id=c.capture_id WHERE i.owner_id=? AND i.identity_hash=? AND d.expires_at>?`, ownerID, identity, now).Scan(&id)
+		if err == nil {
+			return id, nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return "", err
+		}
+	}
+	return "", sql.ErrNoRows
 }
 
 func pinObservationVersion(tx *sql.Tx, snapshot review.RepositoryDiff, patches map[string]review.FilePatch, now int64) error {

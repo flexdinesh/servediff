@@ -7,12 +7,14 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/flexdinesh/servediff/internal/collector"
 	"github.com/flexdinesh/servediff/internal/contextservice"
 	"github.com/flexdinesh/servediff/internal/daemon"
 	"github.com/flexdinesh/servediff/internal/diffsource"
+	"github.com/flexdinesh/servediff/internal/hooks"
 	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/review"
 	buildversion "github.com/flexdinesh/servediff/internal/version"
@@ -126,10 +128,36 @@ func collectionOptions(values options) (collector.Options, error) {
 	if err != nil {
 		return collector.Options{}, err
 	}
-	return collector.Options{SourceID: sourceID, Hostname: hostname, RunID: values.runID, Agent: values.agent, Trigger: values.trigger, CollectorVersion: buildversion.String(), SubmissionID: newSubmissionID()}, nil
+	return collector.Options{SourceID: sourceID, Hostname: hostname, RunID: values.runID, Agent: values.agent, Trigger: values.trigger, CollectorVersion: buildversion.String(), SubmissionID: newSubmissionID(), Base: values.base, Branch: values.branch,
+		OnSource: func(metadata ingestion.Metadata, comparison diffsource.Comparison) {
+			recordCollectorActivity(sourceActivity(metadata, comparison))
+		}}, nil
 }
 
-func collectSubmission(ctx context.Context, command string, values options, stdin *os.File) (ingestion.Request, error) {
+func sourceActivity(metadata ingestion.Metadata, comparison diffsource.Comparison) hooks.Activity {
+	return hooks.Activity{Stage: "source", Status: "observed", Path: metadata.Root,
+		Branch: metadata.Branch, BranchID: metadata.BranchID, RepositoryKey: metadata.RepositoryKey, CheckoutKey: metadata.CheckoutKey,
+		Base: comparison.BaseRef + "@" + comparison.BaseOID, Head: comparison.HeadOID, Agent: metadata.Agent, RunID: metadata.RunID}
+}
+
+func collectSubmission(ctx context.Context, command string, values options, stdin *os.File) (request ingestion.Request, failure error) {
+	recordCollectorActivity(hooks.Activity{Stage: "collection", Status: "started", InputPath: values.directory, Agent: values.agent, RunID: values.runID, Branch: values.branch, Base: values.base})
+	defer func() {
+		activity := hooks.Activity{Stage: "collection", Status: "collected", InputPath: values.directory}
+		if failure != nil {
+			activity.Status, activity.Error = "failed", failure.Error()
+		} else {
+			activity.Path, activity.Branch, activity.Base, activity.SubmissionID = request.Metadata.Root, request.Metadata.Branch, values.base, request.SubmissionID
+			activity.RepositoryKey, activity.CheckoutKey = request.Metadata.RepositoryKey, request.Metadata.CheckoutKey
+			if request.Metadata.Head != nil {
+				activity.Head = *request.Metadata.Head
+			}
+			if len(request.Scopes) > 0 {
+				activity.FileCount = len(request.Scopes[0].Snapshot.Files)
+			}
+		}
+		recordCollectorActivity(activity)
+	}()
 	settings, err := collectionOptions(values)
 	if err != nil {
 		return ingestion.Request{}, err
@@ -151,6 +179,18 @@ func collectSubmission(ctx context.Context, command string, values options, stdi
 		return ingestion.Request{}, errors.New("piped diff exceeds the 16 MiB input limit")
 	}
 	return collector.CollectPatch(ctx, string(raw), values.directory, settings)
+}
+
+func recordCollectorActivity(activity hooks.Activity, secrets ...string) {
+	for _, secret := range secrets {
+		if secret != "" {
+			activity.Error = strings.ReplaceAll(activity.Error, secret, "[redacted]")
+		}
+	}
+	directory, err := hooks.StateDirectory()
+	if err == nil {
+		hooks.Engine{Directory: directory}.Record(activity)
+	}
 }
 
 func collectInitialInput(ctx context.Context, values options, input daemon.InitialInput) (ingestion.Request, error) {

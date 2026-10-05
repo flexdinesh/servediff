@@ -21,6 +21,8 @@ at runtime; they do not capture an executable path during installation.
 The repository includes ready-to-use plugin artifacts. Installation requires no
 pnpm, mise or build step. Use each harness's own installer;
 restart active sessions after installing or updating.
+Restart the local servediff service with the updated binary too; older running
+servers cannot accept the new branch identity metadata.
 
 ### Codex
 
@@ -157,24 +159,48 @@ default unless an explicit config file, environment or `--listen` overrides it.
 
 ## Synchronization
 
-The worker captures all/staged/unstaged changes against HEAD, including untracked
-files. It retains patches and bounded full before/after contents for future
+The worker captures committed feature-branch changes and dirty files against the
+merge base with the local default branch (`origin/HEAD`, `main`, then `master`).
+Staged/unstaged scopes retain their HEAD/index meanings, including untracked
+files. If no default branch exists, live collection falls back to HEAD and logs
+the reason; object-only recovery requires an available baseline.
+It retains patches and bounded full before/after contents for future
 full-file viewing. It does not attribute edits to a turn or agent; completion is
 a trigger, and the worker may capture edits made after that trigger.
 
-Concurrent triggers coalesce per checkout/config location. Workers normalize
-nested directories to the checkout root. Exact contents, file modes, HEAD,
-branch, staging and repository identity determine the fingerprint; timestamps
+Nested hook directories resolve to the checkout root. A workspace directory is
+searched at most two levels and 128 directories, reading at most 128 entries per
+directory and excluding hidden directories,
+`node_modules`, and `vendor`. Discovery then includes registered live worktrees
+and up to 128 unmerged local branches without live worktrees. Removed worktrees
+can therefore recover committed branch changes from Git objects. It never
+fetches, checks out branches, creates worktrees, or searches the home directory
+globally. Supply the new path after moving a repository outside the supplied
+workspace; an old path alone cannot locate an arbitrary move.
+
+Repositories, checkouts, and branches enroll persistent identities in Git
+metadata. Paths, names, and remote URLs remain descriptive location hints.
+Renaming a branch or moving a checkout preserves enrolled identities and lets a
+later hook update the saved location. A fresh clone gets new identities; a full
+filesystem copy also copies enrollment metadata. If both copies remain live,
+the collector rejects the second location instead of silently merging sources;
+use a separate source identity for an independent copy. Read-only Git metadata
+cannot enroll safely; collection fails visibly
+instead of inventing a path identity. Keep Git metadata with the repository.
+
+Concurrent triggers coalesce by stable source/config/routing identity. Exact
+contents, file modes, HEAD, staging and repository identity determine the fingerprint; timestamps
 alone do not. A successful acknowledgement and a still-current stored context
 allow unchanged uploads to be skipped. Dirty-to-clean transitions submit an
 empty observation, superseding the old changed one. Unknown complete content
 identities are collected conservatively rather than falsely suppressed.
 
-Workers health-check the destination and start the local service if stopped.
+Workers save immutable collected payloads before checking the destination, then
+health-check the destination and start the local service if stopped.
 Each worker has a one-minute deadline, at most two attempts per payload, and a
 shared one-minute cooldown after failed startup. Pending immutable payloads
-retain retry IDs; newer checkout state supersedes obsolete pending data. Retries
-only run on later completion triggers, without a perpetual background loop.
+retain retry IDs and survive checkout removal. Retries run on later completion
+triggers or explicit retry commands, without a perpetual background loop.
 Server/database identity prevents ambiguous requests from being replayed into a
 replacement database.
 
@@ -183,7 +209,40 @@ and isolated `SERVEDIFF_RUNTIME_DIR` are respected. Pending data expires after
 seven days and is pruned toward a 256 MiB budget; active uploads are protected.
 Acknowledgements refresh after 24 hours so unchanged observations retain their
 server availability. Diagnostics stay in `hooks.log`, bounded to approximately
-128 KiB. Hooks never open a browser or write diagnostics into the conversation.
+128 KiB per log file, with one rotated backup. JSONL activities include discovery
+paths, stable identities, branch/base/HEAD, collection counts, ingestion attempts,
+acknowledgements, waiting state, skip reasons, and errors. Job `status.json` files
+retain the latest state. Logs exclude payload contents and credentials; pending
+files necessarily contain collected diffs and are private. Hooks never open a
+browser or write diagnostics into the conversation.
+
+Inspect and recover queued work:
+
+```sh
+servediff collector status
+servediff collector retry
+tail -n 50 ~/.local/state/servediff/hooks/hooks.log
+servediff hook --agent codex --retry
+```
+
+Status prints JSON. Retry schedules a finite pass over incomplete work for the
+current config and routing environment; it does not change destinations. Use the
+same `--config-file` and environment as the original hook. `waiting` identifies
+an unresolved source or incomplete delivery; inspect its error and pending files.
+An `ingestion` stage with `complete` status and a context ID confirms a committed
+server context. Manual-command logs use `acknowledged` for the same outcome.
+
+Manually recover committed changes even when another branch is checked out:
+
+```sh
+servediff review --path /path/to/repository --branch feature --base main --no-browser
+servediff review --path /path/to/checkout --base auto --no-browser
+```
+
+Manual review defaults to HEAD. `--branch` reads only Git objects, defaults its
+base to auto, and ignores the current checkout's dirty files. Deleted uncommitted
+files cannot be recovered unless a payload was captured first. Renamed/deleted
+refs also require surviving commits or a previously saved payload.
 
 Manual adapter invocation for diagnosis:
 

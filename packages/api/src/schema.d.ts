@@ -601,6 +601,8 @@ export interface components {
       root: string;
       worktreeName: string;
       branch: string;
+      /** @description Stable producer branch identity, preserved through branch renames. Optional for older producers and detached HEAD. */
+      branchId?: string;
       head: string | null;
       /**
        * Format: int64

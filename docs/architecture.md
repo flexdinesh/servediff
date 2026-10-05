@@ -95,6 +95,30 @@ bounded pending payloads locally and retry on subsequent completion triggers;
 there is no upstream relay or perpetual upload process. Manual collection
 commands continue reporting network failures directly.
 
+Hook discovery starts at the supplied directory, scans at most two child levels
+and 128 directories, then inspects registered worktrees and unmerged local
+branches. Live feature branches compare working contents with the merge base of
+the local default branch; staged/unstaged retain HEAD/index semantics. Branches
+without checkouts collect from immutable Git objects. Discovery never fetches
+or creates worktrees. Manual review preserves its HEAD default and exposes
+`--base` and `--branch` for explicit recovery.
+
+Collector repository, checkout, and branch identities persist in Git metadata.
+Paths, branch labels, and remote URLs are hints, so moves and renames preserve
+identity. Queue namespaces also include config and routing environment. Workers
+verify identities before using updated location hints. Saved payloads precede
+destination resolution and survive a removed checkout; replay keeps submission
+identity and respects destination/database identity. A filesystem copy carrying
+Git enrollment metadata retains the same identity; a fresh clone enrolls anew.
+
+Private collector state under `~/.local/state/servediff/hooks` stores finite
+requests, immutable pending payloads, acknowledgements, location hints and job
+statuses. Structured rotating `hooks.log` records discovery, collection,
+ingestion, waiting, errors and skip decisions, excluding credentials and captured
+contents. `collector status` exposes latest job statuses; `collector retry`
+schedules incomplete jobs in the current routing/config namespace. No perpetual
+retry worker or unrestricted filesystem search runs.
+
 ## Migration
 
 SQLite migrations preserve historical comments, reviewed marks and captures.

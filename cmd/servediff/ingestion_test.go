@@ -117,8 +117,13 @@ func TestReviewManualAndAgentHookShareGitCollection(t *testing.T) {
 	if received[1].Metadata.Agent != "test-agent" || received[1].Metadata.RunID != "container-1" {
 		t.Fatalf("hook metadata: %#v", received[1].Metadata)
 	}
-	if _, err := os.Stat(runtimeDir); !os.IsNotExist(err) {
-		t.Fatalf("remote ingestion touched local runtime: %v", err)
+	entries, err := os.ReadDir(runtimeDir)
+	if err != nil || len(entries) != 1 || entries[0].Name() != "hooks" {
+		t.Fatalf("remote ingestion created local service state: %v %v", entries, err)
+	}
+	log, err := os.ReadFile(filepath.Join(runtimeDir, "hooks", "hooks.log"))
+	if err != nil || !strings.Contains(string(log), `"status":"acknowledged"`) {
+		t.Fatalf("remote ingestion activity missing: %s %v", log, err)
 	}
 }
 
