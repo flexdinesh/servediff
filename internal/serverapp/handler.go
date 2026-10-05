@@ -28,6 +28,18 @@ func Handler(ctx context.Context, service *contextservice.Service, store *review
 	mux.Handle("/mcp", mcp)
 	mux.Handle("/mcp/", mcp)
 	mux.Handle("/control/", http.NotFoundHandler())
+	mux.HandleFunc("/api/v2/health", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			problem(w, 405, "Method not allowed")
+			return
+		}
+		if _, err := service.List(r.Context(), 1, ""); err != nil {
+			applicationError(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(ingestion.Health{StateID: service.UserID(), ProtocolVersion: ingestion.ProtocolVersion})
+	})
 	mux.HandleFunc("/api/v2/ingestions", func(w http.ResponseWriter, r *http.Request) { ingest(service, w, r) })
 	mux.HandleFunc("/api/v2/events", func(w http.ResponseWriter, r *http.Request) { stream(ctx, service, w, r) })
 	mux.Handle("/", httpapi.NewMultiWithContext(ctx, service, store, assets, defaultID))
@@ -55,6 +67,10 @@ func ingest(service *contextservice.Service, w http.ResponseWriter, r *http.Requ
 	}
 	if media := strings.Split(r.Header.Get("Content-Type"), ";")[0]; media != "application/json" {
 		problem(w, 415, "Expected application/json")
+		return
+	}
+	if expected := r.Header.Get("X-Servediff-State"); expected != "" && expected != service.UserID() {
+		problem(w, 409, "Server database identity changed; snapshot was not submitted")
 		return
 	}
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, ingestion.MaxRequestBytes))

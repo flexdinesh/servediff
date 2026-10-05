@@ -244,6 +244,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v2/health": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** @description Check authenticated database readiness and ingestion compatibility. State identity changes when the account database is replaced. */
+    get: operations["getIngestionHealth"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v2/ingestions": {
     parameters: {
       query?: never;
@@ -1361,10 +1378,37 @@ export interface operations {
       default: components["responses"]["Problem"];
     };
   };
-  ingestSnapshot: {
+  getIngestionHealth: {
     parameters: {
       query?: never;
       header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Ingestion is available. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            stateId: string;
+            protocolVersion: number;
+          };
+        };
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
+  ingestSnapshot: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description Optional destination state identity from the health endpoint. A changed database rejects submission with HTTP 409. */
+        "X-Servediff-State"?: string;
+      };
       path?: never;
       cookie?: never;
     };

@@ -1,0 +1,9 @@
+{
+  "name": "servediff",
+  "version": "0.0.0",
+  "description": "Sync latest worktree diffs after agent completion.",
+  "author": {
+    "name": "servediff"
+  },
+  "license": "MIT"
+}

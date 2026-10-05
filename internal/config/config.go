@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/flexdinesh/servediff/internal/controlapi"
 	"github.com/flexdinesh/servediff/internal/processlock"
@@ -41,7 +42,12 @@ func Path() (string, error) {
 
 // Load creates defaults once. The lock also serializes first-use and config edits.
 func Load() (Values, error) {
-	path, err := Path()
+	return ReadFile("")
+}
+
+// ReadFile reads persisted values only. An empty path selects the machine config.
+func ReadFile(path string) (Values, error) {
+	path, err := resolvePath(path)
 	if err != nil {
 		return Values{}, err
 	}
@@ -51,6 +57,45 @@ func Load() (Values, error) {
 	}
 	defer lock.Close()
 	return load(path)
+}
+
+func resolvePath(path string) (string, error) {
+	if path == "" {
+		return Path()
+	}
+	return filepath.Abs(path)
+}
+
+// LoadFile resolves defaults, a JSON file, then environment overrides. It never
+// persists environment values. An empty path selects the machine config.
+func LoadFile(path string) (Values, error) {
+	values, err := ReadFile(path)
+	if err != nil {
+		return values, err
+	}
+	for _, field := range []struct {
+		name   string
+		target *string
+	}{
+		{"SERVEDIFF_HOST", &values.Host},
+		{"SERVEDIFF_STATE", &values.State},
+		{"SERVEDIFF_WEB_DIR", &values.WebDir},
+	} {
+		if value, exists := os.LookupEnv(field.name); exists {
+			*field.target = value
+		}
+	}
+	if raw, exists := os.LookupEnv("SERVEDIFF_PORT"); exists {
+		port, err := strconv.Atoi(raw)
+		if err != nil {
+			return values, fmt.Errorf("invalid SERVEDIFF_PORT: %w", err)
+		}
+		values.Port = &port
+	}
+	if err := values.Validate(); err != nil {
+		return values, fmt.Errorf("invalid environment config: %w", err)
+	}
+	return values, nil
 }
 
 func load(path string) (Values, error) {
@@ -121,6 +166,9 @@ func (values Values) Validate() error {
 }
 
 func (values Values) Settings() (controlapi.Settings, error) {
+	if err := values.Validate(); err != nil {
+		return controlapi.Settings{}, err
+	}
 	settings := controlapi.Settings{Host: net.ParseIP(values.Host).String(), Port: -1, State: values.State, WebDir: values.WebDir}
 	if values.Port != nil {
 		settings.Port = *values.Port
@@ -139,7 +187,12 @@ func (values Values) Settings() (controlapi.Settings, error) {
 }
 
 func Edit(key string, value *string) error {
-	path, err := Path()
+	return EditFile("", key, value)
+}
+
+// EditFile edits only persisted values, independent of environment overrides.
+func EditFile(path, key string, value *string) error {
+	path, err := resolvePath(path)
 	if err != nil {
 		return err
 	}

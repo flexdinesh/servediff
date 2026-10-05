@@ -39,6 +39,7 @@ type options struct {
 	sourceID      string
 	pathSet       bool
 	config        string
+	configFile    string
 }
 
 func parseOptions(arguments []string, stderr io.Writer) (options, error) {
@@ -60,6 +61,7 @@ func parseOptionsMode(arguments []string, stderr io.Writer, internal bool, foreg
 		flags.StringVar(&values.host, "host", values.host, "IP address to bind (foreground/internal only)")
 	}
 	flags.StringVar(&values.config, "config", "", "JSON settings override for service start/restart")
+	flags.StringVar(&values.configFile, "config-file", "", "machine JSON config path; defaults to SERVEDIFF_CONFIG_PATH")
 	flags.IntVar(&values.port, "port", 0, "HTTP port; defaults to the first available port from 7981 to 7990")
 	flags.IntVar(&values.port, "p", 0, "HTTP port; defaults to the first available port from 7981 to 7990")
 	flags.StringVar(&values.fixture, "fixture", "", "read a Git patch fixture")
@@ -146,7 +148,7 @@ func parseOptionsMode(arguments []string, stderr io.Writer, internal bool, foreg
 func normalizeArguments(arguments []string) []string {
 	valueOptions := map[string]bool{
 		"-p": true, "--port": true, "--host": true, "--fixture": true,
-		"--config": true, "--path": true, "--server": true, "--token": true, "--trigger": true, "--agent": true, "--run-id": true, "--source-id": true,
+		"--config": true, "--config-file": true, "--path": true, "--server": true, "--token": true, "--trigger": true, "--agent": true, "--run-id": true, "--source-id": true,
 		"--state": true, "--web-dir": true, "--capture": true, "--runtime-dir": true,
 	}
 	options, positionals := make([]string, 0, len(arguments)), make([]string, 0, 1)

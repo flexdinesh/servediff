@@ -3,6 +3,8 @@ packages:
   - packages/*
 
 catalog:
+  "@opencode/plugin": 2.0.22
+  "@earendil-works/pi-coding-agent": 1.0.0
   "@pierre/diffs": 1.4.1
   "@playwright/test": 1.63.0
   "@types/node": 26.4.1
@@ -27,4 +29,7 @@ catalog:
   husky: 9.1.7
 
 allowBuilds:
+  "@google/genai": false
   esbuild: true
+  msgpackr-extract: false
+  protobufjs: false

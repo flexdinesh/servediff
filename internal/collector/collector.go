@@ -6,12 +6,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -34,92 +36,148 @@ type Options struct {
 }
 
 func Collect(ctx context.Context, directory string, options Options) (ingestion.Request, error) {
+	request, _, err := CollectChanged(ctx, directory, options, "")
+	return request, err
+}
+
+// ErrUnchanged means the checkout still matches its acknowledged fingerprint.
+var ErrUnchanged = errors.New("checkout unchanged")
+
+// CollectChanged checks complete content identity before constructing previews.
+// A nonempty fingerprint is safe to persist only after successful ingestion.
+// Unknown identities always produce a request, even when a prior value exists.
+func CollectChanged(ctx context.Context, directory string, options Options, previousFingerprint string) (ingestion.Request, string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	source, err := diffsource.OpenRepository(ctx, directory)
 	if err != nil {
-		return ingestion.Request{}, err
+		return ingestion.Request{}, "", err
 	}
 	options, err = defaults(options)
 	if err != nil {
-		return ingestion.Request{}, err
+		return ingestion.Request{}, "", err
 	}
 	for attempt := 0; attempt < 2; attempt++ {
-		request, err := collectRepository(ctx, source, options)
+		request, fingerprint, err := collectRepositoryChanged(ctx, source, options, previousFingerprint)
 		if err == nil || !errors.Is(err, errChanged) {
-			return request, err
+			return request, fingerprint, err
 		}
 	}
-	return ingestion.Request{}, errChanged
+	return ingestion.Request{}, "", errChanged
 }
 
 var errChanged = errors.New("checkout changed during collection; retry when edits have stopped")
 
 func collectRepository(ctx context.Context, source diffsource.Source, options Options) (ingestion.Request, error) {
+	request, _, err := collectRepositoryChanged(ctx, source, options, "")
+	return request, err
+}
+
+func collectRepositoryChanged(ctx context.Context, source diffsource.Source, options Options, previousFingerprint string) (ingestion.Request, string, error) {
 	facts, err := diffsource.Metadata(ctx, source.Root())
 	if err != nil {
-		return ingestion.Request{}, err
+		return ingestion.Request{}, "", err
 	}
 	snapshots := make([]review.RepositoryDiff, 0, len(source.Support().Scopes))
 	for _, mode := range source.Support().Scopes {
 		snapshot, err := source.Snapshot(ctx, mode)
 		if err != nil {
-			return ingestion.Request{}, err
+			return ingestion.Request{}, "", err
 		}
 		if len(snapshots) > 0 && (snapshot.Branch != snapshots[0].Branch || !sameHead(snapshot.Head, snapshots[0].Head)) {
-			return ingestion.Request{}, errChanged
+			return ingestion.Request{}, "", errChanged
 		}
 		snapshots = append(snapshots, snapshot)
 	}
 	contentHash, err := diffsource.ContentHash(ctx, source, snapshots)
 	if err != nil {
 		if isChanged(err) {
-			return ingestion.Request{}, errChanged
+			return ingestion.Request{}, "", errChanged
 		}
-		return ingestion.Request{}, err
+		return ingestion.Request{}, "", err
 	}
-	remaining := previewBudget
+	metadata := repositoryMetadata(source.Root(), facts, snapshots[0], options)
 	scopes := make([]ingestion.Scope, 0, len(snapshots))
 	for _, snapshot := range snapshots {
+		scopes = append(scopes, ingestion.Scope{Snapshot: snapshot})
+	}
+	observation := request(metadata, scopes, options)
+	observation.ContentHash = contentHash
+	fingerprint := Fingerprint(observation)
+	unchanged := fingerprint != "" && fingerprint == previousFingerprint
+	remaining := previewBudget
+	for index, snapshot := range snapshots {
+		if unchanged {
+			break
+		}
 		scope, err := collectScope(ctx, source, snapshot, &remaining)
 		if err != nil {
 			if isChanged(err) {
-				return ingestion.Request{}, errChanged
+				return ingestion.Request{}, "", errChanged
 			}
-			return ingestion.Request{}, err
+			return ingestion.Request{}, "", err
 		}
-		scopes = append(scopes, scope)
+		observation.Scopes[index] = scope
 	}
 	for _, snapshot := range snapshots {
 		latest, err := source.Snapshot(ctx, snapshot.Mode)
 		if err != nil {
-			return ingestion.Request{}, err
+			return ingestion.Request{}, "", err
 		}
 		if latest.Revision != snapshot.Revision {
-			return ingestion.Request{}, errChanged
+			return ingestion.Request{}, "", errChanged
 		}
 	}
 	latestHash, err := diffsource.ContentHash(ctx, source, snapshots)
 	if err != nil {
 		if isChanged(err) {
-			return ingestion.Request{}, errChanged
+			return ingestion.Request{}, "", errChanged
 		}
-		return ingestion.Request{}, err
+		return ingestion.Request{}, "", err
 	}
 	if latestHash != contentHash {
-		return ingestion.Request{}, errChanged
+		return ingestion.Request{}, "", errChanged
 	}
 	latestFacts, err := diffsource.Metadata(ctx, source.Root())
 	if err != nil {
-		return ingestion.Request{}, err
+		return ingestion.Request{}, "", err
 	}
 	if latestFacts != facts {
-		return ingestion.Request{}, errChanged
+		return ingestion.Request{}, "", errChanged
 	}
-	metadata := repositoryMetadata(source.Root(), facts, snapshots[0], options)
-	observation := request(metadata, scopes, options)
-	observation.ContentHash = contentHash
-	return observation, nil
+	if unchanged {
+		return ingestion.Request{}, fingerprint, ErrUnchanged
+	}
+	return observation, fingerprint, nil
+}
+
+// Fingerprint identifies checkout contents and stable provenance, excluding
+// submission/agent/session/time and filesystem-based snapshot revisions.
+// Empty means full identity cannot be proven; never use it to suppress a sync.
+func Fingerprint(request ingestion.Request) string {
+	if request.ContentHash == "" {
+		return ""
+	}
+	metadata := request.Metadata
+	metadata.RunID, metadata.Agent, metadata.Trigger, metadata.CollectorVersion = "", "", "", ""
+	metadata.CollectedAt = 0
+	scopes := make([]string, 0, len(request.Scopes))
+	for _, scope := range request.Scopes {
+		scopes = append(scopes, scope.Snapshot.Source+":"+string(scope.Snapshot.Mode))
+	}
+	sort.Strings(scopes)
+	identity := struct {
+		Version     string
+		Protocol    int
+		ContentHash string
+		Metadata    ingestion.Metadata
+		Scopes      []string
+	}{"collector-fingerprint-v1", request.ProtocolVersion, request.ContentHash, metadata, scopes}
+	encoded, err := json.Marshal(identity)
+	if err != nil {
+		return ""
+	}
+	return hash(string(encoded))
 }
 
 func collectScope(ctx context.Context, source diffsource.Source, snapshot review.RepositoryDiff, remaining *int) (ingestion.Scope, error) {
