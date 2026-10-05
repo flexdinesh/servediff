@@ -79,7 +79,7 @@ func TestAgentHooksPublishLatestCheckoutAndCompleteFileContents(t *testing.T) {
 	}
 	first, second := createWorktree(t, "hook-first"), createWorktree(t, "hook-second")
 	for _, path := range []string{first, second} {
-		promptHook(t, harness, hookInput(t, path), "--agent", "codex", "--config-file", configFile)
+		promptHook(t, harness, hookInput(t, path), "--harness", "codex", "--config-file", configFile)
 	}
 	status, entries := waitHookCatalog(t, harness, 2)
 	var firstID string
@@ -110,7 +110,7 @@ func TestAgentHooksPublishLatestCheckoutAndCompleteFileContents(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(first, "value.txt"), []byte(filepath.Base(first)+"\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	promptHook(t, harness, nil, "--agent", "pi", "--path", first, "--config-file", configFile)
+	promptHook(t, harness, nil, "--harness", "pi", "--path", first, "--config-file", configFile)
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		_, entries = waitHookCatalog(t, harness, 3)
@@ -130,7 +130,7 @@ func TestAgentHooksPublishLatestCheckoutAndCompleteFileContents(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(first, "value.txt"), []byte("before\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	promptHook(t, harness, nil, "--agent", "pi", "--path", first, "--config-file", configFile)
+	promptHook(t, harness, nil, "--harness", "pi", "--path", first, "--config-file", configFile)
 	_, entries = waitHookCatalog(t, harness, 4)
 	clean, stale := false, false
 	for _, entry := range entries {
@@ -183,7 +183,7 @@ func TestHookReturnsBeforeRemoteIngestionAndSkipsUnchangedUploads(t *testing.T) 
 		server.Close()
 	}()
 	harness.environment = append(harness.environment, "SERVEDIFF_SERVER_URL="+server.URL, "SERVEDIFF_TOKEN=test-token", "XDG_CONFIG_HOME="+t.TempDir())
-	promptHook(t, harness, hookInput(t, path), "--agent", "claude")
+	promptHook(t, harness, hookInput(t, path), "--harness", "claude")
 	select {
 	case input := <-requests:
 		if len(input.Scopes) != 3 || input.Metadata.Root != path {
@@ -215,7 +215,7 @@ func TestHookReturnsBeforeRemoteIngestionAndSkipsUnchangedUploads(t *testing.T) 
 	defer other.Close()
 	otherHarness := harness
 	otherHarness.environment = append(append([]string(nil), harness.environment...), "SERVEDIFF_SERVER_URL="+other.URL)
-	promptHook(t, otherHarness, nil, "--agent", "pi", "--path", path)
+	promptHook(t, otherHarness, nil, "--harness", "pi", "--path", path)
 	select {
 	case <-otherRequests:
 	case <-time.After(10 * time.Second):
@@ -235,7 +235,7 @@ func TestHookReturnsBeforeRemoteIngestionAndSkipsUnchangedUploads(t *testing.T) 
 		time.Sleep(10 * time.Millisecond)
 	}
 	for range 3 {
-		promptHook(t, harness, nil, "--agent", "opencode", "--path", path)
+		promptHook(t, harness, nil, "--harness", "opencode", "--path", path)
 	}
 	select {
 	case <-confirmations:
@@ -339,7 +339,7 @@ func TestHookDiscoversCommittedBranchFromParentWorkspace(t *testing.T) {
 		t.Fatal(err)
 	}
 	workspace := filepath.Dir(root)
-	promptHook(t, harness, hookInput(t, workspace), "--agent", "codex", "--config-file", configFile)
+	promptHook(t, harness, hookInput(t, workspace), "--harness", "codex", "--config-file", configFile)
 	serverStatus, contexts := waitHookCatalog(t, harness, 2)
 	var recovered *contextservice.Context
 	for index := range contexts {
@@ -422,7 +422,7 @@ func TestCollectorRetryDeliversCaptureAfterHealthOutageAndCheckoutRemoval(t *tes
 	}))
 	defer server.Close()
 	harness.environment = append(harness.environment, "SERVEDIFF_SERVER_URL="+server.URL, "SERVEDIFF_TOKEN=isolated-token")
-	promptHook(t, harness, hookInput(t, root), "--agent", "codex")
+	promptHook(t, harness, hookInput(t, root), "--harness", "codex")
 	waitCollectorStatus(t, harness, func(activity hooks.Activity) bool { return activity.Status == "waiting" })
 	paths, err := filepath.Glob(filepath.Join(harness.runtimeDir, "hooks", "jobs", "*", "*.pending.json"))
 	if err != nil || len(paths) != 1 {

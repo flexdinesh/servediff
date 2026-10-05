@@ -105,10 +105,16 @@ tail -n 50 ~/.local/state/servediff/hooks/hooks.log
 servediff review --branch feature --base main --no-browser
 ```
 
-An agent hook uses the same collection operation as a manual review:
+Manually schedule the same detached collection used by harness plugins:
 
 ```sh
-servediff review --trigger agent-hook --agent my-agent --run-id run-123 --no-browser
+servediff hook --harness codex --path /path/to/repo
+```
+
+To collect synchronously with harness metadata:
+
+```sh
+servediff review --trigger agent-hook --harness codex --run-id run-123 --no-browser
 ```
 
 Use `--source-id` to supply a stable source/container identity. Hostnames,

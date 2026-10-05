@@ -37,7 +37,7 @@ function requestSync(directory, sessionID) {
     try {
         const args = [
             "hook",
-            "--agent",
+            "--harness",
             "opencode",
             "--path",
             directory,

@@ -56,7 +56,7 @@ func parseOptionsMode(arguments []string, stderr io.Writer, internal bool, foreg
 	flags.StringVar(&values.server, "server", values.server, "ingestion server URL; defaults to local service")
 	flags.StringVar(&values.token, "token", values.token, "ingestion token; prefer SERVEDIFF_TOKEN")
 	flags.StringVar(&values.trigger, "trigger", values.trigger, "collection trigger: manual or agent-hook")
-	flags.StringVar(&values.agent, "agent", "", "agent name recorded with the observation")
+	flags.StringVar(&values.agent, "harness", "", "harness name recorded with the observation")
 	flags.StringVar(&values.runID, "run-id", "", "agent or container run identity")
 	flags.StringVar(&values.sourceID, "source-id", "", "source identity; defaults to persistent local identity")
 	flags.StringVar(&values.base, "base", "", "comparison baseline: HEAD (default), auto, or Git ref")
@@ -152,7 +152,7 @@ func parseOptionsMode(arguments []string, stderr io.Writer, internal bool, foreg
 func normalizeArguments(arguments []string) []string {
 	valueOptions := map[string]bool{
 		"-p": true, "--port": true, "--host": true, "--fixture": true,
-		"--config": true, "--config-file": true, "--path": true, "--server": true, "--token": true, "--trigger": true, "--agent": true, "--run-id": true, "--source-id": true,
+		"--config": true, "--config-file": true, "--path": true, "--server": true, "--token": true, "--trigger": true, "--harness": true, "--run-id": true, "--source-id": true,
 		"--state": true, "--web-dir": true, "--capture": true, "--runtime-dir": true,
 		"--base": true, "--branch": true,
 	}

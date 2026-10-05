@@ -142,7 +142,7 @@ process.exit(37);
         );
         assert.deepEqual(result, { stdout: "", stderr: "" });
         assert.deepEqual(JSON.parse(await readFile(output, "utf8")), {
-          args: ["hook", "--agent", agent],
+          args: ["hook", "--harness", agent],
           stdin: event,
           config: configFile,
         });

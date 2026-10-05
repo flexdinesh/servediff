@@ -68,7 +68,7 @@ setTimeout(() => writeFileSync(${JSON.stringify(output)}, JSON.stringify(process
     }
     assert.deepEqual(JSON.parse(actual), [
       "hook",
-      "--agent",
+      "--harness",
       "pi",
       "--path",
       "/a checkout/$(touch sentinel)",
@@ -197,7 +197,7 @@ for (const agent of ["pi", "opencode"]) {
       assert.deepEqual(JSON.parse(actual), {
         args: [
           "hook",
-          "--agent",
+          "--harness",
           agent,
           "--path",
           "/worktree",

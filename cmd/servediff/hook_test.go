@@ -19,13 +19,37 @@ func TestHookNormalizesNativeInputAndExplicitArguments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	event, err := parseHookEvent([]string{"--agent", "codex"}, strings.NewReader(`{"cwd":`+string(path)+`,"session_id":"session","hook_event_name":"Stop","stop_hook_active":true}`), io.Discard)
+	event, err := parseHookEvent([]string{"--harness", "codex"}, strings.NewReader(`{"cwd":`+string(path)+`,"session_id":"session","hook_event_name":"Stop","stop_hook_active":true}`), io.Discard)
 	if err != nil || event.Path != root || event.RunID != "session" || event.Agent != "codex" {
 		t.Fatalf("native input: %#v, %v", event, err)
 	}
-	event, err = parseHookEvent([]string{"--agent", "pi", "--path", root, "--run-id", "explicit", "--config-file", filepath.Join(root, "machine.json")}, nil, io.Discard)
+	event, err = parseHookEvent([]string{"--harness", "pi", "--path", root, "--run-id", "explicit", "--config-file", filepath.Join(root, "machine.json")}, nil, io.Discard)
 	if err != nil || event.Path != root || event.RunID != "explicit" || !filepath.IsAbs(event.ConfigFile) {
 		t.Fatalf("explicit args: %#v, %v", event, err)
+	}
+}
+
+func TestHookHarnessSelectionWithoutRunID(t *testing.T) {
+	root := t.TempDir()
+	for _, harness := range []string{"codex", "claude", "opencode", "pi"} {
+		event, err := parseHookEvent([]string{"--harness", harness, "--path", root}, nil, io.Discard)
+		if err != nil || event.Agent != harness || event.Path != root || event.RunID != "" {
+			t.Fatalf("harness %s: %#v, %v", harness, event, err)
+		}
+	}
+}
+
+func TestHookRejectsInvalidHarnessSelection(t *testing.T) {
+	for _, arguments := range [][]string{
+		{"--harness", "unknown", "--path", t.TempDir()},
+		{"--path", t.TempDir()},
+	} {
+		if _, err := parseHookEvent(arguments, nil, io.Discard); err == nil || err.Error() != "hook requires a supported harness name" {
+			t.Fatalf("arguments %v: %v", arguments, err)
+		}
+	}
+	if _, err := parseHookEvent([]string{"--agent", "codex", "--path", t.TempDir()}, nil, io.Discard); err == nil || !strings.Contains(err.Error(), "flag provided but not defined: -agent") {
+		t.Fatalf("removed flag: %v", err)
 	}
 }
 
@@ -33,14 +57,14 @@ func TestHookInvalidEventsFailOpenWithoutConversationOutput(t *testing.T) {
 	t.Setenv("SERVEDIFF_RUNTIME_DIR", t.TempDir())
 	for _, input := range []string{`{`, `{}`, `{"cwd":"/tmp"} {}`, `null`} {
 		var output strings.Builder
-		if err := runHook([]string{"--agent", "claude"}, strings.NewReader(input), &output); err != nil || output.Len() != 0 {
+		if err := runHook([]string{"--harness", "claude"}, strings.NewReader(input), &output); err != nil || output.Len() != 0 {
 			t.Fatalf("invalid event leaked into conversation: %v %q", err, output.String())
 		}
 	}
 }
 
 func TestHookSeparatesEffectiveRoutesWithoutPersistingCredentials(t *testing.T) {
-	args := []string{"--agent", "pi", "--path", t.TempDir()}
+	args := []string{"--harness", "pi", "--path", t.TempDir()}
 	t.Setenv("SERVEDIFF_SERVER_URL", "https://first.example.com")
 	t.Setenv("SERVEDIFF_TOKEN", "private-first-token")
 	first, err := parseHookEvent(args, nil, io.Discard)
@@ -64,7 +88,7 @@ func TestHookSeparatesEffectiveRoutesWithoutPersistingCredentials(t *testing.T) 
 }
 
 func TestHookRetryNeedsNoCheckoutOrNativeInput(t *testing.T) {
-	event, err := parseHookEvent([]string{"--agent", "codex", "--retry"}, nil, io.Discard)
+	event, err := parseHookEvent([]string{"--harness", "codex", "--retry"}, nil, io.Discard)
 	if err != nil || !event.Retry || event.Path != "" || event.Base != "auto" {
 		t.Fatalf("retry: %#v %v", event, err)
 	}

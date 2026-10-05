@@ -377,7 +377,7 @@ func main() {
 func writeHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "  Usage: servediff review [--path DIRECTORY] [options]")
 	fmt.Fprintln(writer, "         servediff pipe [--path DIRECTORY] [options]")
-	fmt.Fprintln(writer, "         servediff hook --agent NAME [--path DIRECTORY] [--config-file FILE]")
+	fmt.Fprintln(writer, "         servediff hook --harness NAME [--path DIRECTORY] [--config-file FILE]")
 	fmt.Fprintln(writer, "         servediff collector {status|retry} [--config-file FILE]")
 	fmt.Fprintln(writer, "         servediff service {start|stop|restart|status} [options]")
 	fmt.Fprintln(writer, "         servediff service config {set KEY VALUE|get KEY|remove KEY}")

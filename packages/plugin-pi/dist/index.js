@@ -12,7 +12,7 @@ function requestSync(directory, sessionID) {
     try {
         const args = [
             "hook",
-            "--agent",
+            "--harness",
             "pi",
             "--path",
             directory,

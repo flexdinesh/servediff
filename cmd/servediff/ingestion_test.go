@@ -88,7 +88,7 @@ func TestReviewManualAndAgentHookShareGitCollection(t *testing.T) {
 		stdin := testInputFile(t, []byte("review must ignore redirected stdin"))
 		arguments := []string{"review", "--path", root, "--source-id", "test-source", "--no-browser", "--trigger", trigger}
 		if trigger == "agent-hook" {
-			arguments = append(arguments, "--agent", "test-agent", "--run-id", "container-1")
+			arguments = append(arguments, "--harness", "test-agent", "--run-id", "container-1")
 		}
 		var output bytes.Buffer
 		if err := run(t.Context(), arguments, stdin, &output, io.Discard); err != nil {
