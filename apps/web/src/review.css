@@ -678,18 +678,33 @@
   padding: var(--space-6);
   box-shadow: var(--shadow-overlay);
 }
-.delete-comment-dialog {
+.delete-comment-dialog,
+.delete-dialog {
   border: 1px solid var(--border-control);
 }
-.delete-comment-dialog [data-slot="dialog-footer"] {
+.delete-comment-dialog [data-slot="dialog-footer"],
+.delete-dialog [data-slot="dialog-footer"] {
   margin: 0;
   padding: var(--space-3) 0 0;
   background: transparent;
 }
 .delete-comment-confirm,
-.delete-comment-confirm:hover {
+.delete-comment-confirm:hover,
+.delete-confirm,
+.delete-confirm:hover {
   color: var(--bg);
   background: var(--error);
+}
+.delete-context-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+.delete-context-details strong {
+  color: var(--fg);
 }
 .copy-dialog p {
   color: var(--text-secondary);
@@ -763,6 +778,7 @@
   .comment-location,
   .comment-card summary,
   .copy-dialog [data-slot="button"],
+  .delete-dialog [data-slot="button"],
   .toolbar [data-slot="button"],
   .toolbar [data-slot="toggle"],
   .toolbar [data-slot="select-trigger"],

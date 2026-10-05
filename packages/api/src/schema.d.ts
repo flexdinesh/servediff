@@ -323,7 +323,8 @@ export interface paths {
     get: operations["getContext"];
     put?: never;
     post?: never;
-    delete?: never;
+    /** @description Permanently delete this context or snapshot, including all scopes, comments, review marks, and retained diff data. Repository files are unchanged. */
+    delete: operations["deleteContext"];
     options?: never;
     head?: never;
     patch?: never;
@@ -1505,6 +1506,28 @@ export interface operations {
           "application/json": components["schemas"]["Context"];
         };
       };
+      default: components["responses"]["Problem"];
+    };
+  };
+  deleteContext: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        contextId: components["parameters"]["ContextId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Context and its review data deleted. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      404: components["responses"]["Problem"];
       default: components["responses"]["Problem"];
     };
   };

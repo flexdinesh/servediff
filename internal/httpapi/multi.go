@@ -25,6 +25,7 @@ type Provider interface {
 	Resolve(context.Context, string) (session.Session, error)
 	List(context.Context, int, string) (contextservice.Page, error)
 	Get(context.Context, string) (contextservice.Context, error)
+	Delete(context.Context, string) error
 	UserID() string
 }
 
@@ -194,6 +195,17 @@ func (multi *Multi) ServeHTTP(response http.ResponseWriter, request *http.Reques
 			return
 		}
 		if len(parts) == 1 {
+			if request.Method == http.MethodDelete {
+				if err := multi.provider.Delete(request.Context(), contextID); err != nil {
+					base.problem(response, err)
+					return
+				}
+				multi.mu.Lock()
+				delete(multi.caches, contextID)
+				multi.mu.Unlock()
+				response.WriteHeader(http.StatusNoContent)
+				return
+			}
 			if request.Method != http.MethodGet {
 				base.problem(response, diffsource.Error(405, "Method not allowed"))
 				return
