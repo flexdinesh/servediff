@@ -44,9 +44,12 @@ type Engine struct {
 	Normalize func(context.Context, Event) (Event, error)
 	Resolve   func(context.Context, Event) (Target, error)
 	Collect   func(context.Context, Event, string) (ingestion.Request, string, error)
-	Deliver   func(context.Context, Target, ingestion.Request) error
-	Launch    func(string) error
-	Timeout   time.Duration
+	Deliver   func(context.Context, Target, ingestion.Request) (string, error)
+	// Confirm checks cached context freshness only after collection reports
+	// unchanged. Production callers provide it to detect other producers.
+	Confirm func(context.Context, Target, string) (bool, error)
+	Launch  func(string) error
+	Timeout time.Duration
 }
 
 type queued struct {
@@ -57,6 +60,7 @@ type queued struct {
 type state struct {
 	Target      Target    `json:"target"`
 	Fingerprint string    `json:"fingerprint"`
+	ContextID   string    `json:"contextId,omitempty"`
 	At          time.Time `json:"at"`
 }
 
@@ -208,16 +212,17 @@ func (engine Engine) sync(ctx context.Context, directory string, event Event) er
 	pendingPath := filepath.Join(directory, stream+".pending.json")
 	var ack state
 	previous := ""
-	if readJSON(ackPath, &ack) == nil && target.Identity != "" && ack.Target == target && time.Since(ack.At) < acknowledgementTTL {
+	if readJSON(ackPath, &ack) == nil && target.Identity != "" && ack.Target == target && (engine.Confirm == nil || ack.ContextID != "") && time.Since(ack.At) < acknowledgementTTL {
 		previous = ack.Fingerprint
 	}
 	var saved pending
 	hasPending := readJSON(pendingPath, &saved) == nil && target.Identity != "" && saved.Target == target && time.Since(saved.At) < pendingTTL
 	if hasPending && saved.Fingerprint == "" {
-		if err := engine.Deliver(ctx, target, saved.Request); err != nil {
+		contextID, err := engine.Deliver(ctx, target, saved.Request)
+		if err != nil {
 			return err
 		}
-		if err := writeJSON(ackPath, state{Target: target, At: time.Now()}); err != nil {
+		if err := writeJSON(ackPath, state{Target: target, ContextID: contextID, At: time.Now()}); err != nil {
 			return err
 		}
 		if err := os.Remove(pendingPath); err != nil {
@@ -230,9 +235,21 @@ func (engine Engine) sync(ctx context.Context, directory string, event Event) er
 	}
 	request, fingerprint, err := engine.Collect(ctx, event, previous)
 	if errors.Is(err, ErrUnchanged) {
-		// A previously failed observation is now obsolete (e.g. reverted edits).
-		_ = os.Remove(pendingPath)
-		return nil
+		current := true
+		if engine.Confirm != nil {
+			current, err = engine.Confirm(ctx, target, ack.ContextID)
+			if err != nil {
+				return err
+			}
+		}
+		if current {
+			// A failed observation is now obsolete (e.g. reverted edits).
+			_ = os.Remove(pendingPath)
+			return nil
+		}
+		// Another collector advanced the stream or retention removed our
+		// context. Recollect even though local files still match our cache.
+		request, fingerprint, err = engine.Collect(ctx, event, "")
 	}
 	if err != nil {
 		return err
@@ -245,10 +262,11 @@ func (engine Engine) sync(ctx context.Context, directory string, event Event) er
 			return err
 		}
 	}
-	if err := engine.Deliver(ctx, target, request); err != nil {
+	contextID, err := engine.Deliver(ctx, target, request)
+	if err != nil {
 		return err
 	}
-	if err := writeJSON(ackPath, state{Target: target, Fingerprint: fingerprint, At: time.Now()}); err != nil {
+	if err := writeJSON(ackPath, state{Target: target, ContextID: contextID, Fingerprint: fingerprint, At: time.Now()}); err != nil {
 		return err
 	}
 	return os.Remove(pendingPath)

@@ -46,9 +46,9 @@ func TestAcknowledgedFingerprintAndCleanTransition(t *testing.T) {
 		}
 		return ingestion.Request{SubmissionID: current}, current, nil
 	}
-	engine.Deliver = func(_ context.Context, _ Target, request ingestion.Request) error {
+	engine.Deliver = func(_ context.Context, _ Target, request ingestion.Request) (string, error) {
 		sent = append(sent, request.SubmissionID)
-		return nil
+		return "context", nil
 	}
 	for _, state := range []string{"dirty", "dirty", "clean", "clean"} {
 		current = state
@@ -71,12 +71,12 @@ func TestAmbiguousRetryPreservesSubmissionAndNewStateSupersedes(t *testing.T) {
 		return ingestion.Request{SubmissionID: current + time.Now().String()}, current, nil
 	}
 	var sent []ingestion.Request
-	engine.Deliver = func(_ context.Context, _ Target, request ingestion.Request) error {
+	engine.Deliver = func(_ context.Context, _ Target, request ingestion.Request) (string, error) {
 		sent = append(sent, request)
 		if len(sent) < 3 {
-			return errors.New("receipt lost")
+			return "", errors.New("receipt lost")
 		}
-		return nil
+		return "context", nil
 	}
 	for i := 0; i < 3; i++ {
 		if i == 2 {
@@ -102,12 +102,12 @@ func TestTargetReplacementInvalidatesAcknowledgementAndPending(t *testing.T) {
 		return ingestion.Request{SubmissionID: time.Now().String()}, "same", nil
 	}
 	var sent []ingestion.Request
-	engine.Deliver = func(_ context.Context, _ Target, request ingestion.Request) error {
+	engine.Deliver = func(_ context.Context, _ Target, request ingestion.Request) (string, error) {
 		sent = append(sent, request)
 		if len(sent) == 2 {
-			return errors.New("receipt lost")
+			return "", errors.New("receipt lost")
 		}
-		return nil
+		return "context", nil
 	}
 	for i := 0; i < 3; i++ {
 		if i == 2 {
@@ -136,7 +136,7 @@ func TestUnknownIdentityAndExpiredAcknowledgementNeverSkip(t *testing.T) {
 				}
 				return ingestion.Request{SubmissionID: "new"}, "new", nil
 			}
-			engine.Deliver = func(context.Context, Target, ingestion.Request) error { return nil }
+			engine.Deliver = func(context.Context, Target, ingestion.Request) (string, error) { return "context", nil }
 			trigger(t, engine)
 			directory, _ := engine.jobPath(*job)
 			ack := state{Target: target, Fingerprint: "old", At: time.Now().Add(-acknowledgementTTL - time.Minute)}
@@ -161,7 +161,7 @@ func TestTriggerDuringUploadCoalescesWithoutLosingNewState(t *testing.T) {
 	engine.Collect = func(_ context.Context, event Event, _ string) (ingestion.Request, string, error) {
 		return ingestion.Request{SubmissionID: event.RunID}, event.RunID, nil
 	}
-	engine.Deliver = func(_ context.Context, _ Target, request ingestion.Request) error {
+	engine.Deliver = func(_ context.Context, _ Target, request ingestion.Request) (string, error) {
 		mu.Lock()
 		events = append(events, Event{RunID: request.SubmissionID})
 		first := len(events) == 1
@@ -170,7 +170,7 @@ func TestTriggerDuringUploadCoalescesWithoutLosingNewState(t *testing.T) {
 			close(started)
 			<-resume
 		}
-		return nil
+		return "context", nil
 	}
 	if err := engine.Schedule(Event{Path: "/checkout", RunID: "first"}); err != nil {
 		t.Fatal(err)
@@ -205,7 +205,7 @@ func TestDeadlineHandsOffNewTrigger(t *testing.T) {
 		<-ctx.Done()
 		return ingestion.Request{}, "", ctx.Err()
 	}
-	engine.Deliver = func(context.Context, Target, ingestion.Request) error { return nil }
+	engine.Deliver = func(context.Context, Target, ingestion.Request) (string, error) { return "context", nil }
 	trigger(t, engine)
 	workerJob := *job
 	var launches atomic.Int32
@@ -372,7 +372,7 @@ func TestNestedCheckoutReschedulesBeforeCollection(t *testing.T) {
 		collected++
 		return ingestion.Request{SubmissionID: "latest"}, "latest", nil
 	}
-	engine.Deliver = func(context.Context, Target, ingestion.Request) error { return nil }
+	engine.Deliver = func(context.Context, Target, ingestion.Request) (string, error) { return "context", nil }
 	if err := engine.Schedule(Event{Path: "/checkout/nested"}); err != nil {
 		t.Fatal(err)
 	}
@@ -395,15 +395,15 @@ func TestUnknownFingerprintRetryAlsoUploadsLatestState(t *testing.T) {
 		collections++
 		return ingestion.Request{SubmissionID: fmt.Sprintf("observation-%d", collections)}, "", nil
 	}
-	engine.Deliver = func(_ context.Context, _ Target, request ingestion.Request) error {
+	engine.Deliver = func(_ context.Context, _ Target, request ingestion.Request) (string, error) {
 		uploads++
 		if (uploads <= 2 && request.SubmissionID != "observation-1") || (uploads == 3 && request.SubmissionID != "observation-2") {
 			t.Fatalf("retry/latest observation: %v", request)
 		}
 		if uploads == 1 {
-			return errors.New("receipt lost")
+			return "", errors.New("receipt lost")
 		}
-		return nil
+		return "context", nil
 	}
 	trigger(t, engine)
 	_ = engine.Run(context.Background(), *job)
@@ -476,5 +476,131 @@ func TestLogsStayBounded(t *testing.T) {
 	info, err := os.Stat(filepath.Join(engine.Directory, "hooks.log"))
 	if err != nil || info.Size() > maxLogBytes+4200 || info.Mode().Perm() != 0o600 {
 		t.Fatalf("log bound/privacy = %v %v", info, err)
+	}
+}
+
+func TestAcknowledgedContextMustRemainCurrentBeforeSkipping(t *testing.T) {
+	for _, reason := range []string{"another collector", "expired", "missing"} {
+		t.Run(reason, func(t *testing.T) {
+			engine, job := fixture(t)
+			latest := ""
+			collections, uploads, confirmations := 0, 0, 0
+			engine.Collect = func(_ context.Context, _ Event, previous string) (ingestion.Request, string, error) {
+				collections++
+				if previous == "state-A" {
+					return ingestion.Request{}, previous, ErrUnchanged
+				}
+				return ingestion.Request{SubmissionID: fmt.Sprintf("capture-%d", collections)}, "state-A", nil
+			}
+			engine.Deliver = func(_ context.Context, _ Target, request ingestion.Request) (string, error) {
+				uploads++
+				latest = request.SubmissionID
+				return latest, nil
+			}
+			engine.Confirm = func(_ context.Context, _ Target, contextID string) (bool, error) {
+				confirmations++
+				return contextID == latest, nil
+			}
+			trigger(t, engine)
+			if err := engine.Run(context.Background(), *job); err != nil {
+				t.Fatal(err)
+			}
+			// The cached observation disappears or another collector publishes B.
+			latest = reason
+			trigger(t, engine)
+			if err := engine.Run(context.Background(), *job); err != nil {
+				t.Fatal(err)
+			}
+			if latest != "capture-3" || uploads != 2 || confirmations != 1 {
+				t.Fatalf("latest=%q uploads=%d confirmations=%d", latest, uploads, confirmations)
+			}
+			// Once A is latest again, another identical trigger can skip safely.
+			trigger(t, engine)
+			if err := engine.Run(context.Background(), *job); err != nil || uploads != 2 || confirmations != 2 {
+				t.Fatalf("current cache uploads=%d confirmations=%d err=%v", uploads, confirmations, err)
+			}
+		})
+	}
+}
+
+func TestChangedCheckoutDoesNotConfirmPriorObservation(t *testing.T) {
+	engine, job := fixture(t)
+	current := "A"
+	engine.Collect = func(context.Context, Event, string) (ingestion.Request, string, error) {
+		return ingestion.Request{SubmissionID: current}, current, nil
+	}
+	engine.Deliver = func(context.Context, Target, ingestion.Request) (string, error) { return current, nil }
+	engine.Confirm = func(context.Context, Target, string) (bool, error) {
+		t.Fatal("changed checkout performed unnecessary confirmation")
+		return false, nil
+	}
+	for _, value := range []string{"A", "B"} {
+		current = value
+		trigger(t, engine)
+		if err := engine.Run(context.Background(), *job); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestConfirmationFailurePreservesAcknowledgement(t *testing.T) {
+	engine, job := fixture(t)
+	engine.Collect = func(_ context.Context, _ Event, previous string) (ingestion.Request, string, error) {
+		if previous == "A" {
+			return ingestion.Request{}, previous, ErrUnchanged
+		}
+		return ingestion.Request{SubmissionID: "A"}, "A", nil
+	}
+	uploads := 0
+	engine.Deliver = func(context.Context, Target, ingestion.Request) (string, error) {
+		uploads++
+		return "A", nil
+	}
+	engine.Confirm = func(context.Context, Target, string) (bool, error) {
+		return false, errors.New("confirmation offline")
+	}
+	trigger(t, engine)
+	if err := engine.Run(context.Background(), *job); err != nil {
+		t.Fatal(err)
+	}
+	directory, _ := engine.jobPath(*job)
+	target, _ := engine.Resolve(context.Background(), Event{})
+	ackPath := filepath.Join(directory, key(target.Destination, target.SourceID)+".ack.json")
+	before, err := os.ReadFile(ackPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trigger(t, engine)
+	if err := engine.Run(context.Background(), *job); err == nil {
+		t.Fatal("confirmation failure ignored")
+	}
+	after, err := os.ReadFile(ackPath)
+	if err != nil || string(before) != string(after) || uploads != 1 {
+		t.Fatalf("ack advanced despite failure: %v uploads=%d", err, uploads)
+	}
+}
+
+func TestAcknowledgementWithoutContextRecollects(t *testing.T) {
+	engine, job := fixture(t)
+	target, _ := engine.Resolve(context.Background(), Event{})
+	engine.Collect = func(_ context.Context, _ Event, previous string) (ingestion.Request, string, error) {
+		if previous != "" {
+			t.Fatalf("unverifiable legacy acknowledgement suppressed collection: %q", previous)
+		}
+		return ingestion.Request{SubmissionID: "fresh"}, "A", nil
+	}
+	engine.Deliver = func(context.Context, Target, ingestion.Request) (string, error) { return "fresh", nil }
+	engine.Confirm = func(context.Context, Target, string) (bool, error) {
+		t.Fatal("confirmation called without context identity")
+		return false, nil
+	}
+	trigger(t, engine)
+	directory, _ := engine.jobPath(*job)
+	path := filepath.Join(directory, key(target.Destination, target.SourceID)+".ack.json")
+	if err := writeJSON(path, state{Target: target, Fingerprint: "A", At: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Run(context.Background(), *job); err != nil {
+		t.Fatal(err)
 	}
 }
