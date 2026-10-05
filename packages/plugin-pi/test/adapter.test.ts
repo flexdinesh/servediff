@@ -137,3 +137,76 @@ test("agent host can exit while detached sync scheduling remains alive", async (
     await rm(temp, { recursive: true, force: true });
   }
 });
+
+for (const agent of ["pi", "opencode"]) {
+  test(`${agent} installed configuration stays local to adapter and preserves host environment`, async () => {
+    const temp = await mkdtemp(join(tmpdir(), "servediff-configured-"));
+    const binary = join(temp, "servediff with spaces");
+    const output = join(temp, "args.json");
+    const configFile = join(temp, "custom config.json");
+    await writeFile(
+      binary,
+      `#!/usr/bin/env node\nimport { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(output)}, JSON.stringify(process.argv.slice(2)));\n`,
+    );
+    await chmod(binary, 0o700);
+    const source = new URL(
+      `../../plugin-${agent}/src/index.ts`,
+      import.meta.url,
+    ).href;
+    const trigger =
+      agent === "pi"
+        ? `adapter.register({ on(_event, handler) {
+          handler({}, { cwd: '/worktree', sessionManager: { getSessionId: () => 'id' } });
+        } });`
+        : `await adapter.consume((async function*() {
+          yield { type: 'session.status', data: {sessionID: 'id', status: {type: 'idle'}} };
+        })(), '/worktree');`;
+    const script = `import assert from 'node:assert/strict';
+      import * as adapter from ${JSON.stringify(source)};
+      const before = JSON.stringify({ ...process.env });
+      const settings = ${JSON.stringify({ binary, configFile })};
+      adapter.configure(settings);
+      settings.binary = '/wrong/mutated-binary';
+      assert.equal(JSON.stringify({ ...process.env }) === before, true, "host environment changed");
+      ${trigger}
+      assert.equal(JSON.stringify({ ...process.env }) === before, true, "host environment changed");`;
+    try {
+      const result = await promisify(execFile)(
+        process.execPath,
+        ["--input-type=module", "-e", script],
+        {
+          env: {
+            ...process.env,
+            SERVEDIFF_BINARY: "/wrong/environment-binary",
+            SERVEDIFF_CONFIG_PATH: "/host/config.json",
+          },
+          timeout: 750,
+        },
+      );
+      assert.equal(result.stdout, "");
+      assert.equal(result.stderr, "");
+      let actual = "";
+      for (let attempt = 0; attempt < 100; attempt++) {
+        try {
+          actual = await readFile(output, "utf8");
+          break;
+        } catch {
+          await setTimeout(20);
+        }
+      }
+      assert.deepEqual(JSON.parse(actual), [
+        "hook",
+        "--agent",
+        agent,
+        "--path",
+        "/worktree",
+        "--run-id",
+        "id",
+        "--config-file",
+        configFile,
+      ]);
+    } finally {
+      await rm(temp, { recursive: true, force: true });
+    }
+  });
+}

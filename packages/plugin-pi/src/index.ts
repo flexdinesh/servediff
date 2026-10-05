@@ -4,6 +4,13 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 
+type Settings = { binary: string; configFile?: string };
+let configuration: Settings | undefined;
+
+export function configure(settings: Settings): void {
+  configuration = { ...settings };
+}
+
 type SettledContext = Pick<ExtensionContext, "cwd"> & {
   sessionManager: Pick<ExtensionContext["sessionManager"], "getSessionId">;
 };
@@ -27,9 +34,21 @@ export default function servediff(pi: ExtensionAPI): void {
 // The CLI schedules its own detached worker. Do not wait for collection or upload.
 function requestSync(directory: string, sessionID: string): void {
   try {
+    const args = [
+      "hook",
+      "--agent",
+      "pi",
+      "--path",
+      directory,
+      "--run-id",
+      sessionID,
+    ];
+    if (configuration?.configFile !== undefined) {
+      args.push("--config-file", configuration.configFile);
+    }
     const child = spawn(
-      process.env.SERVEDIFF_BINARY ?? "servediff",
-      ["hook", "--agent", "pi", "--path", directory, "--run-id", sessionID],
+      configuration?.binary ?? process.env.SERVEDIFF_BINARY ?? "servediff",
+      args,
       { detached: true, stdio: "ignore", shell: false },
     );
     // Unref the deadline too: spawn's timeout option keeps Node hosts alive.
