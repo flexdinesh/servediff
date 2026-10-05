@@ -1,0 +1,393 @@
+package hooks
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/flexdinesh/servediff/internal/ingestion"
+	"github.com/flexdinesh/servediff/internal/processlock"
+)
+
+func fixture(t *testing.T) (Engine, *string) {
+	t.Helper()
+	var job string
+	engine := Engine{
+		Directory: t.TempDir(),
+		Resolve: func(context.Context, Event) (Target, error) {
+			return Target{Destination: "local", Identity: "database", SourceID: "machine"}, nil
+		},
+		Launch: func(key string) error { job = key; return nil },
+	}
+	return engine, &job
+}
+
+func trigger(t *testing.T, engine Engine) {
+	t.Helper()
+	if err := engine.Schedule(Event{Path: "/checkout", Agent: "test"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAcknowledgedFingerprintAndCleanTransition(t *testing.T) {
+	engine, job := fixture(t)
+	current := "dirty"
+	var sent []string
+	engine.Collect = func(_ context.Context, _ Event, previous string) (ingestion.Request, string, error) {
+		if previous == current {
+			return ingestion.Request{}, current, ErrUnchanged
+		}
+		return ingestion.Request{SubmissionID: current}, current, nil
+	}
+	engine.Deliver = func(_ context.Context, _ Target, request ingestion.Request) error {
+		sent = append(sent, request.SubmissionID)
+		return nil
+	}
+	for _, state := range []string{"dirty", "dirty", "clean", "clean"} {
+		current = state
+		trigger(t, engine)
+		if err := engine.Run(context.Background(), *job); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(sent) != 2 || sent[0] != "dirty" || sent[1] != "clean" {
+		t.Fatalf("deliveries = %v", sent)
+	}
+}
+
+func TestAmbiguousRetryPreservesSubmissionAndNewStateSupersedes(t *testing.T) {
+	engine, job := fixture(t)
+	current := "one"
+	count := 0
+	engine.Collect = func(context.Context, Event, string) (ingestion.Request, string, error) {
+		count++
+		return ingestion.Request{SubmissionID: current + time.Now().String()}, current, nil
+	}
+	var sent []ingestion.Request
+	engine.Deliver = func(_ context.Context, _ Target, request ingestion.Request) error {
+		sent = append(sent, request)
+		if len(sent) < 3 {
+			return errors.New("receipt lost")
+		}
+		return nil
+	}
+	for i := 0; i < 3; i++ {
+		if i == 2 {
+			current = "two"
+		}
+		trigger(t, engine)
+		_ = engine.Run(context.Background(), *job)
+	}
+	if sent[0].SubmissionID != sent[1].SubmissionID || sent[1].SubmissionID == sent[2].SubmissionID || count != 3 {
+		t.Fatalf("retry/supersession = %v", sent)
+	}
+}
+
+func TestTargetReplacementInvalidatesAcknowledgementAndPending(t *testing.T) {
+	engine, job := fixture(t)
+	target := Target{Destination: "local", Identity: "old", SourceID: "machine"}
+	engine.Resolve = func(context.Context, Event) (Target, error) { return target, nil }
+	var previous []string
+	count := 0
+	engine.Collect = func(_ context.Context, _ Event, fingerprint string) (ingestion.Request, string, error) {
+		previous = append(previous, fingerprint)
+		count++
+		return ingestion.Request{SubmissionID: time.Now().String()}, "same", nil
+	}
+	var sent []ingestion.Request
+	engine.Deliver = func(_ context.Context, _ Target, request ingestion.Request) error {
+		sent = append(sent, request)
+		if len(sent) == 2 {
+			return errors.New("receipt lost")
+		}
+		return nil
+	}
+	for i := 0; i < 3; i++ {
+		if i == 2 {
+			target.Identity = "replacement"
+		}
+		trigger(t, engine)
+		_ = engine.Run(context.Background(), *job)
+	}
+	if previous[0] != "" || previous[1] != "same" || previous[2] != "" || sent[1].SubmissionID == sent[2].SubmissionID {
+		t.Fatalf("replacement previous=%v sent=%v", previous, sent)
+	}
+}
+
+func TestUnknownIdentityAndExpiredAcknowledgementNeverSkip(t *testing.T) {
+	for _, unknown := range []bool{false, true} {
+		t.Run(map[bool]string{false: "expired", true: "unknown"}[unknown], func(t *testing.T) {
+			engine, job := fixture(t)
+			target, _ := engine.Resolve(context.Background(), Event{})
+			if unknown {
+				target.Identity = ""
+			}
+			engine.Resolve = func(context.Context, Event) (Target, error) { return target, nil }
+			engine.Collect = func(_ context.Context, _ Event, previous string) (ingestion.Request, string, error) {
+				if previous != "" {
+					t.Fatalf("unexpected suppression %q", previous)
+				}
+				return ingestion.Request{SubmissionID: "new"}, "new", nil
+			}
+			engine.Deliver = func(context.Context, Target, ingestion.Request) error { return nil }
+			trigger(t, engine)
+			directory, _ := engine.jobPath(*job)
+			ack := state{Target: target, Fingerprint: "old", At: time.Now().Add(-acknowledgementTTL - time.Minute)}
+			if unknown {
+				ack.At = time.Now()
+			}
+			if err := writeJSON(filepath.Join(directory, key(target.Destination, target.SourceID)+".ack.json"), ack); err != nil {
+				t.Fatal(err)
+			}
+			if err := engine.Run(context.Background(), *job); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestTriggerDuringUploadCoalescesWithoutLosingNewState(t *testing.T) {
+	engine, job := fixture(t)
+	started, resume := make(chan struct{}), make(chan struct{})
+	var mu sync.Mutex
+	var events []Event
+	engine.Collect = func(_ context.Context, event Event, _ string) (ingestion.Request, string, error) {
+		return ingestion.Request{SubmissionID: event.RunID}, event.RunID, nil
+	}
+	engine.Deliver = func(_ context.Context, _ Target, request ingestion.Request) error {
+		mu.Lock()
+		events = append(events, Event{RunID: request.SubmissionID})
+		first := len(events) == 1
+		mu.Unlock()
+		if first {
+			close(started)
+			<-resume
+		}
+		return nil
+	}
+	if err := engine.Schedule(Event{Path: "/checkout", RunID: "first"}); err != nil {
+		t.Fatal(err)
+	}
+	workerJob := *job
+	done := make(chan error, 1)
+	go func() { done <- engine.Run(context.Background(), workerJob) }()
+	<-started
+	for _, id := range []string{"middle", "latest"} {
+		if err := engine.Schedule(Event{Path: "/checkout", RunID: id}); err != nil {
+			t.Fatal(err)
+		}
+		if err := engine.Run(context.Background(), workerJob); err != nil {
+			t.Fatal(err)
+		}
+	}
+	close(resume)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 || events[0].RunID != "first" || events[1].RunID != "latest" {
+		t.Fatalf("events = %v", events)
+	}
+}
+
+func TestDeadlineHandsOffNewTrigger(t *testing.T) {
+	engine, job := fixture(t)
+	engine.Timeout = 40 * time.Millisecond
+	started := make(chan struct{})
+	engine.Collect = func(ctx context.Context, _ Event, _ string) (ingestion.Request, string, error) {
+		close(started)
+		<-ctx.Done()
+		return ingestion.Request{}, "", ctx.Err()
+	}
+	engine.Deliver = func(context.Context, Target, ingestion.Request) error { return nil }
+	trigger(t, engine)
+	workerJob := *job
+	var launches atomic.Int32
+	engine.Launch = func(string) error { launches.Add(1); return nil }
+	done := make(chan error, 1)
+	go func() { done <- engine.Run(context.Background(), workerJob) }()
+	<-started
+	trigger(t, engine)
+	if err := <-done; !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("error = %v", err)
+	}
+	if launches.Load() != 2 {
+		t.Fatalf("handoff launches = %d", launches.Load())
+	}
+}
+
+func TestStartupCooldownSharedAcrossCheckouts(t *testing.T) {
+	engine, _ := fixture(t)
+	attempts := 0
+	start := func(context.Context) error { attempts++; return errors.New("broken binary") }
+	if err := engine.Start(context.Background(), "local", start); err == nil {
+		t.Fatal("expected failure")
+	}
+	if err := engine.Start(context.Background(), "local", start); !errors.Is(err, ErrCooldown) || attempts != 1 {
+		t.Fatalf("cooldown err=%v attempts=%d", err, attempts)
+	}
+	if err := engine.Start(context.Background(), "another", start); err == nil || attempts != 2 {
+		t.Fatalf("independent destination err=%v attempts=%d", err, attempts)
+	}
+}
+
+func TestPrunePendingRetentionAndPrivateFiles(t *testing.T) {
+	engine, job := fixture(t)
+	trigger(t, engine)
+	directory, _ := engine.jobPath(*job)
+	path := filepath.Join(directory, "old.pending.json")
+	if err := writeJSON(path, pending{}); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("private file = %v %v", info, err)
+	}
+	old := time.Now().Add(-pendingTTL - time.Hour)
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatal(err)
+	}
+	engine.prune()
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expired payload = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(directory, "worker.lock")); err != nil {
+		t.Fatalf("lock inode removed: %v", err)
+	}
+}
+
+func TestRuntimeIsolationAndSafeJobNames(t *testing.T) {
+	runtime := t.TempDir()
+	t.Setenv("SERVEDIFF_RUNTIME_DIR", runtime)
+	directory, err := StateDirectory()
+	if err != nil || directory != filepath.Join(runtime, "hooks") {
+		t.Fatalf("directory = %q %v", directory, err)
+	}
+	engine := Engine{Directory: directory}
+	if err := engine.Run(context.Background(), "../../outside"); err == nil {
+		t.Fatal("unsafe job accepted")
+	}
+}
+
+func TestNestedCheckoutReschedulesBeforeCollection(t *testing.T) {
+	engine, job := fixture(t)
+	engine.Normalize = func(_ context.Context, event Event) (Event, error) {
+		event.Path = "/checkout"
+		return event, nil
+	}
+	collected := 0
+	engine.Collect = func(context.Context, Event, string) (ingestion.Request, string, error) {
+		collected++
+		return ingestion.Request{SubmissionID: "latest"}, "latest", nil
+	}
+	engine.Deliver = func(context.Context, Target, ingestion.Request) error { return nil }
+	if err := engine.Schedule(Event{Path: "/checkout/nested"}); err != nil {
+		t.Fatal(err)
+	}
+	nestedJob := *job
+	if err := engine.Run(context.Background(), nestedJob); err != nil {
+		t.Fatal(err)
+	}
+	if *job == nestedJob || collected != 0 {
+		t.Fatalf("nested job was collected: %d", collected)
+	}
+	if err := engine.Run(context.Background(), *job); err != nil || collected != 1 {
+		t.Fatalf("canonical job collected=%d err=%v", collected, err)
+	}
+}
+
+func TestUnknownFingerprintRetryUploadsOnce(t *testing.T) {
+	engine, job := fixture(t)
+	collections, uploads := 0, 0
+	engine.Collect = func(context.Context, Event, string) (ingestion.Request, string, error) {
+		collections++
+		return ingestion.Request{SubmissionID: "immutable"}, "", nil
+	}
+	engine.Deliver = func(_ context.Context, _ Target, request ingestion.Request) error {
+		uploads++
+		if request.SubmissionID != "immutable" {
+			t.Fatalf("replaced immutable retry: %v", request)
+		}
+		if uploads == 1 {
+			return errors.New("receipt lost")
+		}
+		return nil
+	}
+	trigger(t, engine)
+	_ = engine.Run(context.Background(), *job)
+	trigger(t, engine)
+	if err := engine.Run(context.Background(), *job); err != nil {
+		t.Fatal(err)
+	}
+	if collections != 1 || uploads != 2 {
+		t.Fatalf("collections=%d uploads=%d", collections, uploads)
+	}
+}
+
+func TestPendingPruningSkipsActiveWorker(t *testing.T) {
+	engine, job := fixture(t)
+	trigger(t, engine)
+	directory, _ := engine.jobPath(*job)
+	path := filepath.Join(directory, "old.pending.json")
+	if err := writeJSON(path, pending{}); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-pendingTTL - time.Hour)
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatal(err)
+	}
+	lock, err := processlock.TryAcquire(filepath.Join(directory, "worker.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Close()
+	engine.prune()
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("active pending removed: %v", err)
+	}
+}
+
+func TestPendingBudgetRemovesOldestPayload(t *testing.T) {
+	engine, job := fixture(t)
+	trigger(t, engine)
+	directory, _ := engine.jobPath(*job)
+	for i, name := range []string{"first.pending.json", "second.pending.json"} {
+		path := filepath.Join(directory, name)
+		file, err := os.Create(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Sparse files exercise the disk budget without allocating payloads.
+		if err := file.Truncate(maxPendingBytes/2 + 1); err != nil {
+			t.Fatal(err)
+		}
+		_ = file.Close()
+		at := time.Now().Add(time.Duration(i-2) * time.Hour)
+		if err := os.Chtimes(path, at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	engine.prune()
+	if _, err := os.Stat(filepath.Join(directory, "first.pending.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("oldest retained: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(directory, "second.pending.json")); err != nil {
+		t.Fatalf("newest removed: %v", err)
+	}
+}
+
+func TestLogsStayBounded(t *testing.T) {
+	engine, _ := fixture(t)
+	for i := 0; i < 80; i++ {
+		engine.Log(errors.New(strings.Repeat("x", 6000)))
+	}
+	info, err := os.Stat(filepath.Join(engine.Directory, "hooks.log"))
+	if err != nil || info.Size() > maxLogBytes+4200 || info.Mode().Perm() != 0o600 {
+		t.Fatalf("log bound/privacy = %v %v", info, err)
+	}
+}
