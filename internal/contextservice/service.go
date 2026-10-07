@@ -22,25 +22,26 @@ import (
 )
 
 type Context struct {
-	Stale            bool                 `json:"stale"`
-	Observation      *ingestion.Metadata  `json:"observation,omitempty"`
-	ID               string               `json:"id"`
-	Kind             string               `json:"kind"`
-	Source           string               `json:"source"`
-	Name             string               `json:"name"`
-	Root             *string              `json:"root"`
-	LocationID       *string              `json:"locationId"`
-	RepositoryID     *string              `json:"repositoryId"`
-	CreatedAt        int64                `json:"createdAt"`
-	LastSubmittedAt  int64                `json:"lastSubmittedAt"`
-	LastChangedAt    int64                `json:"lastChangedAt"`
-	ChangedFileCount *int                 `json:"changedFileCount"`
-	ExpiresAt        *int64               `json:"expiresAt"`
-	SubmittedFrom    *string              `json:"submittedFrom"`
-	Capabilities     session.Capabilities `json:"capabilities"`
-	Availability     string               `json:"availability"`
-	Branch           *string              `json:"branch"`
-	WorktreeName     *string              `json:"worktreeName"`
+	Stale            bool                             `json:"stale"`
+	Sessions         []reviewstore.SessionAssociation `json:"sessions,omitempty"`
+	Observation      *ingestion.Metadata              `json:"observation,omitempty"`
+	ID               string                           `json:"id"`
+	Kind             string                           `json:"kind"`
+	Source           string                           `json:"source"`
+	Name             string                           `json:"name"`
+	Root             *string                          `json:"root"`
+	LocationID       *string                          `json:"locationId"`
+	RepositoryID     *string                          `json:"repositoryId"`
+	CreatedAt        int64                            `json:"createdAt"`
+	LastSubmittedAt  int64                            `json:"lastSubmittedAt"`
+	LastChangedAt    int64                            `json:"lastChangedAt"`
+	ChangedFileCount *int                             `json:"changedFileCount"`
+	ExpiresAt        *int64                           `json:"expiresAt"`
+	SubmittedFrom    *string                          `json:"submittedFrom"`
+	Capabilities     session.Capabilities             `json:"capabilities"`
+	Availability     string                           `json:"availability"`
+	Branch           *string                          `json:"branch"`
+	WorktreeName     *string                          `json:"worktreeName"`
 }
 
 type Page struct {
@@ -317,7 +318,7 @@ func (service *Service) present(item reviewstore.ContextInfo) (Context, error) {
 		if name == "" {
 			name = "Piped"
 		}
-		value := Context{Source: snapshot.Source, Stale: item.Stale, ID: item.ID, Kind: "observation", Name: name, Root: &m.Root, RepositoryID: item.RepositoryID, CreatedAt: item.CreatedAt, LastSubmittedAt: item.LastSubmittedAt, LastChangedAt: m.CollectedAt, ExpiresAt: item.ExpiresAt, ChangedFileCount: item.ChangedFileCount, SubmittedFrom: item.SubmittedFrom, Observation: m, Branch: &m.Branch, WorktreeName: &m.WorktreeName, Availability: "available", Capabilities: storedCapabilities(scopes, snapshot.Source == "local")}
+		value := Context{Source: snapshot.Source, Stale: item.Stale, ID: item.ID, Kind: "observation", Name: name, Root: &m.Root, RepositoryID: item.RepositoryID, CreatedAt: item.CreatedAt, LastSubmittedAt: item.LastSubmittedAt, LastChangedAt: m.CollectedAt, ExpiresAt: item.ExpiresAt, ChangedFileCount: item.ChangedFileCount, SubmittedFrom: item.SubmittedFrom, Observation: m, Sessions: item.Sessions, Branch: &m.Branch, WorktreeName: &m.WorktreeName, Availability: "available", Capabilities: storedCapabilities(scopes, snapshot.Source == "local")}
 		if snapshot.Source == "stdin" {
 			value.Name, value.Stale = "Piped", false
 			value.Root, value.RepositoryID, value.Branch, value.WorktreeName = nil, nil, nil, nil

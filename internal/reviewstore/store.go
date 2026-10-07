@@ -18,7 +18,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 6
+const schemaVersion = 7
 const CaptureLifetime = 7 * 24 * time.Hour
 
 var ErrNotFound = errors.New("diff not found")
@@ -44,8 +44,9 @@ type CaptureInfo struct {
 }
 
 type Store struct {
-	db   *sql.DB
-	lock *processlock.Lock
+	db        *sql.DB
+	lock      *processlock.Lock
+	retention time.Duration
 }
 
 func DefaultPath() (string, error) {
@@ -69,6 +70,15 @@ func newID() (string, error) {
 }
 
 func Open(path string) (*Store, error) {
+	return OpenWithRetention(path, CaptureLifetime)
+}
+
+// OpenWithRetention configures expiry for new captures and fresh observations.
+// Existing expiry and replay identities remain unchanged.
+func OpenWithRetention(path string, retention time.Duration) (*Store, error) {
+	if retention <= 0 {
+		return nil, errors.New("retention must be positive")
+	}
 	name := ":memory:"
 	var lock *processlock.Lock
 	if path != "" && path != ":memory:" {
@@ -112,7 +122,7 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	store := &Store{db: db, lock: lock}
+	store := &Store{db: db, lock: lock, retention: retention}
 	if _, err = db.Exec("PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000"); err == nil {
 		err = store.initialize()
 	}
@@ -173,7 +183,7 @@ func (store *Store) initialize() error {
 			return err
 		}
 	}
-	if version > 0 && version != 2 && version != 3 && version != 4 && version != 5 && version != schemaVersion {
+	if version > 0 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != schemaVersion {
 		return fmt.Errorf("servediff state schema %d is unsupported; existing data preserved", version)
 	}
 	statements := []string{
@@ -246,14 +256,14 @@ func (store *Store) RegisterGit(ownerID, root, commonDir, worktreeKey string) (B
 		return Binding{}, err
 	}
 	defer transaction.Rollback()
-	binding, err := registerGit(transaction, ownerID, root, commonDir, worktreeKey)
+	binding, err := registerGit(transaction, ownerID, root, commonDir, worktreeKey, store.retention)
 	if err != nil {
 		return Binding{}, err
 	}
 	return binding, transaction.Commit()
 }
 
-func registerGit(transaction *sql.Tx, ownerID, root, commonDir, worktreeKey string) (Binding, error) {
+func registerGit(transaction *sql.Tx, ownerID, root, commonDir, worktreeKey string, retention time.Duration) (Binding, error) {
 	repoID, err := newID()
 	if err != nil {
 		return Binding{}, err
@@ -280,7 +290,7 @@ func registerGit(transaction *sql.Tx, ownerID, root, commonDir, worktreeKey stri
 		if idError != nil {
 			return Binding{}, idError
 		}
-		if _, err := transaction.Exec(`INSERT INTO diffs(id, owner_id, location_id, kind, mode, created_at, expires_at) VALUES(?, ?, ?, 'live', ?, ?, ?) ON CONFLICT(location_id, mode) DO UPDATE SET expires_at=excluded.expires_at`, diffID, ownerID, locationID, mode, time.Now().UnixMilli(), time.Now().Add(CaptureLifetime).UnixMilli()); err != nil {
+		if _, err := transaction.Exec(`INSERT INTO diffs(id, owner_id, location_id, kind, mode, created_at, expires_at) VALUES(?, ?, ?, 'live', ?, ?, ?) ON CONFLICT(location_id, mode) DO UPDATE SET expires_at=excluded.expires_at`, diffID, ownerID, locationID, mode, time.Now().UnixMilli(), time.Now().Add(retention).UnixMilli()); err != nil {
 			return Binding{}, err
 		}
 		if err := transaction.QueryRow(`SELECT id FROM diffs WHERE location_id=? AND mode=?`, locationID, mode).Scan(&diffID); err != nil {
@@ -312,14 +322,14 @@ func (store *Store) Capture(ownerID, raw string, snapshot review.RepositoryDiff)
 		return Binding{}, err
 	}
 	defer transaction.Rollback()
-	binding, err := capture(transaction, ownerID, raw, snapshot, "")
+	binding, err := capture(transaction, ownerID, raw, snapshot, "", store.retention)
 	if err != nil {
 		return Binding{}, err
 	}
 	return binding, transaction.Commit()
 }
 
-func capture(transaction *sql.Tx, ownerID, raw string, snapshot review.RepositoryDiff, submittedFrom string) (Binding, error) {
+func capture(transaction *sql.Tx, ownerID, raw string, snapshot review.RepositoryDiff, submittedFrom string, retention time.Duration) (Binding, error) {
 	diffID, err := newID()
 	if err != nil {
 		return Binding{}, err
@@ -329,7 +339,7 @@ func capture(transaction *sql.Tx, ownerID, raw string, snapshot review.Repositor
 		return Binding{}, err
 	}
 	now := time.Now()
-	if _, err := transaction.Exec(`INSERT INTO diffs(id, owner_id, kind, mode, created_at, expires_at) VALUES(?, ?, 'capture', 'all', ?, ?)`, diffID, ownerID, now.UnixMilli(), now.Add(CaptureLifetime).UnixMilli()); err != nil {
+	if _, err := transaction.Exec(`INSERT INTO diffs(id, owner_id, kind, mode, created_at, expires_at) VALUES(?, ?, 'capture', 'all', ?, ?)`, diffID, ownerID, now.UnixMilli(), now.Add(retention).UnixMilli()); err != nil {
 		return Binding{}, err
 	}
 	snapshot.ID, snapshot.VersionID = diffID, versionID
