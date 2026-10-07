@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/flexdinesh/servediff/internal/browser"
 	"github.com/flexdinesh/servediff/internal/collector"
 	"github.com/flexdinesh/servediff/internal/config"
 	"github.com/flexdinesh/servediff/internal/contextservice"
@@ -136,17 +137,17 @@ func (target *destination) deliver(ctx context.Context, request ingestion.Reques
 		uncertain = uncertain || ambiguous
 		if !retry || ctx.Err() != nil || attempt == 1 {
 			cause := errors.Join(firstFailure, err)
-			if uncertain {
-				return receipt, fmt.Errorf("submission %s may have been saved; inspect server observations before resubmitting: %w", request.SubmissionID, cause)
-			}
-			return receipt, cause
+			return receipt, deliveryFailure(request.SubmissionID, uncertain, cause)
 		}
 		firstFailure = err
 		if target.remote == nil {
-			target.local, err = target.lifecycle.RecoverConnection(ctx, target.local)
-			if err != nil {
-				return receipt, fmt.Errorf("submission %s recovery failed: %w", request.SubmissionID, errors.Join(firstFailure, err))
+			recovered, recoveryErr := target.lifecycle.RecoverConnection(ctx, target.local)
+			if recoveryErr != nil {
+				cause := fmt.Errorf("recovery failed: %w", errors.Join(firstFailure, recoveryErr))
+				return receipt, deliveryFailure(request.SubmissionID, uncertain, cause)
 			}
+			target.local = recovered
+			target.endpoint = recovered.Status().BrowserURL
 		}
 	}
 	return ingestion.Receipt{}, errors.New("submission failed")
@@ -218,8 +219,14 @@ func submitCollected(ctx context.Context, command string, values options, settin
 		if command == "pipe" {
 			input.mode = "pipe"
 		}
-		writeStartup(stdout, input, originReceipt.ReviewURL)
-		openBrowser(values, originReceipt.ReviewURL, stderr)
+		var status *daemon.Status
+		if target.local != nil {
+			current := target.local.Status()
+			status = &current
+		}
+		urls := submissionURLs(*originReceipt, status)
+		writeStartup(stdout, input, urls...)
+		openBrowser(values, urls[0], stderr)
 	}
 	return errors.Join(failures...)
 }
@@ -296,3 +303,17 @@ func (failure redactedError) Error() string {
 	return strings.ReplaceAll(failure.cause.Error(), failure.secret, "[redacted]")
 }
 func (failure redactedError) Unwrap() error { return failure.cause }
+
+func deliveryFailure(id string, uncertain bool, cause error) error {
+	if uncertain {
+		return fmt.Errorf("submission %s may have been saved; inspect server observations before resubmitting: %w", id, cause)
+	}
+	return cause
+}
+
+func submissionURLs(receipt ingestion.Receipt, local *daemon.Status) []string {
+	if local == nil {
+		return []string{receipt.ReviewURL}
+	}
+	return browser.URLs(local.Settings.Host, local.Settings.Port, "/contexts/"+url.PathEscape(receipt.ContextID))
+}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -250,5 +251,36 @@ func TestConfiguredTokenRedactedInRejectedDelivery(t *testing.T) {
 	var problem *ingestion.Problem
 	if err == nil || strings.Contains(err.Error(), token) || !errors.As(err, &problem) {
 		t.Fatalf("credential rejection: %v", err)
+	}
+}
+
+func TestUncertainSubmissionRemainsExplicitWhenRecoveryFails(t *testing.T) {
+	cause := fmt.Errorf("recovery failed: %w", errors.Join(io.EOF, daemon.ErrStateChanged))
+	failure := deliveryFailure("submission-id", true, cause)
+	if !strings.Contains(failure.Error(), "submission-id may have been saved") || !errors.Is(failure, daemon.ErrStateChanged) || !errors.Is(failure, io.EOF) {
+		t.Fatalf("lost acknowledgement: %v", failure)
+	}
+	certain := deliveryFailure("submission-id", false, daemon.ErrSettingsChanged)
+	if strings.Contains(certain.Error(), "may have been saved") || !errors.Is(certain, daemon.ErrSettingsChanged) {
+		t.Fatalf("certain rejection: %v", certain)
+	}
+}
+
+func TestSubmittedURLsUseLocalListenerAndKeepRemoteOrigin(t *testing.T) {
+	receipt := ingestion.Receipt{ContextID: "review-id", ReviewURL: "https://remote.example.test/contexts/review-id"}
+	for _, host := range []string{"127.0.0.1", "0.0.0.0", "::", "::1"} {
+		status := daemon.Status{Settings: daemon.Settings{Host: host, Port: 7981}}
+		urls := submissionURLs(receipt, &status)
+		expected := "http://localhost:7981/contexts/review-id"
+		if strings.Contains(host, ":") {
+			expected = "http://[::1]:7981/contexts/review-id"
+		}
+		if len(urls) == 0 || urls[0] != expected {
+			t.Fatalf("listener %s: %v", host, urls)
+		}
+	}
+	remote := submissionURLs(receipt, nil)
+	if len(remote) != 1 || remote[0] != receipt.ReviewURL {
+		t.Fatalf("remote URL changed: %v", remote)
 	}
 }
