@@ -94,4 +94,21 @@ missing-default checkouts retain explicit working-tree fallback metadata.
 Only independent tracks run in parallel. Update this plan and surface deviations
 if integration changes scope, contracts, behavior or validation.
 
+## Completion and verification
+
+Implemented all five tracks on `codex/system-boundaries`; integrated their
+independent commits, schema migration, generated API/plugin/web assets and docs.
+Registered-worktree collection has no count limit; regression covers 129
+checkouts. Temporary agent worktrees removed; integrated worktree retained.
+
+Passed `mise run check`: static checks, builds, generated drift, API conformance,
+unit/plugin tests, all 65 browser tests, release tests and the complete Go suite.
+Passed `mise run test:race` across all Go packages. One browser assertion timed
+out on the first full run; passed three isolated repetitions and the full rerun
+without changing code or weakening its assertion.
+
+Upgrade collector and server together for ingestion protocol 2 and control
+protocol 4. Production user provisioning currently requires stopping the
+server; credentials and all users share one database. No push or deployment.
+
 Unresolved questions: none.
