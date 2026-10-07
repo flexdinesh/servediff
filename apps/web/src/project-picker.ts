@@ -168,6 +168,12 @@ export function pickerResults(
               context.observation?.runId,
               context.observation?.agent,
               context.observation?.trigger,
+              ...(context.sessions?.flatMap((session) => [
+                session.sourceId,
+                session.harness,
+                session.id,
+                session.name,
+              ]) ?? []),
             ]
       )
         .filter((value) => typeof value === "string")
@@ -222,12 +228,21 @@ export function observationDetail(context: ApiContext) {
   return [
     observationSummary(context),
     observation?.runId ? `Run: ${observation.runId}` : "",
+    ...sessionLabels(context),
     observation && !observation.hostname
       ? `Source: ${observation.sourceId}`
       : "",
   ]
     .filter(Boolean)
     .join(" · ");
+}
+
+function sessionLabels(context: ApiContext) {
+  return (
+    context.sessions?.map(
+      (session) => `${session.harness}: ${session.name || session.id}`,
+    ) ?? []
+  );
 }
 
 export function contextDiagnostics(context: ApiContext) {
@@ -246,6 +261,10 @@ export function contextDiagnostics(context: ApiContext) {
     observation ? `Source: ${observation.sourceId}` : "",
     observation?.runId ? `Run: ${observation.runId}` : "",
     observation?.agent ? `Agent: ${observation.agent}` : "",
+    ...sessionLabels(context),
+    observation?.comparison
+      ? `Comparison: ${observation.comparison.kind} against ${observation.comparison.baseRef}`
+      : "",
     `Context: ${context.id}`,
   ]
     .filter(Boolean)

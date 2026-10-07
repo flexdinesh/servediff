@@ -61,6 +61,40 @@ const clone: ApiContext = {
 };
 const allFilters = { ...defaultPickerFilters, includeAll: true };
 
+test("deduplicated reviews remain searchable under every associated session", () => {
+  const context: ApiContext = {
+    ...observation("shared", "host", "original-run"),
+    changedFileCount: 1,
+    sessions: [
+      {
+        sourceId: "source-host",
+        harness: "codex",
+        id: "first-session",
+        name: "Implement parser",
+        firstObservedAt: 1,
+        lastObservedAt: 2,
+      },
+      {
+        sourceId: "source-host",
+        harness: "claude",
+        id: "second-session",
+        name: "Review parser",
+        firstObservedAt: 3,
+        lastObservedAt: 3,
+      },
+    ],
+  };
+  for (const query of [
+    "codex first-session",
+    "claude second-session",
+    "Review parser",
+  ]) {
+    assert.deepEqual(pickerResults([context], query), [context]);
+  }
+  assert.match(observationDetail(context), /claude: Review parser/);
+  assert.match(contextDiagnostics(context), /codex: Implement parser/);
+});
+
 test("freshness and inclusion filters combine before search and repository grouping", () => {
   const latest = {
     ...observation("latest", "host", "run-new"),

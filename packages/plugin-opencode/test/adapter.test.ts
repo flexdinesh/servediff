@@ -11,6 +11,31 @@ async function* events(values: unknown[]) {
   yield* values;
 }
 
+test("session rename metadata reaches settled collection without additional uploads", async () => {
+  const requests: (string | undefined)[][] = [];
+  await consume(
+    events([
+      {
+        type: "session.created",
+        data: { sessionID: "a", title: "Initial title" },
+      },
+      {
+        type: "session.renamed",
+        data: { sessionID: "a", title: "Parser review" },
+      },
+      {
+        type: "session.status",
+        data: { sessionID: "a", status: { type: "idle" } },
+      },
+    ]),
+    "/worktree",
+    (path, session, name) => {
+      requests.push([path, session, name]);
+    },
+  );
+  assert.deepEqual(requests, [["/worktree", "a", "Parser review"]]);
+});
+
 test("only settled status syncs; event location selects the actual worktree", async () => {
   const requests: string[][] = [];
   await consume(

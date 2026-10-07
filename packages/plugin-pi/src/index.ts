@@ -5,7 +5,8 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 
 type SettledContext = Pick<ExtensionContext, "cwd"> & {
-  sessionManager: Pick<ExtensionContext["sessionManager"], "getSessionId">;
+  sessionManager: Pick<ExtensionContext["sessionManager"], "getSessionId"> &
+    Partial<Pick<ExtensionContext["sessionManager"], "getSessionName">>;
 };
 type PiHost = {
   on(
@@ -16,7 +17,11 @@ type PiHost = {
 
 export function register(pi: PiHost, request = requestSync): void {
   pi.on("agent_settled", (_event, context) => {
-    request(context.cwd, context.sessionManager.getSessionId());
+    request(
+      context.cwd,
+      context.sessionManager.getSessionId(),
+      context.sessionManager.getSessionName?.(),
+    );
   });
 }
 
@@ -25,7 +30,11 @@ export default function servediff(pi: ExtensionAPI): void {
 }
 
 // The CLI schedules its own detached worker. Do not wait for collection or upload.
-function requestSync(directory: string, sessionID: string): void {
+function requestSync(
+  directory: string,
+  sessionID: string,
+  sessionName?: string,
+): void {
   try {
     const args = [
       "hook",
@@ -36,6 +45,7 @@ function requestSync(directory: string, sessionID: string): void {
       "--run-id",
       sessionID,
     ];
+    if (sessionName) args.push("--session-name", sessionName);
     const child = spawn(process.env.SERVEDIFF_BINARY ?? "servediff", args, {
       detached: true,
       stdio: "ignore",
