@@ -262,3 +262,33 @@ func commentIDs(comments []Comment) []string {
 	}
 	return ids
 }
+
+func TestUpdateCommentPreservesAnchorAndValidatesBeforeWriting(t *testing.T) {
+	source := &sourceStub{support: diffsource.Support{Scopes: []review.DiffMode{review.DiffAll}}}
+	original := comment("id", review.DiffAll, "file.go", "fingerprint", "open")
+	store := &storeStub{comments: []review.ReviewComment{original}}
+	service := New(session.Resolve(source, session.Policies{}), store)
+	body, status := "  revised concern  ", "resolved"
+	got, err := service.UpdateComment("id", UpdateCommentInput{Body: &body, Status: &status})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := original
+	expected.Body, expected.Status = "revised concern", "resolved"
+	if !reflect.DeepEqual(got, expected) || store.putCalls != 1 {
+		t.Fatalf("updated comment: %#v writes %d", got, store.putCalls)
+	}
+	empty, invalid := "  ", "dismissed"
+	for _, input := range []UpdateCommentInput{{}, {Body: &empty}, {Status: &invalid}} {
+		if _, err := service.UpdateComment("id", input); err == nil {
+			t.Fatalf("accepted invalid update: %#v", input)
+		}
+	}
+	disabled := New(session.Resolve(source, session.Policies{Comments: session.DisablePolicy}), store)
+	if _, err := disabled.UpdateComment("id", UpdateCommentInput{Body: &body}); !capabilityError(err) {
+		t.Fatalf("disabled update: %v", err)
+	}
+	if store.putCalls != 1 {
+		t.Fatalf("invalid/disabled update wrote %d times", store.putCalls)
+	}
+}

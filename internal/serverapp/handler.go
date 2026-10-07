@@ -163,24 +163,13 @@ func contextMCP(service *contextservice.Service, store *reviewstore.Store, defau
 			http.NotFound(w, r)
 			return
 		}
-		if id == "" {
-			page, err := service.List(r.Context(), 2, "")
-			if err != nil {
+		if id != "" {
+			if _, err := service.Resolve(r.Context(), id); err != nil {
 				applicationError(w, err)
 				return
 			}
-			if len(page.Contexts) != 1 || page.NextCursor != nil {
-				problem(w, 409, "Use /mcp/contexts/{contextId}")
-				return
-			}
-			id = page.Contexts[0].ID
 		}
-		active, err := service.Resolve(r.Context(), id)
-		if err != nil {
-			applicationError(w, err)
-			return
-		}
-		mcpapi.New(reviewservice.New(active, store), active.Capabilities.Review.Comments.Enabled(), buildversion.String()).ServeHTTP(w, r)
+		mcpapi.NewCatalog(reviewservice.NewCatalog(service, store), id, buildversion.String()).ServeHTTP(w, r)
 	})
 }
 

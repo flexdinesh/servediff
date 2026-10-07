@@ -396,3 +396,107 @@ func TestCrossOriginSubmissionCannotCommit(t *testing.T) {
 		t.Fatalf("cross-origin submission: %d", w.Code)
 	}
 }
+
+func TestGlobalMCPDiscoversStoredReviewsAndRejectsForeignContexts(t *testing.T) {
+	input := collectGit(t) // Producer checkout removed before queries.
+	t.Setenv("PATH", t.TempDir())
+	d := start(t, "", false)
+	client := ingestion.NewClient(d.server.URL, "")
+	first, err := client.Submit(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.Metadata.SourceID = "second-source"
+	second, err := client.Submit(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreign, err := d.store.User("foreign", "foreign")
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreignService := contextservice.New(d.store, foreign)
+	defer foreignService.Close()
+	foreignSubmission, err := foreignService.Ingest(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connect := func(path string) *mcp.ClientSession {
+		t.Helper()
+		client := mcp.NewClient(&mcp.Implementation{Name: "global-test", Version: "test"}, nil)
+		session, err := client.Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: d.server.URL + path, HTTPClient: d.server.Client(), DisableStandaloneSSE: true}, &mcp.ClientSessionOptions{ProtocolVersion: mcpapi.ProtocolVersion})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = session.Close() })
+		return session
+	}
+	session := connect("/mcp")
+	tools, err := session.ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tools.Tools) != 5 {
+		t.Fatalf("global tools: %#v", tools)
+	}
+	call := func(name string, args map[string]any, wantError bool) *mcp.CallToolResult {
+		t.Helper()
+		result, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: name, Arguments: args})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.IsError != wantError {
+			t.Fatalf("%s: %#v content: %#v", name, result, result.Content[0])
+		}
+		return result
+	}
+	result := call("list_contexts", map[string]any{}, false)
+	var page contextservice.Page
+	raw, err := json.Marshal(result.StructuredContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &page); err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Contexts) != 2 {
+		t.Fatalf("owner catalog: %#v", page)
+	}
+	for _, item := range page.Contexts {
+		if item.ID != first.ContextID && item.ID != second.ContextID {
+			t.Fatalf("foreign catalog item: %#v", item)
+		}
+	}
+	result = call("get_diff", map[string]any{"context_id": first.ContextID}, false)
+	var snapshot review.RepositoryDiff
+	raw, err = json.Marshal(result.StructuredContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.ID != first.Snapshot.ID || len(snapshot.Files) != 1 {
+		t.Fatalf("stored diff: %#v", snapshot)
+	}
+	result = call("get_file_patch", map[string]any{"context_id": first.ContextID, "file_id": snapshot.Files[0].ID}, false)
+	raw, err = json.Marshal(result.StructuredContent)
+	if err != nil || !strings.Contains(string(raw), "+after") {
+		t.Fatalf("stored patch: %s %v", raw, err)
+	}
+	call("get_review_comments", map[string]any{}, true)
+	call("get_review_comments", map[string]any{"context_id": first.ContextID}, false)
+	call("get_diff", map[string]any{"context_id": foreignSubmission.Context.ID}, true)
+	call("get_review_comments", map[string]any{"context_id": foreignSubmission.Context.ID}, true)
+	call("resolve_review_comment", map[string]any{"context_id": foreignSubmission.Context.ID, "comment_id": "missing"}, true)
+	call("get_file_patch", map[string]any{"context_id": foreignSubmission.Context.ID, "file_id": snapshot.Files[0].ID}, true)
+	scoped := connect("/mcp/contexts/" + first.ContextID)
+	result, err = scoped.CallTool(t.Context(), &mcp.CallToolParams{Name: "get_diff", Arguments: map[string]any{}})
+	if err != nil || result.IsError {
+		t.Fatalf("scoped stored diff: %#v %v", result, err)
+	}
+	result, err = scoped.CallTool(t.Context(), &mcp.CallToolParams{Name: "get_review_comments", Arguments: map[string]any{"context_id": second.ContextID}})
+	if err != nil || !result.IsError {
+		t.Fatalf("scoped context override: %#v %v", result, err)
+	}
+}
