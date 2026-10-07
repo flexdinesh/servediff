@@ -229,7 +229,7 @@ func submitCollected(ctx context.Context, command string, values options, settin
 // incomplete/error response deliberately falls back to publishing the empty state.
 func (target *destination) suppressInitialEmpty(ctx context.Context, request ingestion.Request) (bool, error) {
 	metadata := request.Metadata
-	query := url.Values{"sourceId": {metadata.SourceID}, "repository": {metadata.RepositoryName}, "worktree": {metadata.WorktreeName}, "limit": {"500"}}
+	query := url.Values{"sourceId": {metadata.SourceID}, "limit": {"500"}}
 	client := &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	for pageNumber := 0; pageNumber < 8; pageNumber++ {
 		httpRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, target.endpoint+"/api/v2/contexts?"+query.Encode(), nil)
