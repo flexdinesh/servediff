@@ -334,6 +334,13 @@ func defaults(options Options) (Options, error) {
 	if options.Base == "" {
 		options.Base = "auto"
 	}
+	if options.TriggerRoot != "" {
+		root, err := filepath.Abs(options.TriggerRoot)
+		if err != nil {
+			return Options{}, err
+		}
+		options.TriggerRoot = root
+	}
 	if options.SourceID == "" {
 		id, err := SourceID()
 		if err != nil {

@@ -39,6 +39,22 @@ func TestSessionProvenanceDoesNotChangeContentIdentity(t *testing.T) {
 	}
 }
 
+func TestCollectorResolvesTriggerDirectory(t *testing.T) {
+	root := branchRepository(t)
+	subdir := filepath.Join(root, "subdir")
+	if err := os.Mkdir(subdir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(subdir)
+	request, err := Collect(t.Context(), ".", Options{SourceID: "machine", Hostname: "host", TriggerRoot: "."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.Metadata.TriggerRoot != subdir || request.Metadata.Root != root {
+		t.Fatalf("trigger directory must remain distinct from checkout root: %+v", request.Metadata)
+	}
+}
+
 func TestComparisonFallbackAndDetachedMetadata(t *testing.T) {
 	root := repository(t)
 	unborn := collect(t, root)
