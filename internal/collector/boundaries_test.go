@@ -2,6 +2,7 @@ package collector
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -164,5 +165,28 @@ func TestWorktreeDiscoveryReportsUnavailableCheckout(t *testing.T) {
 	result, err := DiscoverWorktrees(t.Context(), root, "machine", "auto")
 	if err != nil || len(result.Sources) != 1 || len(result.Diagnostics) != 1 {
 		t.Fatalf("missing checkout needs diagnostic without false source: %+v %v", result, err)
+	}
+}
+
+func TestWorktreeDiscoveryIncludesEveryRegisteredCheckout(t *testing.T) {
+	root := branchRepository(t)
+	worktrees := t.TempDir()
+	// The registered Git list is finite and must not inherit workspace scanning's
+	// unrelated safety bound. No checkout files are needed for discovery.
+	for index := 0; index < discoveryLimit; index++ {
+		linked := filepath.Join(worktrees, fmt.Sprintf("linked-%03d", index))
+		git(t, root, "worktree", "add", "--detach", "--no-checkout", linked)
+	}
+	result, err := DiscoverWorktrees(t.Context(), root, "machine", "auto")
+	if err != nil || len(result.Diagnostics) != 0 || len(result.Sources) != discoveryLimit+1 {
+		t.Fatalf("registered checkout list truncated: %d sources, diagnostics %v, err %v", len(result.Sources), result.Diagnostics, err)
+	}
+	if result.Sources[0].Path != root {
+		t.Fatalf("origin not first: %+v", result.Sources[0])
+	}
+	for _, source := range result.Sources {
+		if source.InputPath != root || source.Branch != "" {
+			t.Fatalf("registered checkout lost trigger directory: %+v", source)
+		}
 	}
 }

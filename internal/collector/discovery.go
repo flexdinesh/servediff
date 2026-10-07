@@ -83,13 +83,9 @@ func DiscoverWorktrees(ctx context.Context, input, sourceID, base string) (Disco
 		}
 	}
 	seen := make(map[string]string)
-	for index, root := range roots {
+	for _, root := range roots {
 		if err := ctx.Err(); err != nil {
 			return result, err
-		}
-		if index == discoveryLimit {
-			result.Diagnostics = append(result.Diagnostics, "worktree discovery reached 128-worktree limit")
-			break
 		}
 		if _, err := os.Stat(root); err != nil {
 			result.Diagnostics = append(result.Diagnostics, fmt.Sprintf("worktree unavailable %s: %v", root, err))
