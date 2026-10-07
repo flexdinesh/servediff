@@ -106,7 +106,7 @@ there is no upstream relay or perpetual upload process. Manual collection
 commands continue reporting network failures directly.
 
 Discovery resolves the supplied Git directory and its registered worktrees,
-with a 128-worktree safety bound. Hooks ignore non-Git input. Child-repository
+without a worktree-count limit. Hooks ignore non-Git input. Child-repository
 scanning and unmerged branch recovery are excluded from the default policy.
 Manual and automatic collection compare working contents with the merge base
 of the local default branch; staged/unstaged retain HEAD/index semantics.

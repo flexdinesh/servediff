@@ -181,7 +181,7 @@ full-file viewing. It does not attribute edits to a turn or agent; completion is
 a trigger, and the worker may capture edits made after that trigger.
 
 Nested hook directories resolve to the checkout root. Discovery includes that
-checkout and all registered live worktrees, with a 128-worktree safety bound.
+checkout and all registered live worktrees.
 Non-Git input is ignored; child repositories and branches without checkouts are
 excluded. Explicit `review --branch` can recover committed changes after worktree
 removal. Discovery never fetches, switches branches or creates worktrees.

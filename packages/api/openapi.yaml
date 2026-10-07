@@ -1092,7 +1092,8 @@ components:
       properties:
         protocolVersion:
           type: integer
-          const: 1
+          enum: [1, 2]
+          description: Current producers send 2. Legacy version 1 remains accepted for ingestion and replay.
         submissionId:
           type: string
           minLength: 1

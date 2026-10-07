@@ -184,6 +184,7 @@ func TestRetentionConfigurationPreservesExistingExpiryAndReplay(t *testing.T) {
 	}
 	user := testUser(t, store, "retention")
 	request := observationRequest("source", "original")
+	request.ProtocolVersion = 1
 	request.ContentHash = strings.Repeat("a", 64)
 	binding, err := store.Ingest(user.ID, request)
 	if err != nil {

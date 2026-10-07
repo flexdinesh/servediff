@@ -26,6 +26,9 @@ func TestValidateObservationContracts(t *testing.T) {
 		{"oversized source", func(r *Request) { r.Metadata.SourceID = strings.Repeat("x", 257) }},
 		{"missing collection time", func(r *Request) { r.Metadata.CollectedAt = 0 }},
 		{"unknown trigger", func(r *Request) { r.Metadata.Trigger = "watcher" }},
+		{"working-tree non-HEAD baseline", func(r *Request) {
+			r.Metadata.Comparison = &Comparison{Kind: "working-tree", BaseRef: "main"}
+		}},
 		{"oversized metadata", func(r *Request) { r.Metadata.Hostname = strings.Repeat("x", (32<<10)+1) }},
 		{"oversized trigger root", func(r *Request) { r.Metadata.TriggerRoot = strings.Repeat("x", (32<<10)+1) }},
 		{"unknown comparison", func(r *Request) { r.Metadata.Comparison = &Comparison{Kind: "unknown", BaseRef: "HEAD"} }},
@@ -118,5 +121,13 @@ func TestValidateEmptyAndUnavailableSnapshots(t *testing.T) {
 	r.Metadata.RepositoryKey, r.Metadata.CheckoutKey = "", ""
 	if err := Validate(r); err != nil {
 		t.Fatalf("unassociated piped snapshot: %v", err)
+	}
+}
+
+func TestValidateLegacyProtocol(t *testing.T) {
+	r := validRequest()
+	r.ProtocolVersion = 1
+	if err := Validate(r); err != nil {
+		t.Fatalf("legacy producer: %v", err)
 	}
 }

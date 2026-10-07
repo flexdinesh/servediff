@@ -9,7 +9,7 @@ import (
 )
 
 func Validate(input Request) error {
-	if input.ProtocolVersion != ProtocolVersion {
+	if input.ProtocolVersion != 1 && input.ProtocolVersion != ProtocolVersion {
 		return fmt.Errorf("unsupported ingestion protocol %d", input.ProtocolVersion)
 	}
 	if strings.TrimSpace(input.SubmissionID) == "" || len(input.SubmissionID) > 128 {
@@ -36,6 +36,9 @@ func Validate(input Request) error {
 		}
 		if strings.TrimSpace(comparison.BaseRef) == "" {
 			return fmt.Errorf("comparison baseRef required")
+		}
+		if comparison.Kind == "working-tree" && comparison.BaseRef != "HEAD" {
+			return fmt.Errorf("working-tree comparison requires HEAD baseline")
 		}
 		if comparison.Kind == "branch" && (comparison.BaseCommit == "" || comparison.MergeBase == "") {
 			return fmt.Errorf("branch comparison requires baseCommit and mergeBase")

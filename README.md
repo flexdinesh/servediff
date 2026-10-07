@@ -210,6 +210,10 @@ triggers or `servediff collector retry`. Their pending-data retention remains
 seven days independently of server retention. Manual commands always submit and
 report failures directly.
 
+Collectors advertise ingestion protocol 2 for comparison and session metadata;
+upgrade collector and server together. Servers still accept protocol 1 payloads
+and retries from older collectors.
+
 `/api/v2/contexts` lists stored observations with `q`, `repository`, `branch`,
 `worktree`, `hostname`, `sourceId`, `runId`, `harness`, `sessionId` and `sessionName`
 filters. Session filters search submission associations. Scoped review operations

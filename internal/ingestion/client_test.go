@@ -107,10 +107,10 @@ func TestHealthChecksIdentityProtocolAndAuthentication(t *testing.T) {
 		code int
 		ok   bool
 	}{
-		{"ready", `{"stateId":"database-account","protocolVersion":1}`, 200, true},
-		{"missing identity", `{"protocolVersion":1}`, 200, false},
-		{"incompatible", `{"stateId":"database-account","protocolVersion":2}`, 200, false},
-		{"trailing data", `{"stateId":"database-account","protocolVersion":1} {}`, 200, false},
+		{"ready", `{"stateId":"database-account","protocolVersion":2}`, 200, true},
+		{"missing identity", `{"protocolVersion":2}`, 200, false},
+		{"incompatible", `{"stateId":"database-account","protocolVersion":1}`, 200, false},
+		{"trailing data", `{"stateId":"database-account","protocolVersion":2} {}`, 200, false},
 		{"authentication", `Unauthorized`, 401, false},
 		{"redirect", ``, 307, false},
 	} {

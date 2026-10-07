@@ -210,6 +210,9 @@ func (store *Store) initialize() error {
 	if err := initializeIngestion(transaction); err != nil {
 		return err
 	}
+	if err := initializeAuthentication(transaction); err != nil {
+		return err
+	}
 	if version < 5 {
 		// Preserve histories; begin retention from each context's last submission.
 		if _, err := transaction.Exec(`UPDATE diffs SET expires_at=COALESCE(

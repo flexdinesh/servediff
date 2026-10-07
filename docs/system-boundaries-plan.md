@@ -63,6 +63,12 @@ resolves cross-track interfaces and behavior. API schema, generated artifacts,
 plugin metadata adapters, system/development documentation and comprehensive
 regression tests are finalized after integration.
 
+Integration decisions: manual review remains an explicit fresh submission;
+hooks own their suppression acknowledgements and reconcile server state when
+missing. Both share collection/routing/delivery operations. Ingestion protocol 2
+advertises provenance support; the server continues accepting legacy protocol 1
+payloads and retries. Collectors/server should be upgraded together.
+
 ## Acceptance and verification
 
 - Manual and hooked captures use identical branch semantics and policy freshness.
