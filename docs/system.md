@@ -8,7 +8,7 @@ ask a producer to inspect a checkout.
 This document records the implemented design and its decisions. See
 [architecture.md](architecture.md) for package boundaries,
 [the README](../README.md) for commands and [the OpenAPI contract](../packages/api/openapi.yaml)
-for transport details. Future extensions below are not implemented guarantees.
+for transport details.
 
 ## Terminology and ownership
 
@@ -18,7 +18,9 @@ for transport details. Future extensions below are not implemented guarantees.
 | Collector           | The shared Git-aware collection pipeline used by manual CLI commands and agent hooks.                                                               |
 | Plugin / agent hook | An event-triggered producer. Can invoke the CLI or implement the ingestion contract directly.                                                       |
 | Server / daemon     | One process owning ingestion, application processing, SQLite, REST, MCP and web assets. A local daemon is the background deployment of this server. |
-| Observation         | One immutable submission: captured metadata, diff scopes, patches and available file contents.                                                      |
+| Observation         | An immutable snapshot: original metadata, diff scopes, patches and available file contents.                                                         |
+| Submission          | One collection's provenance and retry identity; may associate with an existing matching observation.                                                |
+| Agent session       | Harness, session ID and optional mutable name associated with submissions; does not establish authorship.                                           |
 | Context             | The server-assigned address for reviewing an observation, including its review state.                                                               |
 | Source              | A producer installation or explicitly identified container. Distinct from a repository, branch or hostname.                                         |
 | Checkout            | A source-specific Git working directory or linked worktree. Owned by the producer.                                                                  |
@@ -76,9 +78,20 @@ services directly rather than calling each other over HTTP.
 
 ### Collect and ingest
 
-`servediff review` collects the current directory; `review --path PATH` selects
-another checkout. An agent hook runs the same operation with
-`--trigger agent-hook`, optionally supplying agent, run and source identity.
+`servediff review` collects the current checkout and all registered worktrees;
+`review --path PATH` selects the originating checkout. Both manual review and
+hooks default to branch changes from the default branch's merge base plus dirty
+files; staged/unstaged retain HEAD/index semantics. `--base HEAD` selects working
+changes only. Comparison metadata records the baseline ref, baseline tip and
+actual merge-base commit. Missing defaults and unborn checkouts fall back
+explicitly to working-tree/HEAD. Detached HEAD can compare against an available
+default branch. No comparison fetches refs.
+
+Hooks ignore non-Git directories and do not scan child repositories or recover
+unmerged branches automatically. `review --branch NAME` explicitly reads a
+branch's committed Git objects, ignoring the live checkout's dirty files.
+An agent hook supplies harness, session ID, optional session name, source
+identity and the triggering directory.
 The trigger changes provenance and browser-opening behavior, not the ingestion
 model. `servediff pipe` submits an explicit patch from stdin without Git lookup;
 its absolute submission directory is provenance only.
@@ -88,7 +101,10 @@ its absolute submission directory is provenance only.
    only the all scope and do not supply full file contents.
 2. Collection checks for concurrent checkout changes and uses bounded retries
    and deadlines. Collection failure is reported. A successfully collected
-   empty diff is a valid observation, not an error placeholder.
+   empty diff is a valid observation, not an error placeholder. Automatic hooks
+   skip initially clean checkouts, publish dirty-to-clean transitions and retain
+   new session associations even when content has not changed. Manual review
+   always submits and returns the originating checkout's review URL.
 3. For local submission, the CLI discovers or starts the server. An explicit
    remote destination skips local service bootstrap.
 4. The producer sends the versioned request, submission ID, metadata and scopes.
@@ -131,14 +147,15 @@ The dashboard queries `/api/v2/contexts`, selects a repository, then selects an
 observation identified by worktree, branch, source, run and time. Distinct
 content from the same worktree remains independently selectable; unchanged
 reviews reuse one context. Search supports repository, branch, worktree,
-hostname, source and run metadata. Filters cover All / Latest / Stale, Host,
+hostname, source and run metadata, plus harness/session ID/session name through
+submission associations. Filters cover All / Latest / Stale, Host,
 Branch and Worktree, with OR within a multi-select filter and AND across
 filters. Filtering precedes repository grouping and counts. Latest snapshots
 with changes are the default; the right-aligned All checkbox also includes
 unavailable, empty and unknown-status entries. Unavailable legacy entries remain
 disabled and skipped by keyboard navigation. Selections persist while navigating
 the picker. New collections make older snapshots stale within the same owner,
-source, repository, checkout and branch; collection time wins over upload time,
+source, repository, checkout, branch and comparison policy; collection time wins over upload time,
 with arrival order breaking ties. Fresh deduplicated submissions can make an
 existing review latest again without changing its captured contents or metadata.
 The durable stream head survives expiry and pruning so older retained snapshots
@@ -159,10 +176,11 @@ query durable state, not a durable queue or an event replay log.
 The conceptual model is:
 
 ```text
-account
+user
   repository grouping
     observations from any number of sources and checkouts
       captured metadata
+      submissions and observing sessions
       immutable scopes: all / staged / unstaged
         manifest, patches, available contents
         mutable review state
@@ -172,25 +190,32 @@ An observation can also be unassociated with a repository, such as a standalone
 piped patch. Server-assigned context, diff and version IDs identify stored
 records; producer paths do not identify server files.
 
-| Identity or metadata | Current meaning                                                                                                                                                                                                |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Account              | Established by local or remote server composition; never accepted as an arbitrary producer claim.                                                                                                              |
-| Repository key       | Grouping hint derived from the sanitized Git remote URL when available; otherwise from source identity and Git common directory. Equivalent repositories with different remote URL forms may group separately. |
-| Source ID            | Stable local producer identity, or explicit `--source-id` for a container/installation. Hostname is a searchable label, not this identity.                                                                     |
-| Checkout key         | Derived from source ID and Git directory, distinguishing linked worktrees and independent sources.                                                                                                             |
-| Submission ID        | Identifies one collection and survives retries. A new collection gets a new ID.                                                                                                                                |
-| Provenance           | Repository name, remote URL, path, worktree name, branch, HEAD, hostname, agent, run, trigger, collection time and collector version.                                                                          |
-| Stored time          | Server timestamp used for catalog ordering; separate from the producer's collection timestamp.                                                                                                                 |
+| Identity or metadata | Current meaning                                                                                                                                                                                 |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Account              | Local default user or remotely authenticated individual; never accepted as an arbitrary producer claim.                                                                                         |
+| Repository key       | Enrolled in Git metadata, initially derived from sanitized remote URL or source/common directory; preserved through moves and remote changes. Different remote URL forms may enroll separately. |
+| Source ID            | Stable local producer identity, or explicit `--source-id` for a container/installation. Hostname is a searchable label, not this identity.                                                      |
+| Checkout key         | Enrolled per source in Git metadata, distinguishing linked worktrees and independent sources and surviving directory moves.                                                                     |
+| Submission ID        | Identifies one collection and survives retries. A new collection gets a new ID.                                                                                                                 |
+| Provenance           | Repository name, remote URL, path, worktree name, branch, HEAD, resolved comparison, hostname, harness/session, triggering directory, trigger, collection time and collector version.           |
+| Stored time          | Server timestamp used for catalog ordering; separate from the producer's collection timestamp.                                                                                                  |
 
-The account boundary allows future authenticated users to receive observations
-from many containers, including identical branch and path names. Source, run
+Each authenticated user can receive observations
+from many containers, including identical branch and path names. Source, session
 and checkout metadata preserve their differences. Provenance describes what a
 producer reported; it is not proof of repository ownership or trustworthiness.
+Identical snapshots share review state within the same user/source/checkout/
+branch/comparison identity. Sessions associate with those shared contexts;
+renaming a session updates its searchable label without changing snapshot
+metadata. The triggering session observed collection; it does not own every
+worktree's edits.
 
 SQLite is the durable query source, including the diff data itself. Reads need
 neither Git nor a repository mount. Available full contents are captured within
 a collection budget; unsupported or unavailable previews remain explicit.
-Snapshots expire seven days after the last fresh submission. Reads enforce
+Snapshot retention is configurable in whole days, default seven, after the last
+fresh submission. Changing configuration preserves existing expiry until a
+fresh submission; retries do not extend it. Reads enforce
 expiry immediately; local and remote servers prune at startup and hourly,
 removing all scopes, previews, comments, marks and retry mappings. Schema
 migration preserves existing histories, sets expiry from their last
@@ -206,8 +231,8 @@ worktree contexts cannot trigger server Git reads; users submit a new review.
 | Push-only freshness                                          | Queries have predictable dependencies and work after checkout removal. Missing producer events or failed uploads can leave the catalog behind the checkout.  |
 | Complete observations, not path registration or change pings | The same contract works across machines and containers. Producers pay collection and upload costs; the server never needs producer filesystem access.        |
 | Shared pipeline for hooks and manual commands                | Both paths produce the same searchable metadata and reviewable data. No separate plugin-specific storage model.                                              |
-| Immutable snapshots with seven-day retention                 | Reused contexts keep their original contents and review state; fresh submissions reset expiry. Expiry removes comments and reviewed marks too.               |
-| Dedupe matching checkout content                             | Stable hashes reuse unchanged reviews within one account/source/checkout/branch/HEAD. Independent sources and different contents remain separate.            |
+| Immutable snapshots with configurable retention              | Defaults to seven days. Reused contexts keep contents/review state; fresh submissions reset expiry. Expiry removes comments and marks too.                   |
+| Dedupe matching checkout content                             | Stable hashes reuse reviews within one user/source/checkout/branch/HEAD/comparison policy. Sessions share review state; independent sources remain separate. |
 | Synchronous atomic ingestion                                 | A successful receipt means publication is committed, not merely queued. Upload latency includes validation and persistence.                                  |
 | One server process, layered entry points                     | Local use stays simple; remote deployment adds authentication around shared logic. This is not a distributed worker system.                                  |
 | SQLite first                                                 | Durable queries and transactions with a small operational footprint. Other storage and queue backends remain future implementation work.                     |
@@ -215,7 +240,7 @@ worktree contexts cannot trigger server Git reads; users submit a new review.
 | No watcher                                                   | Explicit CLI calls and agent events are the only new collection triggers. There is no filesystem polling, Git-hook installer or background freshness repair. |
 
 “Latest” means the most recently collected submission within a source, repository,
-checkout and branch; arrival order breaks ties. Delayed uploads remain stale.
+checkout, branch and comparison policy; arrival order breaks ties. Delayed uploads remain stale.
 It does not mean verified current checkout state. Producer collection clocks and
 submission arrival order can differ. The API does not contact producers to
 establish freshness.
@@ -226,7 +251,7 @@ Replay identity is **account + source ID + submission ID**. The server hashes
 the validated request representation. A matching replay returns the original
 context; different content under the same identity fails with a conflict.
 A separate identity uses account, source, repository, checkout, branch, HEAD,
-source kind, scopes and producer content hash to reuse unexpired snapshots.
+source kind, scopes, comparison policy and producer content hash to reuse unexpired snapshots.
 The hash covers full content before preview truncation, including binary and
 untracked files, modes, renames and staged/unstaged state; mtime and ctime are
 excluded. Unsupported full identities fail closed and remain independent.
@@ -240,8 +265,12 @@ retry. A lost response can mean the transaction committed; replay resolves that
 uncertainty without creating a second observation. Validation and conflicting
 requests fail explicitly rather than being retried as transport errors.
 
-There is no durable producer outbox, offline upload queue or guarantee that an
-agent hook will run. Producers report failures. Direct plugins implementing the
+Hook workers persist bounded immutable pending payloads and acknowledgements.
+They retry after subsequent triggers or `collector retry`; no perpetual upload
+process or guarantee that an agent hook will run exists. Local acknowledgements
+are scoped by session and reconciled with server state before suppressing
+uploads. Pending data expires after seven days independently of server retention.
+Manual producers report failures. Direct plugins implementing the
 contract must preserve submission identity themselves when retrying. A later
 manual collection has a new submission ID and may reuse matching content; it
 is not a replay of a previous failed submission.
@@ -253,16 +282,24 @@ to the local adapter. Persisted service settings default to
 `~/.config/servediff/config.json`; service config commands update them and
 start/restart `--config` overrides apply to that invocation. These settings do
 not constitute a catalog of producer checkouts.
+Collector `server`/`token` settings select one HTTP(S) destination and bearer
+credential. Defaults resolve through config file, then environment, then explicit
+flags. Remote failures never fall back to local ingestion. `retentionDays`
+configures server expiry; collectors cannot change a remote server's retention.
 
-The local public API uses the existing local trust model and is unauthenticated.
+The local server supplies one default user. Its public API is unauthenticated.
 It binds to loopback by default. Exposing that listener exposes its data to
 reachable clients; the private control token protects lifecycle operations,
 not public REST/MCP/web access.
 
-The remote entry point currently serves one configured account with SQLite.
-It requires a token, accepts bearer authentication for producer/API/MCP clients
-and HTTP Basic for browser access. Deployments supply TLS and a persistent
-database volume. Multi-account authentication is not implemented yet.
+The remote entry point serves individual users in one SQLite database and one
+replica. Bearer authentication selects the user for producer/API/MCP requests;
+HTTP Basic uses username/token for browsers. Application services, caches and
+events are user-scoped. First startup bootstraps `admin` with a generated token,
+saved privately at `<database>.admin-token`; the database stores token hashes.
+Startup prints the token file path. `servediff-server user create --name NAME
+--state DB` provisions another user while the server is stopped; restart activates
+it. Deployments supply TLS and a persistent database volume.
 
 A container producer needs the collector, Git and checkout access only for the
 duration of collection. It can submit directly to a remote server without a
@@ -273,17 +310,14 @@ container packaging and hook integration are separate deployment work.
 ## Extension direction
 
 Keep checkout access on the producer side and owner resolution on the server
-side. Remote authentication, storage adapters and queue infrastructure can be
-added at server composition boundaries while preserving the shared application
+side. Extend remote authentication or introduce concrete storage/queue adapters
+at server composition boundaries while preserving the shared application
 operations and versioned ingestion contract.
 
-Future multi-user auth must derive ownership from authenticated credentials.
-Future precedence can query retained submission metadata without discarding
-independent source identities. Future
-storage backends must preserve atomic publication and replay identity. A future
+Alternative storage backends must preserve atomic publication, user isolation
+and replay identity. A future
 queue must distinguish accepted work from committed, queryable observations
 rather than silently weakening the existing receipt semantics.
 
-Trigger selection, durable producer retries, configurable retention, multi-user auth,
-alternative storage, queues and any upstream relay remain open extensions.
-They are not hidden background behavior in the current system.
+Alternative storage, server queues, organizations and any upstream relay remain
+future work. No generic backend framework is introduced before a concrete need.
