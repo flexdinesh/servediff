@@ -299,3 +299,29 @@ func TestSchemaSixMigrationPreservesReplaySessionAndDeletedHead(t *testing.T) {
 		t.Fatalf("migration lost payload hash: %v", err)
 	}
 }
+
+// A container execution ID is provenance, not an agent session without a harness.
+func TestContainerRunWithoutHarnessRemainsSearchableWithoutSession(t *testing.T) {
+	store := openTestStore(t)
+	user := testUser(t, store, "container-run")
+	request := observationRequest("source", "container")
+	request.Metadata.RunID = "container-execution"
+	binding, err := store.Ingest(user.ID, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	context, err := store.Context(user.ID, binding.ContextID, time.Now())
+	if err != nil || len(context.Sessions) != 0 {
+		t.Fatalf("container mistaken for session: %#v %v", context, err)
+	}
+	for _, filter := range []ingestion.Filter{{RunID: "container-execution"}, {Query: "container-execution"}} {
+		items, err := store.ObservationContexts(user.ID, 100, 0, "", filter)
+		if err != nil || len(items) != 1 || items[0].ID != binding.ContextID {
+			t.Fatalf("container provenance lost: %#v %v", items, err)
+		}
+	}
+	items, err := store.ObservationContexts(user.ID, 100, 0, "", ingestion.Filter{SessionID: "container-execution"})
+	if err != nil || len(items) != 0 {
+		t.Fatalf("container filter mistaken for session: %#v %v", items, err)
+	}
+}

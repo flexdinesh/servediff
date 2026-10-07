@@ -73,7 +73,7 @@ func putSessionAssociation(tx *sql.Tx, ownerID, contextID string, metadata inges
 	if metadata.AgentSession != nil {
 		session = *metadata.AgentSession
 	}
-	if session.ID == "" {
+	if session.ID == "" || session.Harness == "" {
 		return nil
 	}
 	namedAt := int64(0)
