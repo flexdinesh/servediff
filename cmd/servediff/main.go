@@ -72,6 +72,12 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 		}
 		return err
 	}
+	if command == "review" || command == "pipe" {
+		values, err = resolvedCollectorSettings(values)
+		if err != nil {
+			return err
+		}
+	}
 	if values.version {
 		fmt.Fprintln(stdout, buildversion.String())
 		return nil
@@ -88,13 +94,13 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 	if command == "service" && (values.repositorySet || values.fixture != "" || values.capture != "") {
 		return errors.New("service commands do not accept diff input")
 	}
-	if command == "service" && (action == "stop" || action == "status") && (values.hostSet || values.portSet || values.stateSet || values.webDirSet) {
+	if command == "service" && (action == "stop" || action == "status") && (values.hostSet || values.portSet || values.stateSet || values.webDirSet || values.retentionDaysSet) {
 		return errors.New("stop and status do not accept server settings")
 	}
-	if (command == "service" || command == "serve" || command == "__daemon") && (values.serverSet || values.tokenSet || values.agent != "" || values.runID != "" || values.sourceID != "" || values.trigger != "manual") {
+	if (command == "service" || command == "serve" || command == "__daemon") && (values.serverSet || values.tokenSet || values.agent != "" || values.runID != "" || values.sessionName != "" || values.sourceID != "" || values.trigger != "manual") {
 		return errors.New("server lifecycle commands do not accept collector options")
 	}
-	if (command == "review" || command == "pipe") && values.server != "" && (values.hostSet || values.portSet || values.stateSet || values.webDirSet) {
+	if (command == "review" || command == "pipe") && values.server != "" && (values.hostSet || values.portSet || values.stateSet || values.webDirSet || values.retentionDaysSet) {
 		return errors.New("remote ingestion does not accept local server settings")
 	}
 	if command == "review" && (values.fixture != "" || values.directory == "-") {
@@ -125,7 +131,7 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 	} else if (command == "service" && (action == "start" || action == "restart")) || command == "serve" || ((command == "review" || command == "pipe") && values.server == "") {
 		settings, explicit, err = resolvedServerSettings(values)
 		if command == "service" {
-			explicit = daemon.Explicit{Host: true, Port: true, State: true, WebDir: true}
+			explicit = daemon.Explicit{Host: true, Port: true, State: true, WebDir: true, RetentionDays: true}
 		}
 	}
 	if err != nil {
@@ -204,19 +210,15 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 	}()
 	operationCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	var input daemon.InitialInput
-	if values.capture != "" {
-		input = daemon.InitialInput{Kind: "reopen", CaptureID: values.capture}
-	} else {
-		request, collectErr := collectSubmission(operationCtx, command, values, stdin)
-		if collectErr != nil {
+	if values.capture == "" {
+		requests, collectErr := collectSubmissions(operationCtx, command, values, stdin)
+		if len(requests) == 0 {
 			return collectErr
 		}
-		input = daemon.InitialInput{Kind: "ingestion", Ingestion: &request}
-		if values.server != "" {
-			return submitRemote(operationCtx, command, values, request, stdout, stderr, started)
-		}
+		submitErr := submitCollected(operationCtx, command, values, settings, explicit, requests, stdout, stderr, started)
+		return errors.Join(collectErr, submitErr)
 	}
+	input := daemon.InitialInput{Kind: "reopen", CaptureID: values.capture}
 	client, err := daemon.NewClient()
 	if err != nil {
 		return err
@@ -320,13 +322,23 @@ func resolvedServerSettings(values options) (daemon.Settings, daemon.Explicit, e
 	if values.webDirSet {
 		saved.WebDir = values.webDir
 	}
+	if values.retentionDaysSet {
+		saved.RetentionDays = values.retentionDays
+	}
 	settings, err := saved.Settings()
-	return settings, daemon.Explicit{Host: values.hostSet, Port: values.portSet, State: values.stateSet, WebDir: values.webDirSet}, err
+	return settings, daemon.Explicit{Host: values.hostSet, Port: values.portSet, State: values.stateSet, WebDir: values.webDirSet, RetentionDays: values.retentionDaysSet}, err
 }
 
 func serverSettings(values options) (daemon.Settings, daemon.Explicit, error) {
 	settings := daemon.DefaultSettings()
 	settings.Host, settings.Port = values.host, -1
+	settings.RetentionDays = values.retentionDays
+	if settings.RetentionDays == 0 {
+		settings.RetentionDays = 7
+	}
+	if settings.RetentionDays < 1 || settings.RetentionDays > 106751 {
+		return settings, daemon.Explicit{}, errors.New("retention-days must be between 1 and 106751")
+	}
 	if values.portSet {
 		settings.Port = values.port
 	}
@@ -352,7 +364,7 @@ func serverSettings(values options) (daemon.Settings, daemon.Explicit, error) {
 		}
 		settings.WebDir = filepath.Clean(path)
 	}
-	return settings, daemon.Explicit{Host: values.hostSet, Port: values.portSet, State: values.stateSet, WebDir: values.webDirSet}, nil
+	return settings, daemon.Explicit{Host: values.hostSet, Port: values.portSet, State: values.stateSet, WebDir: values.webDirSet, RetentionDays: values.retentionDaysSet}, nil
 }
 
 func openBrowser(values options, url string, stderr io.Writer) {
@@ -385,39 +397,5 @@ func writeHelp(writer io.Writer) {
 }
 
 func submitRemote(ctx context.Context, command string, values options, request ingestion.Request, stdout, stderr io.Writer, started time.Time) error {
-	client := ingestion.NewClient(values.server, values.token)
-	var receipt ingestion.Receipt
-	var err, firstFailure error
-	uncertain := false
-	for attempt := 0; attempt < 2; attempt++ {
-		recordCollectorActivity(hooks.Activity{Stage: "ingestion", Status: "started", SubmissionID: request.SubmissionID, Attempt: attempt + 1, Destination: values.server})
-		receipt, err = client.Submit(ctx, request)
-		if err == nil {
-			recordCollectorActivity(hooks.Activity{Stage: "ingestion", Status: "acknowledged", SubmissionID: request.SubmissionID, ContextID: receipt.ContextID, Attempt: attempt + 1, Destination: values.server})
-			break
-		}
-		recordCollectorActivity(hooks.Activity{Stage: "ingestion", Status: "failed", SubmissionID: request.SubmissionID, Attempt: attempt + 1, Error: err.Error()}, values.token)
-		var transportError *url.Error
-		retry := errors.As(err, &transportError)
-		uncertain = uncertain || retry
-		if !retry || ctx.Err() != nil {
-			break
-		}
-		if firstFailure == nil {
-			firstFailure = err
-		}
-	}
-	if err != nil {
-		if !uncertain {
-			return err
-		}
-		return fmt.Errorf("submission %s may have been saved; inspect server observations before resubmitting: %w", request.SubmissionID, errors.Join(firstFailure, err))
-	}
-	input := loadedInput{directory: request.Metadata.Root, snapshot: receipt.Snapshot, processed: time.Since(started), mode: "git", contextID: receipt.ContextID, mcpURL: receipt.MCPURL, submitted: true, remote: true}
-	if command == "pipe" {
-		input.mode = "pipe"
-	}
-	writeStartup(stdout, input, receipt.ReviewURL)
-	openBrowser(values, receipt.ReviewURL, stderr)
-	return nil
+	return submitCollected(ctx, command, values, daemon.Settings{}, daemon.Explicit{}, []ingestion.Request{request}, stdout, stderr, started)
 }

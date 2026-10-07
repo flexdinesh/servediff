@@ -170,7 +170,7 @@ func (multi *Multi) ServeHTTP(response http.ResponseWriter, request *http.Reques
 		var page contextservice.Page
 		var err error
 		query := request.URL.Query()
-		filter := ingestion.Filter{Query: query.Get("q"), Repository: query.Get("repository"), Branch: query.Get("branch"), Worktree: query.Get("worktree"), Hostname: query.Get("hostname"), SourceID: query.Get("sourceId"), RunID: query.Get("runId")}
+		filter := ingestion.Filter{Query: query.Get("q"), Repository: query.Get("repository"), Branch: query.Get("branch"), Worktree: query.Get("worktree"), Hostname: query.Get("hostname"), SourceID: query.Get("sourceId"), RunID: query.Get("runId"), Harness: query.Get("harness"), SessionID: query.Get("sessionId"), SessionName: query.Get("sessionName")}
 		if provider, ok := multi.provider.(interface {
 			ListFiltered(context.Context, int, string, ingestion.Filter) (contextservice.Page, error)
 		}); ok {

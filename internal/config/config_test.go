@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -108,6 +109,12 @@ func TestInvalidEnvironmentAndFileFail(t *testing.T) {
 		{"SERVEDIFF_PORT", "65536"},
 		{"SERVEDIFF_PORT", "-1"},
 		{"SERVEDIFF_STATE", ""},
+		{"SERVEDIFF_SERVER_URL", "ftp://example.com"},
+		{"SERVEDIFF_SERVER_URL", "https://example.com/api"},
+		{"SERVEDIFF_RETENTION_DAYS", ""},
+		{"SERVEDIFF_RETENTION_DAYS", "0"},
+		{"SERVEDIFF_RETENTION_DAYS", "-1"},
+		{"SERVEDIFF_RETENTION_DAYS", "106752"},
 	} {
 		t.Run(field.name+"/"+field.value, func(t *testing.T) {
 			t.Setenv(field.name, field.value)
@@ -122,6 +129,68 @@ func TestInvalidEnvironmentAndFileFail(t *testing.T) {
 	}
 	if _, err := LoadFile(path); err == nil {
 		t.Fatal("accepted invalid file")
+	}
+}
+
+func TestDestinationAndRetentionPrecedence(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	for key, value := range map[string]string{"server": "https://reviews.example.com", "token": "saved-token", "retentionDays": "14"} {
+		if err := EditFile(path, key, &value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("SERVEDIFF_SERVER_URL", "http://127.0.0.1:9000")
+	t.Setenv("SERVEDIFF_TOKEN", "env-token")
+	t.Setenv("SERVEDIFF_RETENTION_DAYS", "3")
+	values, err := LoadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if values.Server != "http://127.0.0.1:9000" || values.Token != "env-token" || values.RetentionDays != 3 {
+		t.Fatalf("environment precedence: %#v", values)
+	}
+	settings, err := values.Settings()
+	if err != nil || settings.RetentionDays != 3 {
+		t.Fatalf("server retention: %#v %v", settings, err)
+	}
+	saved, err := ReadFile(path)
+	if err != nil || saved.Server != "https://reviews.example.com" || saved.Token != "saved-token" || saved.RetentionDays != 14 {
+		t.Fatalf("environment persisted: %#v %v", saved, err)
+	}
+	for _, key := range []string{"server", "token", "retentionDays"} {
+		if err := EditFile(path, key, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	restored, err := ReadFile(path)
+	if err != nil || restored.Server != "" || restored.Token != "" || restored.RetentionDays != 7 {
+		t.Fatalf("remove restores defaults: %#v %v", restored, err)
+	}
+	info, err := os.Stat(path)
+	if err != nil || (runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0) {
+		t.Fatalf("token config is not private: %v", err)
+	}
+}
+
+func TestLegacyConfigAndInvalidCollectorSettings(t *testing.T) {
+	defaults, err := Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := Merge(defaults, `{"host":"127.0.0.1","state":"memory"}`)
+	if err != nil || legacy.RetentionDays != 7 {
+		t.Fatalf("legacy retention: %#v %v", legacy, err)
+	}
+	for _, raw := range []string{
+		`{"server":null}`, `{"token":null}`, `{"retentionDays":null}`,
+		`{"server":"https://user:pass@example.com"}`, `{"server":"https://example.com?query"}`,
+		`{"server":"https://example.com#fragment"}`, `{"retentionDays":0}`, `{"retentionDays":1.5}`,
+	} {
+		if _, err := Merge(defaults, raw); err == nil {
+			t.Fatalf("accepted invalid settings: %s", raw)
+		} else if strings.Contains(err.Error(), "user:pass") {
+			t.Fatalf("error exposes credentials: %v", err)
+		}
 	}
 }
 

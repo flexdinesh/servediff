@@ -40,12 +40,19 @@ type Resolution struct {
 }
 
 type Service struct {
-	session session.Session
-	store   CommentStore
+	session        session.Session
+	store          CommentStore
+	mutations      MutationStore
+	strictContext  bool
+	snapshotLoader SnapshotLoader
 }
 
 func New(active session.Session, store CommentStore) *Service {
-	return &Service{session: active, store: store}
+	service := &Service{session: active, store: store}
+	if mutations, ok := store.(MutationStore); ok {
+		service.mutations = mutations
+	}
+	return service
 }
 
 func (service *Service) ListComments(ctx context.Context, includeResolved bool) ([]Comment, error) {

@@ -15,6 +15,9 @@ import (
 )
 
 func initializeIngestion(tx *sql.Tx) error {
+	if err := migrateObservationHeads(tx); err != nil {
+		return err
+	}
 	statements := []string{
 		`CREATE TABLE IF NOT EXISTS observation_repositories (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, repository_key TEXT NOT NULL, UNIQUE(owner_id,repository_key))`,
 		`CREATE TABLE IF NOT EXISTS observations (context_id TEXT PRIMARY KEY REFERENCES contexts(id) ON DELETE CASCADE, owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, source_id TEXT NOT NULL, submission_id TEXT NOT NULL, payload_hash TEXT NOT NULL, repository_id TEXT REFERENCES observation_repositories(id), metadata TEXT NOT NULL, UNIQUE(owner_id,source_id,submission_id))`,
@@ -23,12 +26,12 @@ func initializeIngestion(tx *sql.Tx) error {
 		`INSERT INTO observation_submissions(owner_id,source_id,submission_id,context_id,payload_hash,metadata) SELECT owner_id,source_id,submission_id,context_id,payload_hash,metadata FROM observations WHERE true ON CONFLICT DO NOTHING`,
 		// Stream heads outlive snapshot retention. Backfill newest arrivals first;
 		// an existing head must never regress when its snapshot has been pruned.
-		`CREATE TABLE IF NOT EXISTS observation_stream_heads (owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, source_id TEXT NOT NULL, repository_key TEXT NOT NULL, checkout_key TEXT NOT NULL, branch TEXT NOT NULL, context_id TEXT NOT NULL, collected_at INTEGER NOT NULL, PRIMARY KEY(owner_id,source_id,repository_key,checkout_key,branch))`,
+		`CREATE TABLE IF NOT EXISTS observation_stream_heads (owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, source_id TEXT NOT NULL, repository_key TEXT NOT NULL, checkout_key TEXT NOT NULL, branch TEXT NOT NULL, comparison_policy TEXT NOT NULL DEFAULT '', context_id TEXT NOT NULL, collected_at INTEGER NOT NULL, PRIMARY KEY(owner_id,source_id,repository_key,checkout_key,branch,comparison_policy))`,
 		// Alias only the first stable branch adopting a legacy label. Reusing a
 		// deleted branch name must not attach its history to the new branch ID.
 		`CREATE TABLE IF NOT EXISTS observation_branch_aliases (owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, source_id TEXT NOT NULL, repository_key TEXT NOT NULL, checkout_key TEXT NOT NULL, branch TEXT NOT NULL, branch_id TEXT NOT NULL, PRIMARY KEY(owner_id,source_id,repository_key,checkout_key,branch))`,
-		`INSERT INTO observation_stream_heads(owner_id,source_id,repository_key,checkout_key,branch,context_id,collected_at)
-			SELECT owner_id,source_id,json_extract(metadata,'$.repositoryKey'),json_extract(metadata,'$.checkoutKey'),COALESCE(NULLIF(json_extract(metadata,'$.branchId'),''),json_extract(metadata,'$.branch')),context_id,json_extract(metadata,'$.collectedAt')
+		`INSERT INTO observation_stream_heads(owner_id,source_id,repository_key,checkout_key,branch,comparison_policy,context_id,collected_at)
+			SELECT owner_id,source_id,json_extract(metadata,'$.repositoryKey'),json_extract(metadata,'$.checkoutKey'),COALESCE(NULLIF(json_extract(metadata,'$.branchId'),''),json_extract(metadata,'$.branch')),` + comparisonPolicySQL("metadata") + `,context_id,json_extract(metadata,'$.collectedAt')
 			FROM observation_submissions WHERE json_extract(metadata,'$.repositoryKey')<>'' AND json_extract(metadata,'$.checkoutKey')<>''
 			ORDER BY json_extract(metadata,'$.collectedAt') DESC,rowid DESC ON CONFLICT DO NOTHING`,
 		`CREATE TABLE IF NOT EXISTS observation_identities (owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, identity_hash TEXT NOT NULL, context_id TEXT NOT NULL REFERENCES observations(context_id) ON DELETE CASCADE, PRIMARY KEY(owner_id,identity_hash))`,
@@ -40,7 +43,7 @@ func initializeIngestion(tx *sql.Tx) error {
 			return err
 		}
 	}
-	return nil
+	return initializeSessions(tx)
 }
 
 // Ingest atomically commits an immutable observation and its retry identity.
@@ -99,7 +102,7 @@ func (store *Store) Ingest(ownerID string, request ingestion.Request) (Binding, 
 			if _, err := tx.Exec(`UPDATE contexts SET last_submitted_at=? WHERE id=?`, now, id); err != nil {
 				return Binding{}, err
 			}
-			if _, err := tx.Exec(`UPDATE diffs SET expires_at=? WHERE id IN (SELECT diff_id FROM observation_scopes WHERE context_id=?)`, now+CaptureLifetime.Milliseconds(), id); err != nil {
+			if _, err := tx.Exec(`UPDATE diffs SET expires_at=? WHERE id IN (SELECT diff_id FROM observation_scopes WHERE context_id=?)`, now+store.retention.Milliseconds(), id); err != nil {
 				return Binding{}, err
 			}
 			if err := putObservationSubmission(tx, ownerID, id, hash, request); err != nil {
@@ -166,7 +169,7 @@ func (store *Store) Ingest(ownerID string, request ingestion.Request) (Binding, 
 		if err != nil {
 			return Binding{}, err
 		}
-		if _, err := tx.Exec(`INSERT INTO diffs(id,owner_id,kind,mode,created_at,expires_at) VALUES(?,?,'observation',?,?,?)`, diffID, ownerID, snapshot.Mode, now, now+CaptureLifetime.Milliseconds()); err != nil {
+		if _, err := tx.Exec(`INSERT INTO diffs(id,owner_id,kind,mode,created_at,expires_at) VALUES(?,?,'observation',?,?,?)`, diffID, ownerID, snapshot.Mode, now, now+store.retention.Milliseconds()); err != nil {
 			return Binding{}, err
 		}
 		snapshot.ID, snapshot.VersionID = diffID, versionID
@@ -223,7 +226,12 @@ func observationIdentity(request ingestion.Request) (string, error) {
 	if metadata.BranchID != "" {
 		branch = metadata.BranchID
 	}
-	encoded, err := json.Marshal([]any{metadata.SourceID, metadata.RepositoryKey, metadata.CheckoutKey, branch, metadata.Head, request.Scopes[0].Snapshot.Source, modes, request.ContentHash})
+	parts := []any{metadata.SourceID, metadata.RepositoryKey, metadata.CheckoutKey, branch, metadata.Head, request.Scopes[0].Snapshot.Source, modes, request.ContentHash}
+	// Keep legacy HEAD identity hashes; branch policies have separate reviews.
+	if policy := comparisonPolicy(metadata); policy != "" {
+		parts = append(parts, policy)
+	}
+	encoded, err := json.Marshal(parts)
 	if err != nil {
 		return "", err
 	}
@@ -237,7 +245,13 @@ func putObservationSubmission(tx *sql.Tx, ownerID, contextID, hash string, reque
 		return err
 	}
 	_, err = tx.Exec(`INSERT INTO observation_submissions(owner_id,source_id,submission_id,context_id,payload_hash,metadata) VALUES(?,?,?,?,?,?)`, ownerID, request.Metadata.SourceID, request.SubmissionID, contextID, hash, string(metadata))
-	if err != nil || request.Metadata.RepositoryKey == "" || request.Metadata.CheckoutKey == "" {
+	if err != nil {
+		return err
+	}
+	if err := putSessionAssociation(tx, ownerID, contextID, request.Metadata); err != nil {
+		return err
+	}
+	if request.Metadata.RepositoryKey == "" || request.Metadata.CheckoutKey == "" {
 		return err
 	}
 	branch, _, err := adoptObservationBranch(tx, ownerID, request.Metadata)
@@ -245,9 +259,9 @@ func putObservationSubmission(tx *sql.Tx, ownerID, contextID, hash string, reque
 		return err
 	}
 	// Equal collection times use arrival order. Retries bypass this write.
-	_, err = tx.Exec(`INSERT INTO observation_stream_heads(owner_id,source_id,repository_key,checkout_key,branch,context_id,collected_at) VALUES(?,?,?,?,?,?,?)
-		ON CONFLICT(owner_id,source_id,repository_key,checkout_key,branch) DO UPDATE SET context_id=excluded.context_id,collected_at=excluded.collected_at
-		WHERE excluded.collected_at>=observation_stream_heads.collected_at`, ownerID, request.Metadata.SourceID, request.Metadata.RepositoryKey, request.Metadata.CheckoutKey, branch, contextID, request.Metadata.CollectedAt)
+	_, err = tx.Exec(`INSERT INTO observation_stream_heads(owner_id,source_id,repository_key,checkout_key,branch,comparison_policy,context_id,collected_at) VALUES(?,?,?,?,?,?,?,?)
+		ON CONFLICT(owner_id,source_id,repository_key,checkout_key,branch,comparison_policy) DO UPDATE SET context_id=excluded.context_id,collected_at=excluded.collected_at
+		WHERE excluded.collected_at>=observation_stream_heads.collected_at`, ownerID, request.Metadata.SourceID, request.Metadata.RepositoryKey, request.Metadata.CheckoutKey, branch, comparisonPolicy(request.Metadata), contextID, request.Metadata.CollectedAt)
 	return err
 }
 
@@ -278,9 +292,9 @@ func adoptObservationBranch(tx *sql.Tx, ownerID string, metadata ingestion.Metad
 	if existing == 0 {
 		// Merge the legacy head into the new stream without regressing a newer
 		// collection, including when a delayed snapshot triggers adoption.
-		if _, err := tx.Exec(`INSERT INTO observation_stream_heads(owner_id,source_id,repository_key,checkout_key,branch,context_id,collected_at)
-			SELECT owner_id,source_id,repository_key,checkout_key,?,context_id,collected_at FROM observation_stream_heads WHERE owner_id=? AND source_id=? AND repository_key=? AND checkout_key=? AND branch=?
-			ON CONFLICT(owner_id,source_id,repository_key,checkout_key,branch) DO UPDATE SET context_id=excluded.context_id,collected_at=excluded.collected_at WHERE excluded.collected_at>=observation_stream_heads.collected_at`, append([]any{metadata.BranchID}, arguments...)...); err != nil {
+		if _, err := tx.Exec(`INSERT INTO observation_stream_heads(owner_id,source_id,repository_key,checkout_key,branch,comparison_policy,context_id,collected_at)
+			SELECT owner_id,source_id,repository_key,checkout_key,?,comparison_policy,context_id,collected_at FROM observation_stream_heads WHERE owner_id=? AND source_id=? AND repository_key=? AND checkout_key=? AND branch=?
+			ON CONFLICT(owner_id,source_id,repository_key,checkout_key,branch,comparison_policy) DO UPDATE SET context_id=excluded.context_id,collected_at=excluded.collected_at WHERE excluded.collected_at>=observation_stream_heads.collected_at`, append([]any{metadata.BranchID}, arguments...)...); err != nil {
 			return "", false, err
 		}
 	}
@@ -422,23 +436,43 @@ func (store *Store) ObservationPatch(ownerID, contextID string, mode review.Diff
 func (store *Store) ObservationContexts(ownerID string, limit int, beforeTime int64, beforeID string, filter ingestion.Filter) ([]ContextInfo, error) {
 	query := contextSelect + ` WHERE c.owner_id=? AND o.context_id IS NOT NULL AND d.expires_at>?`
 	arguments := []any{ownerID, time.Now().UnixMilli()}
-	fields := []struct{ key, value string }{
-		{"repositoryName", filter.Repository}, {"branch", filter.Branch}, {"worktreeName", filter.Worktree}, {"hostname", filter.Hostname}, {"sourceId", filter.SourceID}, {"runId", filter.RunID},
+	// All predicates match one collection, rather than mixing facts from
+	// unrelated submissions of the same immutable snapshot.
+	query += ` AND EXISTS (SELECT 1 FROM observation_submissions p
+		LEFT JOIN agent_sessions session ON session.owner_id=p.owner_id AND session.source_id=p.source_id
+		AND session.harness=COALESCE(json_extract(p.metadata,'$.agentSession.harness'),json_extract(p.metadata,'$.agent'))
+		AND session.session_id=COALESCE(json_extract(p.metadata,'$.agentSession.id'),json_extract(p.metadata,'$.runId'))
+		WHERE p.owner_id=c.owner_id AND p.context_id=c.id`
+	fields := []struct{ expression, value string }{
+		{"json_extract(p.metadata,'$.repositoryName')", filter.Repository},
+		{"json_extract(p.metadata,'$.branch')", filter.Branch},
+		{"json_extract(p.metadata,'$.worktreeName')", filter.Worktree},
+		{"json_extract(p.metadata,'$.hostname')", filter.Hostname},
+		{"p.source_id", filter.SourceID},
+		{"json_extract(p.metadata,'$.runId')", filter.RunID},
+		{"session.harness", filter.Harness},
+		{"session.session_id", filter.SessionID},
+		{"session.name", filter.SessionName},
 	}
 	for _, field := range fields {
 		if field.value != "" {
-			query += ` AND json_extract(o.metadata,'$.` + field.key + `')=?`
+			query += ` AND ` + field.expression + `=?`
 			arguments = append(arguments, field.value)
 		}
 	}
 	if filter.Query != "" {
 		terms := []string{}
-		for _, field := range []string{"repositoryName", "remoteUrl", "branch", "worktreeName", "hostname", "sourceId", "runId", "root"} {
-			terms = append(terms, `instr(lower(COALESCE(json_extract(o.metadata,'$.`+field+`'),'')),lower(?))>0`)
+		for _, field := range []string{"repositoryName", "remoteUrl", "branch", "worktreeName", "hostname", "sourceId", "runId", "root", "triggerRoot", "agent"} {
+			terms = append(terms, `instr(lower(COALESCE(json_extract(p.metadata,'$.`+field+`'),'')),lower(?))>0`)
+			arguments = append(arguments, filter.Query)
+		}
+		for _, field := range []string{"harness", "session_id", "name"} {
+			terms = append(terms, `instr(lower(COALESCE(session.`+field+`,'')),lower(?))>0`)
 			arguments = append(arguments, filter.Query)
 		}
 		query += ` AND (` + strings.Join(terms, " OR ") + `)`
 	}
+	query += `)`
 	if beforeID != "" {
 		query += ` AND (c.last_submitted_at<? OR (c.last_submitted_at=? AND c.id<?))`
 		arguments = append(arguments, beforeTime, beforeTime, beforeID)

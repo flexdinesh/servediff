@@ -26,17 +26,18 @@ const pendingTTL = 7 * 24 * time.Hour
 const maxPendingBytes = 256 << 20
 
 type Event struct {
-	Path       string `json:"path"`
-	InputPath  string `json:"inputPath,omitempty"`
-	Identity   string `json:"identity,omitempty"`
-	Branch     string `json:"branch,omitempty"`
-	Base       string `json:"base,omitempty"`
-	Resolved   bool   `json:"resolved,omitempty"`
-	Retry      bool   `json:"-"`
-	Agent      string `json:"agent"`
-	RunID      string `json:"runId,omitempty"`
-	ConfigFile string `json:"configFile,omitempty"`
-	Routing    string `json:"routing,omitempty"`
+	Path        string `json:"path"`
+	InputPath   string `json:"inputPath,omitempty"`
+	Identity    string `json:"identity,omitempty"`
+	Branch      string `json:"branch,omitempty"`
+	Base        string `json:"base,omitempty"`
+	Resolved    bool   `json:"resolved,omitempty"`
+	Retry       bool   `json:"-"`
+	Agent       string `json:"agent"`
+	RunID       string `json:"runId,omitempty"`
+	SessionName string `json:"sessionName,omitempty"`
+	ConfigFile  string `json:"configFile,omitempty"`
+	Routing     string `json:"routing,omitempty"`
 }
 
 // Identity identifies the server's persistent database (or memory instance).
@@ -58,8 +59,11 @@ type Engine struct {
 	// Confirm checks cached context freshness only after collection reports
 	// unchanged. Production callers provide it to detect other producers.
 	Confirm func(context.Context, Target, string) (bool, error)
-	Launch  func(string) error
-	Timeout time.Duration
+	// SuppressInitialEmpty proves a clean capture has no retained stream history.
+	// Errors keep the conservative publication path.
+	SuppressInitialEmpty func(context.Context, Target, ingestion.Request) (bool, error)
+	Launch               func(string) error
+	Timeout              time.Duration
 }
 
 type queued struct {
@@ -149,10 +153,10 @@ func (engine Engine) Schedule(event Event) error {
 			return err
 		}
 	}
-	job := key(identity, event.ConfigFile, event.Routing, event.Branch, event.Base)
+	job := key(identity, event.ConfigFile, event.Routing, event.Branch, event.Base, event.Agent, event.RunID, event.SessionName)
 	// A stable branch identity already carries its branch; its label may change.
 	if event.Identity != "" {
-		job = key(identity, event.ConfigFile, event.Routing, event.Base)
+		job = key(identity, event.ConfigFile, event.Routing, event.Base, event.Agent, event.RunID, event.SessionName)
 	}
 	directory, _ := engine.jobPath(job)
 	lock, err := processlock.Acquire(filepath.Join(directory, "queue.lock"))

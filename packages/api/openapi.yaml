@@ -466,6 +466,18 @@ paths:
           in: query
           schema:
             type: string
+        - name: harness
+          in: query
+          schema:
+            type: string
+        - name: sessionId
+          in: query
+          schema:
+            type: string
+        - name: sessionName
+          in: query
+          schema:
+            type: string
         - name: limit
           in: query
           schema:
@@ -945,6 +957,53 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
   schemas:
+    Comparison:
+      type: object
+      additionalProperties: false
+      required: [kind, baseRef]
+      properties:
+        kind:
+          type: string
+          enum: [working-tree, branch]
+        baseRef:
+          type: string
+          description: Logical comparison baseline. HEAD for working changes; normalized Git ref for branch comparisons.
+        baseCommit:
+          type: string
+          description: Resolved baseline tip at collection time. Absent for unborn checkouts.
+        mergeBase:
+          type: string
+          description: Commit actually used as the branch comparison baseline.
+    AgentSession:
+      type: object
+      additionalProperties: false
+      required: [harness, id]
+      properties:
+        harness:
+          type: string
+        id:
+          type: string
+        name:
+          type: string
+    SessionAssociation:
+      type: object
+      additionalProperties: false
+      required: [sourceId, harness, id, firstObservedAt, lastObservedAt]
+      properties:
+        sourceId:
+          type: string
+        harness:
+          type: string
+        id:
+          type: string
+        name:
+          type: string
+        firstObservedAt:
+          type: integer
+          format: int64
+        lastObservedAt:
+          type: integer
+          format: int64
     ObservationMetadata:
       type: object
       additionalProperties: false
@@ -1007,6 +1066,13 @@ components:
           description: Producer collection time in Unix milliseconds.
         collectorVersion:
           type: string
+        comparison:
+          $ref: "#/components/schemas/Comparison"
+        agentSession:
+          $ref: "#/components/schemas/AgentSession"
+        triggerRoot:
+          type: string
+          description: Directory whose manual command or agent event triggered collection; does not establish authorship.
     IngestionScope:
       type: object
       additionalProperties: false
@@ -1026,7 +1092,8 @@ components:
       properties:
         protocolVersion:
           type: integer
-          const: 1
+          enum: [1, 2]
+          description: Current producers send 2. Legacy version 1 remains accepted for ingestion and replay.
         submissionId:
           type: string
           minLength: 1
@@ -1137,11 +1204,16 @@ components:
           enum: [unchecked, available, unavailable]
         stale:
           type: boolean
-          description: A newer collection superseded this snapshot for the same owner, source, repository, checkout, and branch. Collection time determines freshness; arrival order breaks ties. Freshness survives snapshot expiry and pruning. False for ungrouped captures and legacy contexts.
+          description: A newer collection superseded this snapshot for the same owner, source, repository, checkout, branch, and comparison policy. Collection time determines freshness; arrival order breaks ties. Freshness survives snapshot expiry and pruning. False for ungrouped captures and legacy contexts.
         capabilities:
           $ref: "#/components/schemas/Session/properties/capabilities"
         observation:
           $ref: "#/components/schemas/ObservationMetadata"
+        sessions:
+          type: array
+          description: Sessions that observed this snapshot, including collections deduplicated into the same review. Names reflect latest supplied session metadata; no authorship is implied.
+          items:
+            $ref: "#/components/schemas/SessionAssociation"
     ServerMetrics:
       type: object
       additionalProperties: false

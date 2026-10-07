@@ -584,6 +584,31 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    Comparison: {
+      /** @enum {string} */
+      kind: "working-tree" | "branch";
+      /** @description Logical comparison baseline. HEAD for working changes; normalized Git ref for branch comparisons. */
+      baseRef: string;
+      /** @description Resolved baseline tip at collection time. Absent for unborn checkouts. */
+      baseCommit?: string;
+      /** @description Commit actually used as the branch comparison baseline. */
+      mergeBase?: string;
+    };
+    AgentSession: {
+      harness: string;
+      id: string;
+      name?: string;
+    };
+    SessionAssociation: {
+      sourceId: string;
+      harness: string;
+      id: string;
+      name?: string;
+      /** Format: int64 */
+      firstObservedAt: number;
+      /** Format: int64 */
+      lastObservedAt: number;
+    };
     ObservationMetadata: {
       /** @description Producer-provided source identity, independent of hostname and path. */
       sourceId: string;
@@ -610,6 +635,10 @@ export interface components {
        */
       collectedAt: number;
       collectorVersion: string;
+      comparison?: components["schemas"]["Comparison"];
+      agentSession?: components["schemas"]["AgentSession"];
+      /** @description Directory whose manual command or agent event triggered collection; does not establish authorship. */
+      triggerRoot?: string;
     };
     IngestionScope: {
       snapshot: components["schemas"]["RepositoryDiff"];
@@ -619,8 +648,11 @@ export interface components {
       };
     };
     IngestionRequest: {
-      /** @constant */
-      protocolVersion: 1;
+      /**
+       * @description Current producers send 2. Legacy version 1 remains accepted for ingestion and replay.
+       * @enum {integer}
+       */
+      protocolVersion: 1 | 2;
       /** @description Retry identity. Reusing it with different content fails. */
       submissionId: string;
       /** @description Optional SHA256 of complete contents and staging state, independent of preview truncation and timestamps. Omit when complete identity cannot be proven. */
@@ -671,10 +703,12 @@ export interface components {
       submittedFrom: string | null;
       /** @enum {string} */
       availability: "unchecked" | "available" | "unavailable";
-      /** @description A newer collection superseded this snapshot for the same owner, source, repository, checkout, and branch. Collection time determines freshness; arrival order breaks ties. Freshness survives snapshot expiry and pruning. False for ungrouped captures and legacy contexts. */
+      /** @description A newer collection superseded this snapshot for the same owner, source, repository, checkout, branch, and comparison policy. Collection time determines freshness; arrival order breaks ties. Freshness survives snapshot expiry and pruning. False for ungrouped captures and legacy contexts. */
       stale?: boolean;
       capabilities: components["schemas"]["Session"]["capabilities"];
       observation?: components["schemas"]["ObservationMetadata"];
+      /** @description Sessions that observed this snapshot, including collections deduplicated into the same review. Names reflect latest supplied session metadata; no authorship is implied. */
+      sessions?: components["schemas"]["SessionAssociation"][];
     };
     ServerMetrics: {
       rssBytes: number;
@@ -1472,6 +1506,9 @@ export interface operations {
         hostname?: string;
         sourceId?: string;
         runId?: string;
+        harness?: string;
+        sessionId?: string;
+        sessionName?: string;
         limit?: number;
         cursor?: string;
       };

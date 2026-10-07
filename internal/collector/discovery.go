@@ -31,6 +31,9 @@ type Discovery struct {
 // location hints, not the source's identity. Branch identifies object-only
 // recovery; an empty branch identifies the live checkout.
 func SourceIdentity(ctx context.Context, root, sourceID, branch, base string) (string, error) {
+	if base == "" {
+		base = "auto"
+	}
 	label := branch
 	if label == "" {
 		var err error
@@ -48,6 +51,62 @@ func SourceIdentity(ctx context.Context, root, sourceID, branch, base string) (s
 		checkout = diffsource.BranchCheckoutKey(identity.RepositoryKey, identity.BranchID)
 	}
 	return hash("collector-source-v1", sourceID, identity.RepositoryKey, checkout, identity.BranchID, base), nil
+}
+
+// DiscoverWorktrees collects only the input repository's current checkout and
+// registered worktrees. Non-Git input returns ErrNotRepository; callers decide
+// whether that is an error or an ignored hook event. Recovery and workspace
+// scanning belong to the explicit legacy Discover policy below.
+func DiscoverWorktrees(ctx context.Context, input, sourceID, base string) (Discovery, error) {
+	var result Discovery
+	input, err := filepath.Abs(input)
+	if err != nil {
+		return result, err
+	}
+	if base == "" {
+		base = "auto"
+	}
+	source, err := diffsource.OpenRepository(ctx, input)
+	if err != nil {
+		return result, err
+	}
+	_, worktrees, err := diffsource.RepositoryWorktrees(ctx, source.Root())
+	if err != nil {
+		return result, err
+	}
+	// The originating checkout comes first, even when invoked from a subdirectory
+	// of a linked worktree. It determines the URL returned by manual review.
+	roots := []string{source.Root()}
+	for _, worktree := range worktrees {
+		if worktree.Root != source.Root() {
+			roots = append(roots, worktree.Root)
+		}
+	}
+	seen := make(map[string]string)
+	for _, root := range roots {
+		if err := ctx.Err(); err != nil {
+			return result, err
+		}
+		if _, err := os.Stat(root); err != nil {
+			result.Diagnostics = append(result.Diagnostics, fmt.Sprintf("worktree unavailable %s: %v", root, err))
+			continue
+		}
+		identity, err := SourceIdentity(ctx, root, sourceID, "", base)
+		if err != nil {
+			if ctx.Err() != nil {
+				return result, ctx.Err()
+			}
+			result.Diagnostics = append(result.Diagnostics, fmt.Sprintf("identify worktree %s: %v", root, err))
+			continue
+		}
+		if previous, exists := seen[identity]; exists {
+			result.Diagnostics = append(result.Diagnostics, fmt.Sprintf("collector identity copied across %s and %s; duplicate source skipped, use separate source IDs", previous, root))
+			continue
+		}
+		seen[identity] = root
+		result.Sources = append(result.Sources, DiscoverySource{InputPath: input, Path: root, Base: base, Identity: identity})
+	}
+	return result, nil
 }
 
 // Discover examines only the supplied workspace (two levels, 128 directories),

@@ -62,6 +62,10 @@ func Run(ctx context.Context, settings Settings, runtimeDir string, initial *Ini
 }
 
 func runServer(ctx context.Context, cancel context.CancelFunc, settings Settings, runtimeDir, instanceID string, initial *InitialInput, ready func(Status, *contextservice.Submission), logger *log.Logger) error {
+	settings = normalizeSettings(settings)
+	if settings.RetentionDays < 1 || settings.RetentionDays > 106751 {
+		return errors.New("retention-days must be between 1 and 106751")
+	}
 	if settings.State == "" {
 		path, err := reviewstore.DefaultPath()
 		if err != nil {
@@ -73,7 +77,7 @@ func runServer(ctx context.Context, cancel context.CancelFunc, settings Settings
 	if statePath == "memory" {
 		statePath = ""
 	}
-	store, err := reviewstore.Open(statePath)
+	store, err := reviewstore.OpenWithRetention(statePath, time.Duration(settings.RetentionDays)*24*time.Hour)
 	if err != nil {
 		return err
 	}

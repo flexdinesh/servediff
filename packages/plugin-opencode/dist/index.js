@@ -3,11 +3,26 @@ function record(value) {
     return typeof value === "object" && value !== null;
 }
 export async function consume(events, directory, request = requestSync) {
+    const names = new Map();
     try {
         for await (const event of events) {
-            if (!record(event) ||
-                event.type !== "session.status" ||
-                !record(event.data))
+            if (!record(event) || !record(event.data))
+                continue;
+            if (event.type === "session.created" ||
+                event.type === "session.renamed") {
+                const { sessionID, title } = event.data;
+                if (typeof sessionID === "string" && typeof title === "string") {
+                    names.delete(sessionID);
+                    names.set(sessionID, title);
+                    if (names.size > 256) {
+                        const oldest = names.keys().next().value;
+                        if (oldest !== undefined)
+                            names.delete(oldest);
+                    }
+                }
+                continue;
+            }
+            if (event.type !== "session.status")
                 continue;
             const { sessionID, status } = event.data;
             if (typeof sessionID !== "string" ||
@@ -17,7 +32,7 @@ export async function consume(events, directory, request = requestSync) {
             const path = record(event.location) && typeof event.location.directory === "string"
                 ? event.location.directory
                 : directory;
-            request(path, sessionID);
+            request(path, sessionID, names.get(sessionID));
         }
     }
     catch {
@@ -33,7 +48,7 @@ export default {
     },
 };
 // The CLI schedules its own detached worker. Do not wait for collection or upload.
-function requestSync(directory, sessionID) {
+function requestSync(directory, sessionID, sessionName) {
     try {
         const args = [
             "hook",
@@ -44,6 +59,8 @@ function requestSync(directory, sessionID) {
             "--run-id",
             sessionID,
         ];
+        if (sessionName)
+            args.push("--session-name", sessionName);
         const child = spawn(process.env.SERVEDIFF_BINARY ?? "servediff", args, {
             detached: true,
             stdio: "ignore",

@@ -2,8 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -59,14 +57,6 @@ func New(active session.Session, store *reviewstore.Store, service *reviewservic
 		session: active, store: store, review: service, assets: assets,
 		metrics: processmetrics.New(), cache: newSnapshotCache(context.Background()),
 	}
-}
-
-func randomID() (string, error) {
-	value := make([]byte, 16)
-	if _, err := rand.Read(value); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(value), nil
 }
 
 func (handler *Handler) SessionID() string { return handler.session.ID }
@@ -255,7 +245,7 @@ func (handler *Handler) api(response http.ResponseWriter, request *http.Request)
 	if pathname == "/api/v1/comments" {
 		switch request.Method {
 		case http.MethodGet:
-			comments, err := handler.store.Comments(handler.session.ContextID)
+			comments, err := handler.review.Comments()
 			return true, writeResult(response, map[string]any{"comments": comments}, err)
 		case http.MethodPost:
 			return true, handler.createComment(response, request)
@@ -274,7 +264,7 @@ func (handler *Handler) api(response http.ResponseWriter, request *http.Request)
 		case http.MethodPatch:
 			return true, handler.updateComment(response, request, commentID)
 		case http.MethodDelete:
-			deleted, err := handler.store.DeleteComment(handler.session.ContextID, commentID)
+			deleted, err := handler.reviewOperations(request).DeleteComment(commentID)
 			if err != nil {
 				return true, err
 			}
@@ -292,10 +282,10 @@ func (handler *Handler) api(response http.ResponseWriter, request *http.Request)
 		}
 		switch request.Method {
 		case http.MethodGet:
-			marks, err := handler.store.Marks(handler.session.ContextID, mode)
+			marks, err := handler.reviewOperations(request).Marks(mode)
 			return true, writeResult(response, map[string]any{"marks": marks}, err)
 		case http.MethodDelete:
-			if err := handler.store.ClearMarks(handler.session.ContextID, mode); err != nil {
+			if err := handler.reviewOperations(request).ClearMarks(mode); err != nil {
 				return true, err
 			}
 			response.WriteHeader(http.StatusNoContent)
@@ -309,7 +299,7 @@ func (handler *Handler) api(response http.ResponseWriter, request *http.Request)
 		case http.MethodDelete:
 			mode, err := handler.requestScope(request)
 			if err == nil {
-				err = handler.store.DeleteMark(handler.session.ContextID, mode, fileID)
+				err = handler.reviewOperations(request).DeleteMark(mode, fileID)
 			}
 			if err != nil {
 				return true, err
@@ -418,23 +408,7 @@ func (handler *Handler) requestScope(request *http.Request) (review.DiffMode, er
 }
 
 func (handler *Handler) currentFile(request *http.Request, mode review.DiffMode, diffID, versionID, fileID, fileVersion string, fresh bool) (review.RepositoryDiff, review.ChangedFile, error) {
-	snapshot, err := handler.snapshot(request, mode, fresh)
-	if err != nil {
-		return review.RepositoryDiff{}, review.ChangedFile{}, err
-	}
-	if snapshot.ID != diffID || snapshot.VersionID != versionID {
-		return review.RepositoryDiff{}, review.ChangedFile{}, diffsource.Error(409, "Diff changed. Refresh to load the latest version.")
-	}
-	for _, file := range snapshot.Files {
-		if file.ID != fileID {
-			continue
-		}
-		if file.Fingerprint != fileVersion {
-			return review.RepositoryDiff{}, review.ChangedFile{}, diffsource.Error(409, "File changed. Refresh to load the latest version.")
-		}
-		return snapshot, file, nil
-	}
-	return review.RepositoryDiff{}, review.ChangedFile{}, diffsource.Error(404, "File is not in the current diff")
+	return handler.reviewOperations(request).CurrentFile(request.Context(), mode, diffID, versionID, fileID, fileVersion, fresh)
 }
 
 func (handler *Handler) getFile(response http.ResponseWriter, request *http.Request, route fileRoute) error {
@@ -524,187 +498,21 @@ func (handler *Handler) getFile(response http.ResponseWriter, request *http.Requ
 	return writeResult(response, result, err)
 }
 
-func (handler *Handler) pinSnapshot(request *http.Request, snapshot review.RepositoryDiff) error {
-	complete, err := handler.store.VersionComplete(snapshot.VersionID, len(snapshot.Files))
-	if err != nil {
-		return err
-	}
-	if complete {
-		return nil
-	}
-	previews := make(map[string]review.FilePatch, len(snapshot.Files))
-	for _, file := range snapshot.Files {
-		preview, err := handler.session.Source.Patch(request.Context(), snapshot.Mode, file, snapshot.Head)
-		if err != nil {
-			return err
-		}
-		if handler.session.Capabilities.Files.Contents.Enabled() && !file.Binary && file.Status != "U" && preview.Contents == nil {
-			contents, contentError := handler.session.Source.Contents(request.Context(), snapshot.Mode, file, snapshot.Head)
-			if contentError == nil {
-				preview.Contents = &contents
-			}
-		}
-		previews[file.ID] = preview
-	}
-	current, err := handler.session.Source.Snapshot(request.Context(), snapshot.Mode)
-	if err != nil {
-		return err
-	}
-	if current.Revision != snapshot.Revision {
-		return diffsource.Error(409, "Diff changed while saving the review. Refresh to try again.")
-	}
-	return handler.store.PinVersion(snapshot, previews)
-}
-
-type createCommentRequest struct {
-	DiffID      string          `json:"diffId"`
-	VersionID   string          `json:"versionId"`
-	FileID      string          `json:"fileId"`
-	Scope       review.DiffMode `json:"scope"`
-	FileVersion string          `json:"fileVersion"`
-	Target      string          `json:"target,omitempty"`
-	Side        string          `json:"side"`
-	Start       int             `json:"start"`
-	End         int             `json:"end"`
-	Body        string          `json:"body"`
-}
-
 func (handler *Handler) createComment(response http.ResponseWriter, request *http.Request) error {
-	var body createCommentRequest
+	var body reviewservice.CreateCommentInput
 	if err := decodeBody(response, request, &body); err != nil {
 		return err
 	}
-	validSelection := (body.Target == "" || body.Target == "lines") && (body.Side == "additions" || body.Side == "deletions") && body.Start > 0 && body.End > 0
-	if body.Target == "file" {
-		validSelection = body.Side == "additions" && body.Start == 0 && body.End == 0
-	}
-	if _, err := review.ParseDiffMode(string(body.Scope)); err != nil || !validSelection || strings.TrimSpace(body.Body) == "" {
-		return diffsource.Error(400, "Invalid comment")
-	}
-	if !handler.session.Capabilities.Diff.Scopes.Allows(body.Scope) {
-		return session.NotEnabled(session.DiffScopes)
-	}
-	snapshot, file, err := handler.currentFile(request, body.Scope, body.DiffID, body.VersionID, body.FileID, body.FileVersion, true)
+	comment, err := handler.reviewOperations(request).CreateComment(request.Context(), body)
 	if err != nil {
-		return err
-	}
-	code := ""
-	if body.Target != "file" {
-		preview, err := handler.session.Source.Patch(request.Context(), body.Scope, file, snapshot.Head)
-		if err != nil {
-			return err
-		}
-		var ok bool
-		code, ok = diffsource.PatchContext(preview.Patch, body.Side, body.Start, body.End)
-		if !ok && preview.Contents != nil {
-			contents := preview.Contents.After
-			if body.Side == "deletions" {
-				contents = preview.Contents.Before
-			}
-			code, ok = contentContext(contents, body.Start, body.End)
-		}
-		if !ok {
-			return diffsource.Error(400, "Select up to 200 visible lines on one side")
-		}
-	}
-	start, end := body.Start, body.End
-	if start > end {
-		start, end = end, start
-	}
-	id, err := randomID()
-	if err != nil {
-		return err
-	}
-	if err := handler.pinSnapshot(request, snapshot); err != nil {
-		return err
-	}
-	comment := review.ReviewComment{
-		ID: id, DiffID: snapshot.ID, VersionID: snapshot.VersionID, Path: file.Path, Scope: body.Scope, Fingerprint: file.Fingerprint,
-		Target: body.Target, Side: body.Side, Start: start, End: end, Code: code, Body: strings.TrimSpace(body.Body), Status: "open", CreatedAt: float64(time.Now().UnixMilli()),
-		Origin: &review.ReviewOrigin{DiffID: snapshot.ID, VersionID: snapshot.VersionID, Source: snapshot.Source, Repository: snapshot.Name, Branch: snapshot.Branch, Head: snapshot.Head, Revision: snapshot.Revision, File: review.ReviewFileOrigin{Status: file.Status, OldPath: file.OldPath}},
-	}
-	if err := handler.store.PutComment(handler.session.ContextID, comment); err != nil {
 		return err
 	}
 	return writeJSON(response, http.StatusCreated, comment)
 }
 
-func contentContext(contents string, start, end int) (string, bool) {
-	if start > end {
-		start, end = end, start
-	}
-	if start < 1 || end-start >= 200 {
-		return "", false
-	}
-	lines := strings.Split(contents, "\n")
-	if end > len(lines) {
-		return "", false
-	}
-	selected := make([]string, 0, end-start+1)
-	for line := start; line <= end; line++ {
-		selected = append(selected, "  "+strings.TrimSuffix(lines[line-1], "\r"))
-	}
-	return strings.Join(selected, "\n"), true
-}
-
-func (handler *Handler) repositories(request *http.Request, comments []review.ReviewComment) ([]review.RepositoryDiff, error) {
-	needed := make(map[review.DiffMode]bool)
-	allowed := make(map[review.DiffMode]bool)
-	for _, scope := range handler.session.Capabilities.Diff.Scopes.Values {
-		allowed[scope] = true
-	}
-	for _, comment := range comments {
-		needed[comment.Scope] = allowed[comment.Scope]
-	}
-	result := make([]review.RepositoryDiff, 0, len(needed))
-	for mode, include := range needed {
-		if !include {
-			continue
-		}
-		snapshot, err := handler.snapshot(request, mode, false)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, snapshot)
-	}
-	return result, nil
-}
-
-func repositoryFor(comment review.ReviewComment, repositories []review.RepositoryDiff) *review.RepositoryDiff {
-	for index := range repositories {
-		if repositories[index].Mode == comment.Scope {
-			return &repositories[index]
-		}
-	}
-	return nil
-}
-
 func (handler *Handler) deleteComments(response http.ResponseWriter, request *http.Request) error {
-	selection := request.URL.Query().Get("status")
-	if selection != "all" && selection != "open" && selection != "resolved" && selection != "stale" {
-		return diffsource.Error(400, "Invalid comment status")
-	}
-	comments, err := handler.store.Comments(handler.session.ContextID)
-	if err != nil {
-		return err
-	}
-	repositories, err := handler.repositories(request, comments)
-	if err != nil {
-		return err
-	}
-	selected := make(map[string]bool)
-	for _, comment := range comments {
-		stale := review.Applicability(comment, repositoryFor(comment, repositories)) == "stale"
-		if selection == "all" || (selection == "stale" && stale) || (!stale && comment.Status == selection) {
-			selected[comment.ID] = true
-		}
-	}
-	deleted, err := handler.store.DeleteComments(handler.session.ContextID, selected)
-	if err != nil {
-		return err
-	}
-	remaining, err := handler.store.Comments(handler.session.ContextID)
-	return writeResult(response, map[string]any{"comments": remaining, "deleted": deleted}, err)
+	result, err := handler.reviewOperations(request).DeleteComments(request.Context(), request.URL.Query().Get("status"))
+	return writeResult(response, result, err)
 }
 
 func (handler *Handler) importComments(response http.ResponseWriter, request *http.Request) error {
@@ -717,58 +525,8 @@ func (handler *Handler) importComments(response http.ResponseWriter, request *ht
 	if body.Comments == nil {
 		return diffsource.Error(400, "Invalid comment import")
 	}
-	for _, comment := range *body.Comments {
-		if !comment.Valid() {
-			return diffsource.Error(400, "Invalid comment import")
-		}
-		if handler.strictContext {
-			if comment.DiffID != "" && comment.DiffID != handler.session.DiffIDs[comment.Scope] {
-				return diffsource.Error(404, "Comment diff not found")
-			}
-			if err := handler.validateReference(request, comment.DiffID, comment.VersionID); err != nil {
-				return err
-			}
-			if comment.Origin != nil {
-				if err := handler.validateReference(request, comment.Origin.DiffID, comment.Origin.VersionID); err != nil {
-					return err
-				}
-			}
-		}
-	}
-	comments, err := handler.store.ImportComments(handler.session.ContextID, *body.Comments)
-	if err != nil {
-		return err
-	}
-	return writeJSON(response, 200, map[string]any{"comments": comments})
-}
-
-func (handler *Handler) validateReference(request *http.Request, diffID, versionID string) error {
-	if diffID == "" && versionID == "" {
-		return nil
-	}
-	if !handler.ownsDiff(diffID) {
-		return diffsource.Error(404, "Comment diff not found")
-	}
-	if versionID == "" {
-		return nil
-	}
-	_, err := handler.store.StoredVersion(handler.session.User.ID, diffID, versionID, time.Now())
-	if err == nil {
-		return nil
-	}
-	if !errors.Is(err, reviewstore.ErrNotFound) {
-		return err
-	}
-	for mode, id := range handler.session.DiffIDs {
-		if id != diffID {
-			continue
-		}
-		current, err := handler.snapshot(request, mode, false)
-		if err == nil && current.VersionID == versionID {
-			return handler.pinSnapshot(request, current)
-		}
-	}
-	return diffsource.Error(404, "Comment version not found")
+	comments, err := handler.reviewOperations(request).ImportComments(request.Context(), *body.Comments)
+	return writeResult(response, map[string]any{"comments": comments}, err)
 }
 
 func (handler *Handler) exportComments(response http.ResponseWriter, request *http.Request) error {
@@ -790,82 +548,22 @@ func (handler *Handler) exportComments(response http.ResponseWriter, request *ht
 	if query.Has("revision") != query.Has("scope") {
 		return diffsource.Error(400, "revision and scope must be provided together")
 	}
-	var mode review.DiffMode
-	var current *review.RepositoryDiff
-	if requestedScope != "" {
-		var err error
-		mode, err = review.ParseDiffMode(requestedScope)
-		if err != nil {
-			return diffsource.Error(400, "Invalid diff scope")
-		}
-		snapshot, err := handler.snapshot(request, mode, false)
-		if err != nil {
-			return err
-		}
-		current = &snapshot
-	}
-	selected := make([]review.ReviewComment, 0)
-	comments, err := handler.store.Comments(handler.session.ContextID)
-	if err != nil {
-		return err
-	}
-	for _, comment := range comments {
-		if id := query.Get("commentId"); id != "" && comment.ID != id {
-			continue
-		}
-		if revision != "" {
-			matches := comment.Scope == mode && comment.Origin != nil && comment.Origin.Revision == revision
-			if comment.Origin == nil && current != nil && current.Revision == revision {
-				for _, file := range current.Files {
-					matches = matches || (file.Path == comment.Path && file.Fingerprint == comment.Fingerprint)
-				}
-			}
-			if !matches {
-				continue
-			}
-		}
-		selected = append(selected, comment)
-	}
-	repositories, err := handler.repositories(request, selected)
+	formatted, err := handler.reviewOperations(request).ExportComments(request.Context(), reviewservice.ExportCommentsInput{Revision: revision, Scope: requestedScope, CommentID: query.Get("commentId"), IncludeResolved: resolved == "true"})
 	if err != nil {
 		return err
 	}
 	response.Header().Set("Content-Type", "application/xml; charset=utf-8")
-	_, err = io.WriteString(response, review.FormatComments(selected, resolved == "true", repositories))
+	_, err = io.WriteString(response, formatted)
 	return err
 }
 
 func (handler *Handler) updateComment(response http.ResponseWriter, request *http.Request, commentID string) error {
-	var body struct {
-		Body   *string `json:"body"`
-		Status *string `json:"status"`
-	}
+	var body reviewservice.UpdateCommentInput
 	if err := decodeBody(response, request, &body); err != nil {
 		return err
 	}
-	if body.Body == nil && body.Status == nil || body.Body != nil && strings.TrimSpace(*body.Body) == "" || body.Status != nil && *body.Status != "open" && *body.Status != "resolved" {
-		return diffsource.Error(400, "Invalid comment update")
-	}
-	comments, err := handler.store.Comments(handler.session.ContextID)
-	if err != nil {
-		return err
-	}
-	for _, comment := range comments {
-		if comment.ID != commentID {
-			continue
-		}
-		if body.Body != nil {
-			comment.Body = strings.TrimSpace(*body.Body)
-		}
-		if body.Status != nil {
-			comment.Status = *body.Status
-		}
-		if err := handler.store.PutComment(handler.session.ContextID, comment); err != nil {
-			return err
-		}
-		return writeJSON(response, 200, comment)
-	}
-	return diffsource.Error(404, "Comment not found")
+	comment, err := handler.reviewOperations(request).UpdateComment(commentID, body)
+	return writeResult(response, comment, err)
 }
 
 func (handler *Handler) putMark(response http.ResponseWriter, request *http.Request, fileID string) error {
@@ -883,30 +581,8 @@ func (handler *Handler) putMark(response http.ResponseWriter, request *http.Requ
 	if body.FileVersion == nil || body.VersionID == nil {
 		return diffsource.Error(400, "Invalid review mark")
 	}
-	snapshot, err := handler.snapshot(request, mode, true)
-	if err != nil {
-		return err
-	}
-	if snapshot.VersionID != *body.VersionID {
-		return diffsource.Error(409, "Diff changed. Refresh to try again.")
-	}
-	for _, file := range snapshot.Files {
-		if file.ID != fileID {
-			continue
-		}
-		if file.Fingerprint != *body.FileVersion {
-			return diffsource.Error(409, "File changed. Refresh to try again.")
-		}
-		if err := handler.pinSnapshot(request, snapshot); err != nil {
-			return err
-		}
-		mark := review.ReviewMark{DiffID: snapshot.ID, VersionID: snapshot.VersionID, FileID: fileID, FileVersion: *body.FileVersion, Scope: mode}
-		if err := handler.store.PutMark(handler.session.ContextID, mark); err != nil {
-			return err
-		}
-		return writeJSON(response, 200, mark)
-	}
-	return diffsource.Error(404, "File is not in the current diff")
+	mark, err := handler.reviewOperations(request).PutMark(request.Context(), mode, fileID, *body.VersionID, *body.FileVersion)
+	return writeResult(response, mark, err)
 }
 
 func decodeBody(response http.ResponseWriter, request *http.Request, target any) error {
@@ -994,3 +670,12 @@ func writeJSONType(response http.ResponseWriter, status int, contentType string,
 	response.WriteHeader(status)
 	return json.NewEncoder(response).Encode(value)
 }
+
+func (handler *Handler) reviewOperations(request *http.Request) *reviewservice.Service {
+	return handler.review.WithOperations(handler.store, handler.strictContext, func(ctx context.Context, mode review.DiffMode, fresh bool) (review.RepositoryDiff, error) {
+		return handler.snapshot(request.Clone(ctx), mode, fresh)
+	})
+}
+
+// Kept for existing internal request construction.
+type createCommentRequest = reviewservice.CreateCommentInput

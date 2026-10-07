@@ -19,6 +19,7 @@ var ErrComparisonUnavailable = errors.New("comparison source unavailable")
 
 type Comparison struct {
 	BaseRef     string
+	BaseCommit  string
 	BaseOID     string
 	HeadOID     string
 	ObjectsOnly bool
@@ -26,9 +27,8 @@ type Comparison struct {
 
 type gitComparison struct {
 	Comparison
-	branch  string
-	target  string
-	baseTip string
+	branch string
+	target string
 }
 
 // ComparisonInfo reports the captured comparison, including its merge base.
@@ -109,7 +109,7 @@ func OpenComparison(ctx context.Context, directory, base, branch string) (Source
 		return nil, errors.New("Git comparison source unavailable")
 	}
 	auto := base == "auto" || base == "" && branch != ""
-	if base == "" && branch == "" {
+	if (base == "" || base == "HEAD") && branch == "" {
 		return source, nil
 	}
 	if auto {
@@ -140,6 +140,16 @@ func OpenComparison(ctx context.Context, directory, base, branch string) (Source
 	if err != nil {
 		return nil, comparisonFailure(fmt.Sprintf("resolve comparison baseline %q", base), err, 128)
 	}
+	// Store symbolic refs in a single form (main and refs/heads/main agree).
+	// Literal commit baselines retain their resolved object ID.
+	baseRef, err := runGit(ctx, source.root, 16<<10, "rev-parse", "--symbolic-full-name", "--verify", "--end-of-options", base)
+	if err != nil {
+		return nil, comparisonFailure(fmt.Sprintf("resolve comparison reference %q", base), err, 128)
+	}
+	base = strings.TrimSpace(baseRef)
+	if base == "" {
+		base = baseTip
+	}
 	mergeBase, err := runGit(ctx, source.root, 1024, "merge-base", baseTip, head)
 	if err != nil {
 		if auto && branch == "" && comparisonGitExit(err, 1) {
@@ -155,8 +165,8 @@ func OpenComparison(ctx context.Context, directory, base, branch string) (Source
 		branch = label
 	}
 	source.comparison = &gitComparison{
-		Comparison: Comparison{BaseRef: base, BaseOID: strings.TrimSpace(mergeBase), HeadOID: head, ObjectsOnly: target != "HEAD"},
-		branch:     branch, target: target, baseTip: baseTip,
+		Comparison: Comparison{BaseRef: base, BaseCommit: baseTip, BaseOID: strings.TrimSpace(mergeBase), HeadOID: head, ObjectsOnly: target != "HEAD"},
+		branch:     branch, target: target,
 	}
 	return source, nil
 }
@@ -179,7 +189,7 @@ func (source *gitSource) verifyComparison(ctx context.Context) error {
 		return nil
 	}
 	comparison := source.comparison
-	for _, reference := range []struct{ ref, oid string }{{comparison.target, comparison.HeadOID}, {comparison.BaseRef, comparison.baseTip}} {
+	for _, reference := range []struct{ ref, oid string }{{comparison.target, comparison.HeadOID}, {comparison.BaseRef, comparison.BaseCommit}} {
 		current, err := resolveCommit(ctx, source.root, reference.ref)
 		if err != nil {
 			var failure *gitFailure

@@ -1,16 +1,21 @@
 package remoteserver
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
 
+	"github.com/flexdinesh/servediff/internal/collector"
+	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/reviewstore"
 )
 
@@ -67,6 +72,228 @@ func TestRemoteAuthenticationCoversUIAPIAndMCP(t *testing.T) {
 	handler.ServeHTTP(w, r)
 	if w.Code != 401 {
 		t.Fatalf("foreign account authentication: %d", w.Code)
+	}
+}
+
+func TestMultiUserRESTMCPAndEventIsolation(t *testing.T) {
+	store, err := reviewstore.Open("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	otherToken := strings.Repeat("other-token-", 4)
+	for name, token := range map[string]string{"admin": testToken, "other": otherToken} {
+		if _, err := store.ProvisionUser(name, token); err != nil {
+			t.Fatal(err)
+		}
+	}
+	handler, closeServices, err := MultiHandler(t.Context(), store, fstest.MapFS{"index.html": {Data: []byte("reviews")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeServices()
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	client := &http.Client{Timeout: 3 * time.Second}
+	request := func(token, method, path string, body io.Reader) *http.Response {
+		t.Helper()
+		r, err := http.NewRequestWithContext(t.Context(), method, server.URL+path, body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.Header.Set("Authorization", "Bearer "+token)
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("Accept", "application/json, text/event-stream")
+		response, err := client.Do(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return response
+	}
+	adminEvents := request(testToken, "GET", "/api/v2/events", nil)
+	defer adminEvents.Body.Close()
+	otherEvents := request(otherToken, "GET", "/api/v2/events", nil)
+	defer otherEvents.Body.Close()
+	if adminEvents.StatusCode != 200 || otherEvents.StatusCode != 200 {
+		t.Fatal("event subscription failed")
+	}
+	adminReader, otherReader := bufio.NewReader(adminEvents.Body), bufio.NewReader(otherEvents.Body)
+	for _, reader := range []*bufio.Reader{adminReader, otherReader} {
+		if line, err := reader.ReadString('\n'); err != nil || line != ": connected\n" {
+			t.Fatalf("event connection: %q %v", line, err)
+		}
+	}
+	patch := "diff --git a/file.txt b/file.txt\n--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-before\n+after\n"
+	input, err := collector.CollectPatch(t.Context(), patch, t.TempDir(), collector.Options{SourceID: "shared-source", SubmissionID: "same-submission"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminReceipt, err := ingestion.NewClient(server.URL, testToken).Submit(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherReceipt, err := ingestion.NewClient(server.URL, otherToken).Submit(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if adminReceipt.ContextID == otherReceipt.ContextID {
+		t.Fatal("review deduplication crossed user boundary")
+	}
+	for _, tc := range []struct {
+		reader              *bufio.Reader
+		expected, forbidden string
+	}{
+		{adminReader, adminReceipt.ContextID, otherReceipt.ContextID},
+		{otherReader, otherReceipt.ContextID, adminReceipt.ContextID},
+	} {
+		for {
+			line, err := tc.reader.ReadString('\n')
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.HasPrefix(line, "data:") {
+				if !strings.Contains(line, tc.expected) || strings.Contains(line, tc.forbidden) {
+					t.Fatalf("foreign event: %q", line)
+				}
+				break
+			}
+		}
+	}
+	for _, tc := range []struct{ token, own, foreign string }{
+		{testToken, adminReceipt.ContextID, otherReceipt.ContextID},
+		{otherToken, otherReceipt.ContextID, adminReceipt.ContextID},
+	} {
+		response := request(tc.token, "GET", "/api/v2/contexts", nil)
+		raw, err := io.ReadAll(response.Body)
+		response.Body.Close()
+		if err != nil || response.StatusCode != 200 || !strings.Contains(string(raw), tc.own) || strings.Contains(string(raw), tc.foreign) {
+			t.Fatalf("catalog ownership: %d %s %v", response.StatusCode, raw, err)
+		}
+		for _, suffix := range []string{"", "/diffs/current", "/review"} {
+			response := request(tc.token, "GET", "/api/v2/contexts/"+tc.foreign+suffix, nil)
+			response.Body.Close()
+			if response.StatusCode != 404 {
+				t.Fatalf("foreign REST %s: %d", suffix, response.StatusCode)
+			}
+		}
+		response = request(tc.token, "DELETE", "/api/v2/contexts/"+tc.foreign, nil)
+		response.Body.Close()
+		if response.StatusCode != 404 {
+			t.Fatalf("foreign delete: %d", response.StatusCode)
+		}
+		initialize := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2026-07-28","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}`)
+		response = request(tc.token, "POST", "/mcp/contexts/"+tc.foreign, bytes.NewReader(initialize))
+		response.Body.Close()
+		if response.StatusCode != 404 {
+			t.Fatalf("foreign MCP: %d", response.StatusCode)
+		}
+		response = request(tc.token, "POST", "/mcp/contexts/"+tc.own, bytes.NewReader(initialize))
+		response.Body.Close()
+		if response.StatusCode != 200 {
+			t.Fatalf("own MCP: %d", response.StatusCode)
+		}
+	}
+	// Basic auth must match both account and credential, including empty names.
+	for _, name := range []string{"admin", "", "other"} {
+		r := httptest.NewRequest("GET", "/api/v2/contexts", nil)
+		r.SetBasicAuth(name, testToken)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		expected := 401
+		if name == "admin" {
+			expected = 200
+		}
+		if w.Code != expected {
+			t.Fatalf("Basic account %q: %d", name, w.Code)
+		}
+	}
+	for _, value := range []string{"", "Bearer wrong", "bearer " + testToken} {
+		r := httptest.NewRequest("GET", "/api/v2/contexts", nil)
+		r.Header.Set("Authorization", value)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		if w.Code != 401 {
+			t.Fatalf("invalid auth: %d", w.Code)
+		}
+	}
+}
+
+func TestGeneratedAdminBootstrapSurvivesRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.db")
+	store, err := reviewstore.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reported string
+	settings := Settings{State: path, BootstrapReady: func(path string) { reported = path }}
+	if err := bootstrap(store, settings); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(reported)
+	if err != nil {
+		t.Fatal(err)
+	}
+	credential := strings.TrimSpace(string(raw))
+	user, err := store.AuthenticateToken(credential)
+	if err != nil || user.Name != "admin" {
+		t.Fatalf("bootstrap: %+v %v", user, err)
+	}
+	info, err := os.Stat(reported)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("credential permissions: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err = reviewstore.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := bootstrap(store, settings); err != nil {
+		t.Fatal(err)
+	}
+	again, err := store.AuthenticateToken(credential)
+	if err != nil || again != user {
+		t.Fatalf("restart: %+v %v", again, err)
+	}
+	if err := bootstrap(store, Settings{State: path, Account: "admin", Token: strings.Repeat("wrong", 10)}); err == nil {
+		t.Fatal("overwrote bootstrap credential")
+	}
+	var users []reviewstore.User
+	if users, err = store.RemoteUsers(); err != nil || len(users) != 1 {
+		t.Fatalf("restart created extra user: %+v %v", users, err)
+	}
+}
+
+func TestMemoryBootstrapRequiresExplicitCredential(t *testing.T) {
+	store, err := reviewstore.Open("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := bootstrap(store, Settings{State: ":memory:"}); err == nil {
+		t.Fatal("generated undiscoverable memory credential")
+	}
+	if err := bootstrap(store, Settings{State: ":memory:", Token: testToken}); err != nil {
+		t.Fatal(err)
+	}
+	if user, err := store.AuthenticateToken(testToken); err != nil || user.Name != "admin" {
+		t.Fatalf("explicit memory token: %+v %v", user, err)
+	}
+}
+
+func TestRetentionDurationValidation(t *testing.T) {
+	for days, expected := range map[int]time.Duration{0: 7 * 24 * time.Hour, 7: 7 * 24 * time.Hour, 1: 24 * time.Hour, 30: 30 * 24 * time.Hour} {
+		actual, err := Retention(days)
+		if err != nil || actual != expected {
+			t.Fatalf("retention %d: %v %v", days, actual, err)
+		}
+	}
+	for _, days := range []int{-1, 1000000000} {
+		if _, err := Retention(days); err == nil {
+			t.Fatalf("invalid retention: %d", days)
+		}
 	}
 }
 

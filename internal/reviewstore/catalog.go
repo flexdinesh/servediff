@@ -19,6 +19,7 @@ var (
 
 type ContextInfo struct {
 	Stale            bool
+	Sessions         []SessionAssociation
 	Metadata         *ingestion.Metadata
 	ID               string
 	Kind             string
@@ -103,7 +104,7 @@ func (store *Store) RegisterGitSubmission(ownerID, requestID, payloadHash, root,
 	} else if id != "" {
 		return bindingFor(transaction, ownerID, id, time.Now())
 	}
-	binding, err := registerGit(transaction, ownerID, root, commonDir, worktreeKey)
+	binding, err := registerGit(transaction, ownerID, root, commonDir, worktreeKey, store.retention)
 	if err != nil {
 		return Binding{}, err
 	}
@@ -124,7 +125,7 @@ func (store *Store) CaptureSubmission(ownerID, requestID, payloadHash, raw, subm
 	} else if id != "" {
 		return bindingFor(transaction, ownerID, id, time.Now())
 	}
-	binding, err := capture(transaction, ownerID, raw, snapshot, submittedFrom)
+	binding, err := capture(transaction, ownerID, raw, snapshot, submittedFrom, store.retention)
 	if err != nil {
 		return Binding{}, err
 	}
@@ -160,10 +161,12 @@ func putSubmission(transaction *sql.Tx, ownerID, id, kind, hash, contextID strin
 	return err
 }
 
-const contextSelect = `SELECT c.id,c.kind,COALESCE(l.root,json_extract(o.metadata,'$.root')),c.location_id,COALESCE(l.repository_id,o.repository_id),r.common_dir,COALESCE(l.worktree_key,json_extract(o.metadata,'$.checkoutKey')),c.submitted_from,
+var contextSelect = `SELECT c.id,c.kind,COALESCE(l.root,json_extract(o.metadata,'$.root')),c.location_id,COALESCE(l.repository_id,o.repository_id),r.common_dir,COALESCE(l.worktree_key,json_extract(o.metadata,'$.checkoutKey')),c.submitted_from,
 	c.created_at,c.last_submitted_at,d.expires_at,
 	(SELECT json_array_length(v.manifest, '$.files') FROM diff_versions v WHERE v.diff_id=c.capture_id LIMIT 1),o.metadata,
-	COALESCE(head.context_id<>c.id,0)
+	COALESCE(head.context_id<>c.id,0),
+	(SELECT json_group_array(json_object('sourceId',s.source_id,'harness',s.harness,'id',s.session_id,'name',s.name,'firstObservedAt',a.first_observed_at,'lastObservedAt',a.last_observed_at))
+	 FROM observation_sessions a JOIN agent_sessions s ON s.owner_id=a.owner_id AND s.source_id=a.source_id AND s.harness=a.harness AND s.session_id=a.session_id WHERE a.context_id=c.id)
 	FROM contexts c LEFT JOIN locations l ON l.id=c.location_id LEFT JOIN repositories r ON r.id=l.repository_id
 	LEFT JOIN diffs d ON d.id=c.capture_id LEFT JOIN observations o ON o.context_id=c.id
 	LEFT JOIN observation_branch_aliases branch_alias ON branch_alias.owner_id=o.owner_id AND branch_alias.source_id=o.source_id
@@ -171,6 +174,7 @@ const contextSelect = `SELECT c.id,c.kind,COALESCE(l.root,json_extract(o.metadat
 		AND branch_alias.branch=json_extract(o.metadata,'$.branch')
 	LEFT JOIN observation_stream_heads head ON head.owner_id=o.owner_id AND head.source_id=o.source_id
 		AND head.repository_key=json_extract(o.metadata,'$.repositoryKey') AND head.checkout_key=json_extract(o.metadata,'$.checkoutKey')
+		AND head.comparison_policy=` + comparisonPolicySQL("o.metadata") + `
 		AND head.branch=COALESCE(NULLIF(json_extract(o.metadata,'$.branchId'),''),branch_alias.branch_id,json_extract(o.metadata,'$.branch'))`
 
 type scanner interface{ Scan(...any) error }
@@ -178,10 +182,16 @@ type scanner interface{ Scan(...any) error }
 func scanContext(row scanner) (ContextInfo, error) {
 	var item ContextInfo
 	var metadata *string
+	var sessions string
 	err := row.Scan(&item.ID, &item.Kind, &item.Root, &item.LocationID, &item.RepositoryID, &item.CommonDir, &item.WorktreeKey,
-		&item.SubmittedFrom, &item.CreatedAt, &item.LastSubmittedAt, &item.ExpiresAt, &item.ChangedFileCount, &metadata, &item.Stale)
+		&item.SubmittedFrom, &item.CreatedAt, &item.LastSubmittedAt, &item.ExpiresAt, &item.ChangedFileCount, &metadata, &item.Stale, &sessions)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ContextInfo{}, ErrNotFound
+	}
+	if err == nil {
+		if err := json.Unmarshal([]byte(sessions), &item.Sessions); err != nil {
+			return ContextInfo{}, err
+		}
 	}
 	if err == nil && metadata != nil {
 		var decoded ingestion.Metadata
@@ -297,7 +307,7 @@ func (store *Store) DiscoverGit(ownerID, root, commonDir, worktreeKey string) (s
 	var id string
 	err = transaction.QueryRow(`SELECT id FROM locations WHERE owner_id=? AND worktree_key=?`, ownerID, worktreeKey).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
-		binding, registerErr := registerGit(transaction, ownerID, root, commonDir, worktreeKey)
+		binding, registerErr := registerGit(transaction, ownerID, root, commonDir, worktreeKey, store.retention)
 		if registerErr != nil {
 			return "", registerErr
 		}

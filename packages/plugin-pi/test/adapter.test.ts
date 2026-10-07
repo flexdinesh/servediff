@@ -9,6 +9,30 @@ import { setTimeout } from "node:timers/promises";
 import test from "node:test";
 import { register } from "../src/index.ts";
 
+test("settled collection forwards the optional current session name", () => {
+  const requests: (string | undefined)[][] = [];
+  register(
+    {
+      on(_event, handler) {
+        handler(
+          {},
+          {
+            cwd: "/worktree",
+            sessionManager: {
+              getSessionId: () => "session-1",
+              getSessionName: () => "Parser review",
+            },
+          },
+        );
+      },
+    },
+    (path, session, name) => {
+      requests.push([path, session, name]);
+    },
+  );
+  assert.deepEqual(requests, [["/worktree", "session-1", "Parser review"]]);
+});
+
 test("settled run queues current checkout/session without registering earlier lifecycle events", () => {
   const requests: string[][] = [];
   register(

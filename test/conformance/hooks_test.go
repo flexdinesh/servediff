@@ -235,7 +235,7 @@ func TestHookReturnsBeforeRemoteIngestionAndSkipsUnchangedUploads(t *testing.T) 
 		time.Sleep(10 * time.Millisecond)
 	}
 	for range 3 {
-		promptHook(t, harness, nil, "--harness", "opencode", "--path", path)
+		promptHook(t, harness, hookInput(t, path), "--harness", "claude")
 	}
 	select {
 	case <-confirmations:
@@ -246,6 +246,16 @@ func TestHookReturnsBeforeRemoteIngestionAndSkipsUnchangedUploads(t *testing.T) 
 	case input := <-requests:
 		t.Fatalf("unchanged completion uploaded again: %s", input.SubmissionID)
 	case <-time.After(300 * time.Millisecond):
+	}
+	// A new session must associate with the review even when content is unchanged.
+	promptHook(t, harness, nil, "--harness", "opencode", "--run-id", "second-session", "--path", path)
+	select {
+	case input := <-requests:
+		if input.Metadata.AgentSession == nil || input.Metadata.AgentSession.Harness != "opencode" || input.Metadata.AgentSession.ID != "second-session" {
+			t.Fatalf("missing new session association: %#v", input.Metadata)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("new session did not submit unchanged content")
 	}
 	output, err := harness.run(nil, "service", "status", "--json")
 	if err == nil || !strings.Contains(string(output), "stopped") {
@@ -313,7 +323,7 @@ func collectorActivities(t *testing.T, harness serviceHarness) []hooks.Activity 
 	return activities
 }
 
-func TestHookDiscoversCommittedBranchFromParentWorkspace(t *testing.T) {
+func TestHookIgnoresParentWorkspaceAndReviewRecoversExplicitBranch(t *testing.T) {
 	harness := isolatedCollectorHarness(t)
 	root := createWorktree(t, "renamed-repository")
 	collectorGit(t, root, "checkout", "--", "value.txt")
@@ -340,7 +350,24 @@ func TestHookDiscoversCommittedBranchFromParentWorkspace(t *testing.T) {
 	}
 	workspace := filepath.Dir(root)
 	promptHook(t, harness, hookInput(t, workspace), "--harness", "codex", "--config-file", configFile)
-	serverStatus, contexts := waitHookCatalog(t, harness, 2)
+	status := waitCollectorStatus(t, harness, func(activity hooks.Activity) bool {
+		return activity.InputPath == workspace && activity.Stage == "discovery" && activity.Status == "complete"
+	})
+	if status.FileCount != 0 {
+		t.Fatalf("non-Git hook discovered child repositories: %+v", status)
+	}
+	if output, err := harness.run(nil, "service", "status", "--json"); err == nil || !strings.Contains(string(output), "stopped") {
+		t.Fatalf("non-Git hook started a service: %v %s", err, output)
+	}
+	captures, err := filepath.Glob(filepath.Join(harness.runtimeDir, "hooks", "jobs", "*", "capture.pending.json"))
+	if err != nil || len(captures) != 0 {
+		t.Fatalf("non-Git hook captured child repositories: %v %v", captures, err)
+	}
+	output, err := harness.run(nil, "review", "--path", root, "--branch", branch, "--base", "main", "--config-file", configFile, "--no-browser")
+	if err != nil {
+		t.Fatalf("explicit branch recovery: %v %s", err, output)
+	}
+	serverStatus, contexts := waitHookCatalog(t, harness, 1)
 	var recovered *contextservice.Context
 	for index := range contexts {
 		if contexts[index].Branch != nil && *contexts[index].Branch == branch {
@@ -361,23 +388,8 @@ func TestHookDiscoversCommittedBranchFromParentWorkspace(t *testing.T) {
 	if contents.Before != "before\n" || contents.After != after {
 		t.Fatalf("branch object contents incomplete: %+v", contents)
 	}
-	status := waitCollectorStatus(t, harness, func(activity hooks.Activity) bool {
-		return activity.Branch == branch && activity.Status == "complete"
-	})
-	if status.Path != root || status.InputPath != workspace || status.ContextID != recovered.ID || status.RepositoryKey == "" || status.CheckoutKey == "" || status.BranchID == "" {
-		t.Fatalf("branch source status lacks provenance: %+v", status)
-	}
-	discovered, captured, acknowledged := false, false, false
-	for _, activity := range collectorActivities(t, harness) {
-		if activity.Branch != branch {
-			continue
-		}
-		discovered = discovered || activity.Stage == "discovery" && activity.Status == "resolved" && activity.InputPath == workspace
-		captured = captured || activity.Stage == "captured" && activity.Status == "pending"
-		acknowledged = acknowledged || activity.Stage == "ingestion" && activity.Status == "complete" && activity.ContextID == recovered.ID
-	}
-	if !discovered || !captured || !acknowledged {
-		t.Fatalf("missing collector lifecycle: discovered=%v captured=%v acknowledged=%v", discovered, captured, acknowledged)
+	if recovered.Observation == nil || recovered.Observation.RepositoryKey == "" || recovered.Observation.CheckoutKey == "" || recovered.Observation.BranchID == "" {
+		t.Fatalf("explicit branch recovery lacks provenance: %+v", recovered)
 	}
 }
 

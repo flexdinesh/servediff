@@ -195,8 +195,8 @@ func TestScopedMCPDoesNotShareReviewContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = response.Body.Close()
-	if response.StatusCode != 409 {
-		t.Fatalf("ambiguous MCP = %d", response.StatusCode)
+	if response.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("global MCP standalone GET = %d", response.StatusCode)
 	}
 	connect := func(id string) *mcp.ClientSession {
 		client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "test"}, &mcp.ClientOptions{Capabilities: &mcp.ClientCapabilities{}})

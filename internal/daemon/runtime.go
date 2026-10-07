@@ -18,7 +18,7 @@ import (
 type Settings = controlapi.Settings
 type Status = controlapi.Status
 
-type Explicit struct{ Host, Port, State, WebDir bool }
+type Explicit struct{ Host, Port, State, WebDir, RetentionDays bool }
 
 type Descriptor struct {
 	Endpoint string `json:"endpoint"`
@@ -26,7 +26,14 @@ type Descriptor struct {
 	Status   Status `json:"status"`
 }
 
-func DefaultSettings() Settings { return Settings{Host: "127.0.0.1", Port: -1} }
+func DefaultSettings() Settings { return Settings{Host: "127.0.0.1", Port: -1, RetentionDays: 7} }
+
+func normalizeSettings(settings Settings) Settings {
+	if settings.RetentionDays == 0 {
+		settings.RetentionDays = 7
+	}
+	return settings
+}
 
 func RuntimeDir() (string, error) {
 	if dir := os.Getenv("SERVEDIFF_RUNTIME_DIR"); dir != "" {

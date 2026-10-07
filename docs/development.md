@@ -91,8 +91,11 @@ mise run dev:server -- --no-browser
 ```
 
 `serve` collects its fixture before starting in the foreground and does not use
-the personal daemon. `review` and `pipe` collect once, submit to the configured
-server and exit. `CollectPatch` preserves the supplied patch without Git lookup;
+the personal daemon. `review` collects the originating checkout and all registered
+worktrees against the default branch merge base, plus working changes. Use
+`--base HEAD` for working changes only, and `--branch` for explicit object-only
+recovery. `review` and `pipe` submit to one configured destination and exit.
+`CollectPatch` preserves the supplied patch without Git lookup;
 its absolute submission directory is provenance only, not repository identity.
 Use isolated
 runtime directories (`SERVEDIFF_RUNTIME_DIR`) and in-memory state for lifecycle tests; fixture processes
@@ -102,7 +105,15 @@ is a foreground development-process lifecycle hook.
 Before replacing a running binary, stop the service with `servediff service
 stop`. Stop older foreground binaries separately; they do not honor the new
 database ownership lock. Restart uses the invoking binary and restores retained
-contexts from persistent state. Memory state lasts only for one process.
+contexts from persistent state. Memory state lasts only for one process. Server
+`retentionDays` defaults to seven; fresh submissions apply the current setting,
+while existing expiry and exact retries retain their earlier expiry.
+
+For isolated production-user tests, start `servediff-server` with a temporary
+persistent database. Initial admin credentials live in `<database>.admin-token`;
+startup reports its path. Stop the server before `user create --name NAME --state
+DB`, save its printed token and restart. Users share one database, while credentials
+scope REST, MCP and events. Do not provision against the running personal service.
 
 ## Build pipeline
 
@@ -132,7 +143,9 @@ navigation, draft, review, reviewed files, and collapse state. One draft persist
 across scopes. Context selection uses the top-bar popup picker (also Cmd/Ctrl+K)
 and scopes every request. The “Switch review” picker first selects a repository
 or Piped, then an immutable observation. Repository observations retain branch,
-worktree, source/run, and collection-time metadata. Global search is labeled
+worktree, source/run, comparison, and collection-time metadata. Submission/session
+associations remain separate from original snapshot metadata; catalog API filters
+include `harness`, `sessionId`, `sessionName` and legacy `runId`. Global search is labeled
 “Search reviews” and includes repository, branch, worktree, hostname, and source/run
 labels. Piped history uses “Search Piped”, with collection timestamps newest first
 and no repository filters. The header identifies these reviews with a terminal
@@ -147,7 +160,7 @@ Opening a review never discovers worktrees or reads Git. Repository results defa
 Latest snapshots with changes. All / Latest / Stale filters freshness; the
 right-aligned All checkbox also includes unavailable, empty, and unknown-status
 snapshots. A newer collection supersedes older snapshots for the same owner,
-source, repository, checkout, and branch; arrival order breaks collection-time
+source, repository, checkout, branch and comparison policy; arrival order breaks collection-time
 ties. Freshness uses a durable stream head, including deduplicated collections and
 observations outside the current search or page. Expiry and pruning leave that head
 intact, so older retained snapshots stay stale. A newer collection of previous
@@ -169,6 +182,13 @@ across writes or owner disposal. Keep section-only state within its component.
 
 See [architecture.md](architecture.md) for repository boundaries and dependency
 rules.
+
+Shared producer orchestration in `cmd/servediff` resolves config → environment →
+flags once, pins retries to destination/database identity and serves manual/hook
+delivery. Hooks use session-scoped acknowledgements plus server reconciliation;
+their private pending data retains a separate seven-day expiry. REST and MCP
+compose `reviewservice`; global `/mcp` provides catalog discovery and stored
+diff/patch retrieval with explicit context IDs.
 
 See [plugins.md](plugins.md) for native harness installation, asynchronous
 checkout sync, configuration precedence and hook diagnostics. Normal builds and

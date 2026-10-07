@@ -1,14 +1,14 @@
 import { spawn } from "node:child_process";
 export function register(pi, request = requestSync) {
     pi.on("agent_settled", (_event, context) => {
-        request(context.cwd, context.sessionManager.getSessionId());
+        request(context.cwd, context.sessionManager.getSessionId(), context.sessionManager.getSessionName?.());
     });
 }
 export default function servediff(pi) {
     register(pi);
 }
 // The CLI schedules its own detached worker. Do not wait for collection or upload.
-function requestSync(directory, sessionID) {
+function requestSync(directory, sessionID, sessionName) {
     try {
         const args = [
             "hook",
@@ -19,6 +19,8 @@ function requestSync(directory, sessionID) {
             "--run-id",
             sessionID,
         ];
+        if (sessionName)
+            args.push("--session-name", sessionName);
         const child = spawn(process.env.SERVEDIFF_BINARY ?? "servediff", args, {
             detached: true,
             stdio: "ignore",
