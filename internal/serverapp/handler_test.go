@@ -500,3 +500,66 @@ func TestGlobalMCPDiscoversStoredReviewsAndRejectsForeignContexts(t *testing.T) 
 		t.Fatalf("scoped context override: %#v %v", result, err)
 	}
 }
+
+func TestForeignRESTMutationsLeaveReviewStateUntouched(t *testing.T) {
+	input := collectGit(t)
+	d := start(t, "", false)
+	owner, err := d.store.User("foreign-mutation-owner", "foreign")
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := contextservice.New(d.store, owner)
+	defer service.Close()
+	foreign, err := service.Ingest(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, file := foreign.Snapshot, foreign.Snapshot.Files[0]
+	original := review.ReviewComment{ID: "foreign-comment", DiffID: snapshot.ID, VersionID: snapshot.VersionID, Path: file.Path, Scope: review.DiffAll, Fingerprint: file.Fingerprint, Side: "additions", Start: 1, End: 1, Body: "Keep this concern", Status: "open", CreatedAt: 1}
+	if err := d.store.PutComment(foreign.Context.ID, original); err != nil {
+		t.Fatal(err)
+	}
+	mark := review.ReviewMark{DiffID: snapshot.ID, VersionID: snapshot.VersionID, FileID: file.ID, FileVersion: file.Fingerprint, Scope: review.DiffAll}
+	if err := d.store.PutMark(foreign.Context.ID, mark); err != nil {
+		t.Fatal(err)
+	}
+	create := map[string]any{"diffId": snapshot.ID, "versionId": snapshot.VersionID, "fileId": file.ID, "fileVersion": file.Fingerprint, "scope": "all", "side": "additions", "start": 1, "end": 1, "body": "New concern"}
+	for _, tc := range []struct {
+		method, path string
+		body         any
+	}{
+		{"POST", "/comments", create},
+		{"PATCH", "/comments/foreign-comment", map[string]string{"body": "Modified", "status": "resolved"}},
+		{"DELETE", "/comments/foreign-comment", nil},
+		{"DELETE", "/comments?status=all", nil},
+		{"POST", "/comments/import", map[string]any{"comments": []review.ReviewComment{original}}},
+		{"POST", "/review/comments/foreign-comment/resolve", map[string]any{}},
+		{"PUT", "/review-marks/" + file.ID + "?scope=all", map[string]string{"versionId": snapshot.VersionID, "fileVersion": file.Fingerprint}},
+		{"DELETE", "/review-marks/" + file.ID + "?scope=all", nil},
+		{"DELETE", "/review-marks?scope=all", nil},
+	} {
+		t.Run(tc.method+tc.path, func(t *testing.T) {
+			var body io.Reader
+			if tc.body != nil {
+				raw, err := json.Marshal(tc.body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				body = bytes.NewReader(raw)
+			}
+			response := request(t, d, tc.method, "/api/v2/contexts/"+foreign.Context.ID+tc.path, body)
+			response.Body.Close()
+			if response.StatusCode != 404 {
+				t.Fatalf("foreign mutation status: %d", response.StatusCode)
+			}
+		})
+	}
+	comments, err := d.store.Comments(foreign.Context.ID)
+	if err != nil || !reflect.DeepEqual(comments, []review.ReviewComment{original}) {
+		t.Fatalf("foreign comments changed: %#v %v", comments, err)
+	}
+	marks, err := d.store.Marks(foreign.Context.ID, review.DiffAll)
+	if err != nil || !reflect.DeepEqual(marks, []review.ReviewMark{mark}) {
+		t.Fatalf("foreign marks changed: %#v %v", marks, err)
+	}
+}
