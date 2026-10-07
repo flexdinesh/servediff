@@ -42,6 +42,7 @@ func helperDaemon(args []string) error {
 	flags.IntVar(&settings.Port, "port", settings.Port, "")
 	flags.StringVar(&settings.State, "state", "", "")
 	flags.StringVar(&settings.WebDir, "web-dir", "", "")
+	flags.IntVar(&settings.RetentionDays, "retention-days", settings.RetentionDays, "")
 	flags.StringVar(&dir, "runtime-dir", "", "")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -341,6 +342,7 @@ func TestRecoveryRejectsForeignStateAndSettings(t *testing.T) {
 	}{
 		{"settings", func(status *Status) { status.Settings.State = "other.db" }, ErrSettingsChanged},
 		{"port", func(status *Status) { status.Settings.Port++ }, ErrSettingsChanged},
+		{"retention", func(status *Status) { status.Settings.RetentionDays = 14 }, ErrSettingsChanged},
 		{"replaced same path", func(status *Status) { status.StateID = "new-database" }, ErrStateChanged},
 		{"memory restart", func(status *Status) { status.InstanceID = "new-instance" }, ErrMemoryRestarted},
 	} {
@@ -366,6 +368,45 @@ func TestRecoveryRejectsForeignStateAndSettings(t *testing.T) {
 				t.Fatal("rejected replacement received payload")
 			}
 		})
+	}
+}
+
+func TestRetentionSettingsAndLegacyRecovery(t *testing.T) {
+	settings := DefaultSettings()
+	status := Status{Settings: settings, ProtocolVersion: controlapi.ProtocolVersion, StateID: "database", URL: "http://localhost:7981"}
+	requested := settings
+	requested.RetentionDays = 14
+	if err := checkSettings(status, requested, Explicit{RetentionDays: true}); err == nil || !strings.Contains(err.Error(), "--retention-days 14") {
+		t.Fatalf("retention mismatch: %v", err)
+	}
+	if err := checkSettings(status, requested, Explicit{}); err != nil {
+		t.Fatalf("implicit retention changed active service: %v", err)
+	}
+	legacy := status
+	legacy.Settings.RetentionDays = 0
+	if _, err := verifyRecovery(&Connection{status: legacy}, &Connection{status: status}); err != nil {
+		t.Fatalf("legacy default recovery: %v", err)
+	}
+	if err := checkSettings(legacy, settings, Explicit{RetentionDays: true}); err != nil {
+		t.Fatalf("legacy default mismatch: %v", err)
+	}
+}
+
+func TestRestartAppliesAndPreservesRetention(t *testing.T) {
+	client := testClient(t)
+	settings := DefaultSettings()
+	settings.RetentionDays = 14
+	if _, err := client.Start(t.Context(), settings, Explicit{}); err != nil {
+		t.Fatal(err)
+	}
+	status, err := client.Restart(t.Context(), DefaultSettings(), Explicit{})
+	if err != nil || status.Settings.RetentionDays != 14 {
+		t.Fatalf("restart lost retention: %#v %v", status, err)
+	}
+	settings.RetentionDays = 3
+	status, err = client.Restart(t.Context(), settings, Explicit{RetentionDays: true})
+	if err != nil || status.Settings.RetentionDays != 3 {
+		t.Fatalf("restart ignored retention: %#v %v", status, err)
 	}
 }
 

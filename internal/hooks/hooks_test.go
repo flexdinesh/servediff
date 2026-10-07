@@ -14,6 +14,7 @@ import (
 
 	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/processlock"
+	"github.com/flexdinesh/servediff/internal/review"
 )
 
 func fixture(t *testing.T) (Engine, *string) {
@@ -161,7 +162,7 @@ func TestTriggerDuringUploadCoalescesWithoutLosingNewState(t *testing.T) {
 	var mu sync.Mutex
 	var events []Event
 	engine.Collect = func(_ context.Context, event Event, _ string) (ingestion.Request, string, error) {
-		return ingestion.Request{SubmissionID: event.RunID}, event.RunID, nil
+		return ingestion.Request{SubmissionID: event.InputPath}, event.InputPath, nil
 	}
 	engine.Deliver = func(_ context.Context, _ Target, request ingestion.Request) (string, error) {
 		mu.Lock()
@@ -174,7 +175,7 @@ func TestTriggerDuringUploadCoalescesWithoutLosingNewState(t *testing.T) {
 		}
 		return "context", nil
 	}
-	if err := engine.Schedule(Event{Path: "/checkout", RunID: "first"}); err != nil {
+	if err := engine.Schedule(Event{Path: "/checkout", RunID: "session", InputPath: "first"}); err != nil {
 		t.Fatal(err)
 	}
 	workerJob := *job
@@ -182,7 +183,7 @@ func TestTriggerDuringUploadCoalescesWithoutLosingNewState(t *testing.T) {
 	go func() { done <- engine.Run(context.Background(), workerJob) }()
 	<-started
 	for _, id := range []string{"middle", "latest"} {
-		if err := engine.Schedule(Event{Path: "/checkout", RunID: id}); err != nil {
+		if err := engine.Schedule(Event{Path: "/checkout", RunID: "session", InputPath: id}); err != nil {
 			t.Fatal(err)
 		}
 		if err := engine.Run(context.Background(), workerJob); err != nil {
@@ -649,5 +650,54 @@ func TestStalePendingReplayCapturesAndPromotesLatestInSameSync(t *testing.T) {
 	}
 	if latest != "A" || collections != 3 || confirmations != 1 || strings.Join(submissions, ",") != "capture-1,capture-1,capture-3" {
 		t.Fatalf("latest=%q collections=%d confirmations=%d submissions=%v", latest, collections, confirmations, submissions)
+	}
+}
+
+func TestSessionsQueueIndependently(t *testing.T) {
+	engine, job := fixture(t)
+	sessions := []Event{{Path: "/checkout", Agent: "codex", RunID: "A"}, {Path: "/checkout", Agent: "codex", RunID: "B"}, {Path: "/checkout", Agent: "claude", RunID: "A"}, {Path: "/checkout", Agent: "codex", RunID: "A", SessionName: "renamed"}}
+	jobs := make(map[string]bool)
+	for _, event := range sessions {
+		if err := engine.Schedule(event); err != nil {
+			t.Fatal(err)
+		}
+		if jobs[*job] {
+			t.Fatal("distinct session association coalesced")
+		}
+		jobs[*job] = true
+		directory, _ := engine.jobPath(*job)
+		var saved queued
+		if err := readJSON(filepath.Join(directory, "request.json"), &saved); err != nil || saved.Event != event && saved.Event.InputPath != event.Path {
+			t.Fatalf("saved session: %#v %v", saved, err)
+		}
+	}
+}
+
+func TestInitialEmptyReconciliationAndConservativePublication(t *testing.T) {
+	for _, scenario := range []struct {
+		name       string
+		skip       bool
+		err        error
+		deliveries int
+	}{{"never dirty", true, nil, 0}, {"retained history", false, nil, 1}, {"query unavailable", false, errors.New("offline"), 1}} {
+		t.Run(scenario.name, func(t *testing.T) {
+			engine, job := fixture(t)
+			engine.Collect = func(context.Context, Event, string) (ingestion.Request, string, error) {
+				return ingestion.Request{SubmissionID: "empty", Scopes: []ingestion.Scope{{Snapshot: review.RepositoryDiff{}}}}, "empty", nil
+			}
+			queries, delivered := 0, 0
+			engine.SuppressInitialEmpty = func(context.Context, Target, ingestion.Request) (bool, error) {
+				queries++
+				return scenario.skip, scenario.err
+			}
+			engine.Deliver = func(context.Context, Target, ingestion.Request) (string, error) { delivered++; return "context", nil }
+			trigger(t, engine)
+			if err := engine.Run(t.Context(), *job); err != nil {
+				t.Fatal(err)
+			}
+			if queries != 1 || delivered != scenario.deliveries {
+				t.Fatalf("queries=%d deliveries=%d", queries, delivered)
+			}
+		})
 	}
 }

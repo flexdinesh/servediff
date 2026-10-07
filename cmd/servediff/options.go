@@ -13,35 +13,38 @@ import (
 var errHelp = errors.New("help requested")
 
 type options struct {
-	host          string
-	hostSet       bool
-	port          int
-	portSet       bool
-	directory     string
-	repositorySet bool
-	fixture       string
-	capture       string
-	state         string
-	stateSet      bool
-	webDir        string
-	webDirSet     bool
-	runtimeDir    string
-	json          bool
-	noBrowser     bool
-	version       bool
-	server        string
-	serverSet     bool
-	token         string
-	tokenSet      bool
-	trigger       string
-	agent         string
-	runID         string
-	sourceID      string
-	pathSet       bool
-	config        string
-	configFile    string
-	base          string
-	branch        string
+	host             string
+	hostSet          bool
+	port             int
+	portSet          bool
+	directory        string
+	repositorySet    bool
+	fixture          string
+	capture          string
+	state            string
+	stateSet         bool
+	webDir           string
+	webDirSet        bool
+	runtimeDir       string
+	json             bool
+	noBrowser        bool
+	version          bool
+	server           string
+	serverSet        bool
+	token            string
+	tokenSet         bool
+	trigger          string
+	agent            string
+	sessionName      string
+	retentionDays    int
+	retentionDaysSet bool
+	runID            string
+	sourceID         string
+	pathSet          bool
+	config           string
+	configFile       string
+	base             string
+	branch           string
 }
 
 func parseOptions(arguments []string, stderr io.Writer) (options, error) {
@@ -58,8 +61,10 @@ func parseOptionsMode(arguments []string, stderr io.Writer, internal bool, foreg
 	flags.StringVar(&values.trigger, "trigger", values.trigger, "collection trigger: manual or agent-hook")
 	flags.StringVar(&values.agent, "harness", "", "harness name recorded with the observation")
 	flags.StringVar(&values.runID, "run-id", "", "agent or container run identity")
+	flags.StringVar(&values.sessionName, "session-name", "", "optional agent session name")
+	flags.IntVar(&values.retentionDays, "retention-days", 7, "retention in days; positive, defaults to seven")
 	flags.StringVar(&values.sourceID, "source-id", "", "source identity; defaults to persistent local identity")
-	flags.StringVar(&values.base, "base", "", "comparison baseline: HEAD (default), auto, or Git ref")
+	flags.StringVar(&values.base, "base", "", "comparison baseline: auto (default), HEAD, or Git ref")
 	flags.StringVar(&values.branch, "branch", "", "recover committed branch from Git objects; defaults base to auto")
 	if internal || (len(foreground) > 0 && foreground[0]) {
 		flags.StringVar(&values.host, "host", values.host, "IP address to bind (foreground/internal only)")
@@ -115,6 +120,8 @@ func parseOptionsMode(arguments []string, stderr io.Writer, internal bool, foreg
 			values.serverSet = true
 		case "token":
 			values.tokenSet = true
+		case "retention-days":
+			values.retentionDaysSet = true
 		}
 	})
 	if !values.serverSet {
@@ -154,7 +161,7 @@ func normalizeArguments(arguments []string) []string {
 		"-p": true, "--port": true, "--host": true, "--fixture": true,
 		"--config": true, "--config-file": true, "--path": true, "--server": true, "--token": true, "--trigger": true, "--harness": true, "--run-id": true, "--source-id": true,
 		"--state": true, "--web-dir": true, "--capture": true, "--runtime-dir": true,
-		"--base": true, "--branch": true,
+		"--base": true, "--branch": true, "--session-name": true, "--retention-days": true,
 	}
 	options, positionals := make([]string, 0, len(arguments)), make([]string, 0, 1)
 	for index := 0; index < len(arguments); index++ {

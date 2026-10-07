@@ -48,7 +48,7 @@ func runConfig(arguments []string, writer io.Writer) error {
 		if err != nil {
 			return err
 		}
-		fields := map[string]interface{}{"host": values.Host, "port": values.Port, "state": values.State, "webDir": values.WebDir}
+		fields := map[string]interface{}{"host": values.Host, "port": values.Port, "state": values.State, "webDir": values.WebDir, "server": values.Server, "token": values.Token, "retentionDays": values.RetentionDays}
 		value, ok := fields[key]
 		if !ok {
 			return fmt.Errorf("unknown config key %q", key)
@@ -57,6 +57,6 @@ func runConfig(arguments []string, writer io.Writer) error {
 	default:
 		return fmt.Errorf("unknown config action %q", action)
 	}
-	fmt.Fprintln(writer, "  config saved; applies on next service start/restart")
+	fmt.Fprintln(writer, "  config saved")
 	return nil
 }

@@ -19,6 +19,7 @@ func (engine Engine) sync(ctx context.Context, directory string, event Event) er
 	job := filepath.Base(directory)
 	capturePath := filepath.Join(directory, "capture.pending.json")
 	captured, hasCapture := engine.latestCapture(directory)
+	priorAttempt := hasCapture && captured.Target != (Target{})
 	// Older workers persisted only a destination-specific pending file and did
 	// not mark resolved jobs. Recover those payloads before attempting discovery.
 	if hasCapture && !event.Resolved {
@@ -133,6 +134,14 @@ func (engine Engine) sync(ctx context.Context, directory string, event Event) er
 	pendingPath := filepath.Join(directory, stream+".pending.json")
 	var ack state
 	ackValid := readJSON(ackPath, &ack) == nil && target.Identity != "" && ack.Target == target && time.Since(ack.At) < acknowledgementTTL && (engine.Confirm == nil || ack.ContextID != "")
+	if !ackValid && !priorAttempt && !hasCaptureBound(captured) && engine.SuppressInitialEmpty != nil && emptyCapture(fresh) {
+		skip, reconcileErr := engine.SuppressInitialEmpty(ctx, target, fresh)
+		if reconcileErr == nil && skip {
+			_ = os.Remove(capturePath)
+			record(Activity{Stage: "collection", Status: "skipped", Destination: target.Destination, Reason: "initial clean checkout has no retained stream history"})
+			return nil
+		}
+	}
 	if unchanged {
 		current := ackValid && fingerprint == ack.Fingerprint
 		if current && engine.Confirm != nil {
@@ -361,4 +370,10 @@ func (engine Engine) Statuses() ([]Activity, error) {
 		statuses = append(statuses, status)
 	}
 	return statuses, nil
+}
+
+func hasCaptureBound(captured pending) bool { return captured.Target != (Target{}) }
+
+func emptyCapture(request ingestion.Request) bool {
+	return len(request.Scopes) > 0 && len(request.Scopes[0].Snapshot.Files) == 0
 }

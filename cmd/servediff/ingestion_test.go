@@ -65,6 +65,10 @@ func TestReviewManualAndAgentHookShareGitCollection(t *testing.T) {
 	var received []ingestion.Request
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v2/health" {
+			_ = json.NewEncoder(w).Encode(ingestion.Health{StateID: "database", ProtocolVersion: ingestion.ProtocolVersion})
+			return
+		}
 		if r.URL.Path != "/api/v2/ingestions" || r.Header.Get("Authorization") != "Bearer secret-token" {
 			t.Errorf("request: %s %s", r.URL.Path, r.Header.Get("Authorization"))
 		}
@@ -118,7 +122,7 @@ func TestReviewManualAndAgentHookShareGitCollection(t *testing.T) {
 		t.Fatalf("hook metadata: %#v", received[1].Metadata)
 	}
 	entries, err := os.ReadDir(runtimeDir)
-	if err != nil || len(entries) != 1 || entries[0].Name() != "hooks" {
+	if err != nil || len(entries) != 3 {
 		t.Fatalf("remote ingestion created local service state: %v %v", entries, err)
 	}
 	log, err := os.ReadFile(filepath.Join(runtimeDir, "hooks", "hooks.log"))
@@ -206,6 +210,10 @@ func TestRemoteRetryReplaysCollectedSnapshot(t *testing.T) {
 	var payloads [][]byte
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v2/health" {
+			_ = json.NewEncoder(w).Encode(ingestion.Health{StateID: "database", ProtocolVersion: ingestion.ProtocolVersion})
+			return
+		}
 		raw, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Error(err)
@@ -246,6 +254,10 @@ func TestRemoteRejectionDoesNotRetry(t *testing.T) {
 	attempts := 0
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v2/health" {
+			_ = json.NewEncoder(w).Encode(ingestion.Health{StateID: "database", ProtocolVersion: ingestion.ProtocolVersion})
+			return
+		}
 		attempts++
 		w.WriteHeader(http.StatusForbidden)
 		_ = json.NewEncoder(w).Encode(ingestion.Problem{Status: http.StatusForbidden, Detail: "unauthorized source"})

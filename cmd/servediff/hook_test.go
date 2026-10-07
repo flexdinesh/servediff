@@ -138,3 +138,19 @@ func TestHookValidatesMovedAndCopiedIdentity(t *testing.T) {
 		t.Fatalf("replaced source not rejected: %v", err)
 	}
 }
+
+func TestHookOptionalSessionNames(t *testing.T) {
+	for _, scenario := range []struct {
+		payload  string
+		expected string
+	}{{`{"cwd":"/tmp","session_id":"s","session_name":"Named session"}`, "Named session"}, {`{"cwd":"/tmp","session_id":"s","title":"Session title"}`, "Session title"}} {
+		event, err := parseHookEvent([]string{"--harness", "codex"}, strings.NewReader(scenario.payload), io.Discard)
+		if err != nil || event.SessionName != scenario.expected {
+			t.Fatalf("name: %#v %v", event, err)
+		}
+		event, err = parseHookEvent([]string{"--harness", "codex", "--session-name", "Explicit"}, strings.NewReader(scenario.payload), io.Discard)
+		if err != nil || event.SessionName != "Explicit" {
+			t.Fatalf("explicit name: %#v %v", event, err)
+		}
+	}
+}

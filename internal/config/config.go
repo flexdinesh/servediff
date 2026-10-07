@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -18,15 +19,18 @@ import (
 )
 
 type Values struct {
-	Host   string `json:"host"`
-	Port   *int   `json:"port"`
-	State  string `json:"state"`
-	WebDir string `json:"webDir"`
+	Host          string `json:"host"`
+	Port          *int   `json:"port"`
+	State         string `json:"state"`
+	WebDir        string `json:"webDir"`
+	Server        string `json:"server"`
+	Token         string `json:"token"`
+	RetentionDays int    `json:"retentionDays"`
 }
 
 func Default() (Values, error) {
 	state, err := reviewstore.DefaultPath()
-	return Values{Host: "127.0.0.1", State: state}, err
+	return Values{Host: "127.0.0.1", State: state, RetentionDays: 7}, err
 }
 
 func Path() (string, error) {
@@ -80,6 +84,8 @@ func LoadFile(path string) (Values, error) {
 		{"SERVEDIFF_HOST", &values.Host},
 		{"SERVEDIFF_STATE", &values.State},
 		{"SERVEDIFF_WEB_DIR", &values.WebDir},
+		{"SERVEDIFF_SERVER_URL", &values.Server},
+		{"SERVEDIFF_TOKEN", &values.Token},
 	} {
 		if value, exists := os.LookupEnv(field.name); exists {
 			*field.target = value
@@ -91,6 +97,13 @@ func LoadFile(path string) (Values, error) {
 			return values, fmt.Errorf("invalid SERVEDIFF_PORT: %w", err)
 		}
 		values.Port = &port
+	}
+	if raw, exists := os.LookupEnv("SERVEDIFF_RETENTION_DAYS"); exists {
+		days, err := strconv.Atoi(raw)
+		if err != nil {
+			return values, fmt.Errorf("invalid SERVEDIFF_RETENTION_DAYS: %w", err)
+		}
+		values.RetentionDays = days
 	}
 	if err := values.Validate(); err != nil {
 		return values, fmt.Errorf("invalid environment config: %w", err)
@@ -136,6 +149,12 @@ func Merge(values Values, raw string) (Values, error) {
 			target = &values.State
 		case "webDir":
 			target = &values.WebDir
+		case "server":
+			target = &values.Server
+		case "token":
+			target = &values.Token
+		case "retentionDays":
+			target = &values.RetentionDays
 		default:
 			return values, fmt.Errorf("unknown config key %q", key)
 		}
@@ -162,6 +181,15 @@ func (values Values) Validate() error {
 	if values.State == "" {
 		return errors.New("state must be a database path or memory")
 	}
+	if values.Server != "" {
+		endpoint, err := url.Parse(values.Server)
+		if err != nil || endpoint.Host == "" || (endpoint.Scheme != "http" && endpoint.Scheme != "https") || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" || (endpoint.Path != "" && endpoint.Path != "/") {
+			return errors.New("server must be an HTTP(S) origin without credentials, path, query, or fragment")
+		}
+	}
+	if values.RetentionDays <= 0 || values.RetentionDays > 106751 {
+		return errors.New("retentionDays must be between 1 and 106751")
+	}
 	return nil
 }
 
@@ -169,7 +197,7 @@ func (values Values) Settings() (controlapi.Settings, error) {
 	if err := values.Validate(); err != nil {
 		return controlapi.Settings{}, err
 	}
-	settings := controlapi.Settings{Host: net.ParseIP(values.Host).String(), Port: -1, State: values.State, WebDir: values.WebDir}
+	settings := controlapi.Settings{Host: net.ParseIP(values.Host).String(), Port: -1, State: values.State, WebDir: values.WebDir, RetentionDays: values.RetentionDays}
 	if values.Port != nil {
 		settings.Port = *values.Port
 	}
@@ -209,13 +237,19 @@ func EditFile(path, key string, value *string) error {
 	if err != nil {
 		return err
 	}
-	fields := map[string]interface{}{"host": defaults.Host, "port": defaults.Port, "state": defaults.State, "webDir": defaults.WebDir}
+	fields := map[string]interface{}{"host": defaults.Host, "port": defaults.Port, "state": defaults.State, "webDir": defaults.WebDir, "server": defaults.Server, "token": defaults.Token, "retentionDays": defaults.RetentionDays}
 	field, ok := fields[key]
 	if !ok {
 		return fmt.Errorf("unknown config key %q", key)
 	}
 	if value != nil {
-		if key == "port" {
+		if key == "retentionDays" {
+			days, err := strconv.Atoi(*value)
+			if err != nil {
+				return fmt.Errorf("invalid retentionDays: %w", err)
+			}
+			field = days
+		} else if key == "port" {
 			var port *int
 			if err := json.Unmarshal([]byte(*value), &port); err != nil {
 				return fmt.Errorf("invalid port: %w", err)

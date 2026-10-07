@@ -49,6 +49,7 @@ func boundConnection(descriptor Descriptor, status Status) (*Connection, error) 
 	if status.ProtocolVersion != controlapi.ProtocolVersion || status.StateID == "" {
 		return nil, ErrIncompatible
 	}
+	status.Settings = normalizeSettings(status.Settings)
 	return &Connection{status: status, control: controlapi.NewClient(descriptor.Endpoint, descriptor.Token)}, nil
 }
 
@@ -79,6 +80,7 @@ func (client *Client) probe(ctx context.Context) (Descriptor, Status, error) {
 		defer cancel()
 		status, err := controlapi.NewClient(d.Endpoint, d.Token).Status(probeCtx)
 		if err == nil && status.InstanceID == d.Status.InstanceID {
+			status.Settings = normalizeSettings(status.Settings)
 			return d, status, nil
 		}
 		if err := ctx.Err(); err != nil {
@@ -221,7 +223,7 @@ func (client *Client) RecoverConnection(ctx context.Context, previous *Connectio
 }
 
 func verifyRecovery(previous, current *Connection) (*Connection, error) {
-	if previous.status.Settings != current.status.Settings {
+	if normalizeSettings(previous.status.Settings) != normalizeSettings(current.status.Settings) {
 		return nil, ErrSettingsChanged
 	}
 	if previous.status.Settings.State == "memory" && previous.status.InstanceID != current.status.InstanceID {
@@ -267,6 +269,9 @@ func (client *Client) Restart(ctx context.Context, requested Settings, explicit 
 		if explicit.WebDir {
 			settings.WebDir = requested.WebDir
 		}
+		if explicit.RetentionDays {
+			settings.RetentionDays = requested.RetentionDays
+		}
 	}
 	if err := client.stop(ctx); err != nil {
 		return Status{}, err
@@ -278,7 +283,8 @@ func checkSettings(status Status, requested Settings, explicit Explicit) error {
 	if status.ProtocolVersion != controlapi.ProtocolVersion {
 		return ErrIncompatible
 	}
-	current := status.Settings
+	current := normalizeSettings(status.Settings)
+	requested = normalizeSettings(requested)
 	var flags []string
 	if explicit.Host && requested.Host != current.Host {
 		flags = append(flags, "--host "+requested.Host)
@@ -291,6 +297,9 @@ func checkSettings(status Status, requested Settings, explicit Explicit) error {
 	}
 	if explicit.WebDir && requested.WebDir != current.WebDir {
 		flags = append(flags, "--web-dir "+requested.WebDir)
+	}
+	if explicit.RetentionDays && requested.RetentionDays != current.RetentionDays {
+		flags = append(flags, "--retention-days "+strconv.Itoa(requested.RetentionDays))
 	}
 	if len(flags) != 0 {
 		return fmt.Errorf("service running at %s with different settings; run: servediff service restart %s", status.URL, strings.Join(flags, " "))
@@ -368,9 +377,10 @@ func (client *Client) spawnConnection(ctx context.Context, settings Settings) (*
 	if settings.Host == "" {
 		settings.Host = "127.0.0.1"
 	}
+	settings = normalizeSettings(settings)
 	startupCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	args := []string{"__daemon", "--host", settings.Host, "--port", strconv.Itoa(settings.Port), "--state", settings.State, "--runtime-dir", client.RuntimeDirectory}
+	args := []string{"__daemon", "--host", settings.Host, "--port", strconv.Itoa(settings.Port), "--state", settings.State, "--runtime-dir", client.RuntimeDirectory, "--retention-days", strconv.Itoa(settings.RetentionDays)}
 	if settings.WebDir != "" {
 		args = append(args, "--web-dir", settings.WebDir)
 	}
@@ -406,7 +416,7 @@ func (client *Client) spawnConnection(ctx context.Context, settings Settings) (*
 		}
 		d, status, err := client.probe(startupCtx)
 		if err == nil && status.State == "running" {
-			if err := checkSettings(status, settings, Explicit{Host: true, Port: true, State: settings.State != "", WebDir: true}); err != nil {
+			if err := checkSettings(status, settings, Explicit{Host: true, Port: true, State: settings.State != "", WebDir: true, RetentionDays: true}); err != nil {
 				return nil, err
 			}
 			return boundConnection(d, status)
