@@ -28,7 +28,9 @@ type Options struct {
 	Hostname         string
 	RunID            string
 	Agent            string
+	SessionName      string
 	Trigger          string
+	TriggerRoot      string
 	CollectorVersion string
 	SubmissionID     string
 	Base             string
@@ -104,17 +106,23 @@ func collectRepositoryChanged(ctx context.Context, source diffsource.Source, opt
 	if err != nil {
 		return ingestion.Request{}, "", err
 	}
-	if comparison, ok := diffsource.ComparisonInfo(source); ok && comparison.ObjectsOnly {
+	comparison, compared := diffsource.ComparisonInfo(source)
+	metadata.Comparison = &ingestion.Comparison{Kind: "working-tree", BaseRef: "HEAD"}
+	if compared {
+		metadata.Comparison = &ingestion.Comparison{Kind: "branch", BaseRef: comparison.BaseRef, BaseCommit: comparison.BaseCommit, MergeBase: comparison.BaseOID}
+	} else if metadata.Head != nil {
+		metadata.Comparison.BaseCommit, metadata.Comparison.MergeBase = *metadata.Head, *metadata.Head
+	}
+	if compared && comparison.ObjectsOnly {
 		metadata.CheckoutKey = diffsource.BranchCheckoutKey(metadata.RepositoryKey, metadata.BranchID)
 		metadata.WorktreeName = "branch: " + metadata.Branch
 		metadata.LinkedWorktree = nil
 	}
 	if options.OnSource != nil {
-		comparison, compared := diffsource.ComparisonInfo(source)
 		if !compared {
 			comparison.BaseRef = "HEAD"
 			if metadata.Head != nil {
-				comparison.BaseOID, comparison.HeadOID = *metadata.Head, *metadata.Head
+				comparison.BaseOID, comparison.BaseCommit, comparison.HeadOID = *metadata.Head, *metadata.Head, *metadata.Head
 			}
 		}
 		options.OnSource(metadata, comparison)
@@ -182,6 +190,7 @@ func Fingerprint(request ingestion.Request) string {
 	}
 	metadata := request.Metadata
 	metadata.RunID, metadata.Agent, metadata.Trigger, metadata.CollectorVersion = "", "", "", ""
+	metadata.AgentSession, metadata.TriggerRoot = nil, ""
 	metadata.CollectedAt = 0
 	if metadata.SourceID != "" {
 		metadata.Hostname = ""
@@ -322,6 +331,9 @@ func request(metadata ingestion.Metadata, scopes []ingestion.Scope, options Opti
 }
 
 func defaults(options Options) (Options, error) {
+	if options.Base == "" {
+		options.Base = "auto"
+	}
 	if options.SourceID == "" {
 		id, err := SourceID()
 		if err != nil {
@@ -346,7 +358,11 @@ func defaults(options Options) (Options, error) {
 }
 
 func baseMetadata(options Options) ingestion.Metadata {
-	return ingestion.Metadata{SourceID: options.SourceID, Hostname: options.Hostname, RunID: options.RunID, Agent: options.Agent, Trigger: options.Trigger, CollectorVersion: options.CollectorVersion, CollectedAt: time.Now().UnixMilli()}
+	metadata := ingestion.Metadata{SourceID: options.SourceID, Hostname: options.Hostname, RunID: options.RunID, Agent: options.Agent, Trigger: options.Trigger, TriggerRoot: options.TriggerRoot, CollectorVersion: options.CollectorVersion, CollectedAt: time.Now().UnixMilli()}
+	if options.Agent != "" && options.RunID != "" {
+		metadata.AgentSession = &ingestion.AgentSession{Harness: options.Agent, ID: options.RunID, Name: options.SessionName}
+	}
+	return metadata
 }
 
 func repositoryMetadata(ctx context.Context, root string, facts diffsource.RepositoryMetadata, snapshot review.RepositoryDiff, options Options) (ingestion.Metadata, error) {

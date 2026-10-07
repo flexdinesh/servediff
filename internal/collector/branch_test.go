@@ -100,25 +100,35 @@ func TestRemovedWorktreeBranchRecoversOnlyCommittedObjects(t *testing.T) {
 	}
 }
 
-func TestComparisonUsesMergeBaseAndManualCollectionKeepsHead(t *testing.T) {
+func TestDefaultCollectionUsesMergeBaseAndExplicitHeadKeepsWorkingChanges(t *testing.T) {
 	root := branchRepository(t)
+	mergeBase := git(t, root, "rev-parse", "main")
 	git(t, root, "switch", "main")
 	write(t, root, "main-only", "main change\n")
 	git(t, root, "add", ".")
 	git(t, root, "commit", "-m", "diverged main")
+	baseTip := git(t, root, "rev-parse", "main")
 	git(t, root, "switch", "feature")
-	manual := collect(t, root)
-	if len(manual.Scopes[0].Snapshot.Files) != 0 {
-		t.Fatal("manual checkout unexpectedly included committed changes")
-	}
-	request, err := Collect(t.Context(), root, branchOptions())
-	if err != nil {
-		t.Fatal(err)
+	request := collect(t, root)
+	if comparison := request.Metadata.Comparison; comparison == nil || comparison.Kind != "branch" || comparison.BaseRef != "refs/heads/main" || comparison.BaseCommit != baseTip || comparison.MergeBase != mergeBase {
+		t.Fatalf("comparison lost resolved baseline: %+v", comparison)
 	}
 	if len(request.Scopes[0].Snapshot.Files) != 1 {
 		t.Fatalf("default branch changes leaked into feature: %+v", request.Scopes[0].Snapshot.Files)
 	}
 	patchFor(t, request, review.DiffAll, "tracked")
+	options := branchOptions()
+	options.Base = "HEAD"
+	working, err := Collect(t.Context(), root, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if comparison := working.Metadata.Comparison; comparison == nil || comparison.Kind != "working-tree" || comparison.BaseRef != "HEAD" || comparison.BaseCommit != *working.Metadata.Head || comparison.MergeBase != *working.Metadata.Head || len(working.Scopes[0].Snapshot.Files) != 0 {
+		t.Fatalf("explicit HEAD included branch changes: %+v", working)
+	}
+	if Fingerprint(working) == Fingerprint(request) {
+		t.Fatal("different comparison policies shared identity")
+	}
 }
 
 func TestComparisonRecreatedUntrackedFileUsesBranchBase(t *testing.T) {

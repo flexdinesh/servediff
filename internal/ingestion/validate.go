@@ -29,7 +29,31 @@ func Validate(input Request) error {
 	if input.Metadata.Trigger != "manual" && input.Metadata.Trigger != "agent-hook" && input.Metadata.Trigger != "pipe" {
 		return fmt.Errorf("trigger must be manual, agent-hook, or pipe")
 	}
-	for _, value := range []string{input.Metadata.Hostname, input.Metadata.RunID, input.Metadata.Agent, input.Metadata.RepositoryKey, input.Metadata.RepositoryName, input.Metadata.RemoteURL, input.Metadata.CheckoutKey, input.Metadata.Root, input.Metadata.WorktreeName, input.Metadata.Branch, input.Metadata.BranchID, input.Metadata.CollectorVersion} {
+	values := []string{input.Metadata.Hostname, input.Metadata.RunID, input.Metadata.Agent, input.Metadata.RepositoryKey, input.Metadata.RepositoryName, input.Metadata.RemoteURL, input.Metadata.CheckoutKey, input.Metadata.Root, input.Metadata.WorktreeName, input.Metadata.Branch, input.Metadata.BranchID, input.Metadata.CollectorVersion, input.Metadata.TriggerRoot}
+	if comparison := input.Metadata.Comparison; comparison != nil {
+		if comparison.Kind != "working-tree" && comparison.Kind != "branch" {
+			return fmt.Errorf("comparison kind must be working-tree or branch")
+		}
+		if strings.TrimSpace(comparison.BaseRef) == "" {
+			return fmt.Errorf("comparison baseRef required")
+		}
+		if comparison.Kind == "branch" && (comparison.BaseCommit == "" || comparison.MergeBase == "") {
+			return fmt.Errorf("branch comparison requires baseCommit and mergeBase")
+		}
+		for _, commit := range []string{comparison.BaseCommit, comparison.MergeBase} {
+			if commit != "" && !validCommit(commit) {
+				return fmt.Errorf("comparison commits must be lowercase Git object IDs")
+			}
+		}
+		values = append(values, comparison.BaseRef)
+	}
+	if session := input.Metadata.AgentSession; session != nil {
+		if strings.TrimSpace(session.Harness) == "" || strings.TrimSpace(session.ID) == "" {
+			return fmt.Errorf("agentSession harness and id required")
+		}
+		values = append(values, session.Harness, session.ID, session.Name)
+	}
+	for _, value := range values {
 		if len(value) > 32<<10 {
 			return fmt.Errorf("metadata value exceeds 32 KiB")
 		}
@@ -78,6 +102,14 @@ func Validate(input Request) error {
 		return fmt.Errorf("all scope required")
 	}
 	return nil
+}
+
+func validCommit(value string) bool {
+	if (len(value) != 40 && len(value) != 64) || strings.ToLower(value) != value {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
 }
 
 func sameHead(left, right *string) bool {

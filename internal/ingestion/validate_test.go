@@ -27,6 +27,21 @@ func TestValidateObservationContracts(t *testing.T) {
 		{"missing collection time", func(r *Request) { r.Metadata.CollectedAt = 0 }},
 		{"unknown trigger", func(r *Request) { r.Metadata.Trigger = "watcher" }},
 		{"oversized metadata", func(r *Request) { r.Metadata.Hostname = strings.Repeat("x", (32<<10)+1) }},
+		{"oversized trigger root", func(r *Request) { r.Metadata.TriggerRoot = strings.Repeat("x", (32<<10)+1) }},
+		{"unknown comparison", func(r *Request) { r.Metadata.Comparison = &Comparison{Kind: "unknown", BaseRef: "HEAD"} }},
+		{"blank baseline", func(r *Request) { r.Metadata.Comparison = &Comparison{Kind: "working-tree", BaseRef: " "} }},
+		{"missing branch commits", func(r *Request) { r.Metadata.Comparison = &Comparison{Kind: "branch", BaseRef: "refs/heads/main"} }},
+		{"invalid comparison commit", func(r *Request) {
+			r.Metadata.Comparison = &Comparison{Kind: "working-tree", BaseRef: "HEAD", BaseCommit: "invalid"}
+		}},
+		{"uppercase comparison commit", func(r *Request) {
+			r.Metadata.Comparison = &Comparison{Kind: "working-tree", BaseRef: "HEAD", MergeBase: strings.Repeat("A", 40)}
+		}},
+		{"blank session harness", func(r *Request) { r.Metadata.AgentSession = &AgentSession{Harness: " ", ID: "id"} }},
+		{"blank session ID", func(r *Request) { r.Metadata.AgentSession = &AgentSession{Harness: "codex", ID: " "} }},
+		{"oversized session name", func(r *Request) {
+			r.Metadata.AgentSession = &AgentSession{Harness: "codex", ID: "id", Name: strings.Repeat("x", (32<<10)+1)}
+		}},
 		{"missing repository", func(r *Request) { r.Metadata.RepositoryKey = "" }},
 		{"missing checkout", func(r *Request) { r.Metadata.CheckoutKey = "" }},
 		{"metadata branch differs", func(r *Request) { r.Metadata.Branch = "different" }},
@@ -65,6 +80,24 @@ func TestValidateObservationContracts(t *testing.T) {
 				t.Fatal("invalid observation accepted")
 			}
 		})
+	}
+}
+
+func TestValidateStructuredMetadataAndLegacyFallback(t *testing.T) {
+	for _, comparison := range []*Comparison{
+		nil,
+		{Kind: "working-tree", BaseRef: "HEAD"},
+		{Kind: "working-tree", BaseRef: "HEAD", BaseCommit: strings.Repeat("a", 40), MergeBase: strings.Repeat("a", 40)},
+		{Kind: "branch", BaseRef: "refs/heads/main", BaseCommit: strings.Repeat("a", 40), MergeBase: strings.Repeat("b", 40)},
+		{Kind: "branch", BaseRef: "refs/heads/main", BaseCommit: strings.Repeat("a", 64), MergeBase: strings.Repeat("b", 64)},
+	} {
+		r := validRequest()
+		r.Metadata.Comparison = comparison
+		r.Metadata.AgentSession = &AgentSession{Harness: "codex", ID: "session", Name: "Feature work"}
+		r.Metadata.TriggerRoot = "/workspace"
+		if err := Validate(r); err != nil {
+			t.Fatalf("valid metadata %+v: %v", comparison, err)
+		}
 	}
 }
 
