@@ -3,11 +3,14 @@ package remoteserver
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/subtle"
+	"encoding/hex"
 	"errors"
 	"io/fs"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -18,54 +21,103 @@ import (
 )
 
 type Settings struct {
-	Listen  string
-	State   string
-	Account string
-	Token   string
+	Listen         string
+	State          string
+	Account        string
+	Token          string
+	RetentionDays  int
+	BootstrapReady func(string)
 }
 
 func Handler(ctx context.Context, store *reviewstore.Store, account, token string, assets fs.FS) (http.Handler, func() error, error) {
-	if strings.TrimSpace(account) == "" || len(account) > 256 || strings.ContainsAny(account, "\r\n") || len(token) < 32 || strings.ContainsAny(token, "\r\n") {
-		return nil, nil, errors.New("remote server requires an account and a token of at least 32 bytes")
+	if _, err := store.EnsureRemoteUser(account, token); err != nil {
+		return nil, nil, err
 	}
-	user, err := store.User("account:"+account, account)
+	return MultiHandler(ctx, store, assets)
+}
+
+// MultiHandler composes one application service per provisioned user. Provisioning
+// uses the database ownership lock, so the account set is fixed while serving.
+func MultiHandler(ctx context.Context, store *reviewstore.Store, assets fs.FS) (http.Handler, func() error, error) {
+	users, err := store.RemoteUsers()
 	if err != nil {
 		return nil, nil, err
 	}
-	service := contextservice.NewWithContext(ctx, store, user)
-	return authenticate(serverapp.Handler(ctx, service, store, assets, ""), account, token), service.Close, nil
-}
-
-func authenticate(next http.Handler, account, token string) http.Handler {
+	if len(users) == 0 {
+		return nil, nil, errors.New("remote server has no provisioned users")
+	}
+	handlers := make(map[string]http.Handler, len(users))
+	services := make([]*contextservice.Service, 0, len(users))
+	for _, user := range users {
+		service := contextservice.NewWithContext(ctx, store, user)
+		services = append(services, service)
+		handlers[user.ID] = serverapp.Handler(ctx, service, store, assets, "")
+	}
+	closeServices := func() error {
+		var err error
+		for _, service := range services {
+			err = errors.Join(err, service.Close())
+		}
+		return err
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		bearer := subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+token)) == 1
-		name, password, basic := r.BasicAuth()
-		basic = basic && subtle.ConstantTimeCompare([]byte(name), []byte(account)) == 1 && subtle.ConstantTimeCompare([]byte(password), []byte(token)) == 1
-		if !bearer && !basic {
-			w.Header().Set("WWW-Authenticate", `Basic realm="servediff", charset="UTF-8"`)
-			http.Error(w, "Authentication required", http.StatusUnauthorized)
+		securityHeaders(w)
+		var token, account string
+		basic := false
+		if value := r.Header.Get("Authorization"); strings.HasPrefix(value, "Bearer ") {
+			token = strings.TrimPrefix(value, "Bearer ")
+		} else if name, password, ok := r.BasicAuth(); ok {
+			account, token = name, password
+			basic = true
+		}
+		user, err := store.AuthenticateToken(token)
+		if err != nil || (basic && subtle.ConstantTimeCompare([]byte(account), []byte(user.Name)) != 1) {
+			unauthorized(w)
 			return
 		}
-		next.ServeHTTP(w, r)
-	})
+		handler, exists := handlers[user.ID]
+		if !exists {
+			unauthorized(w)
+			return
+		}
+		handler.ServeHTTP(w, r)
+	}), closeServices, nil
+}
+
+func securityHeaders(w http.ResponseWriter) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+}
+
+func unauthorized(w http.ResponseWriter) {
+	w.Header().Set("WWW-Authenticate", `Basic realm="servediff", charset="UTF-8"`)
+	http.Error(w, "Authentication required", http.StatusUnauthorized)
 }
 
 func Run(ctx context.Context, settings Settings, ready func(string)) error {
 	if settings.State == "" {
 		return errors.New("remote state database path required")
 	}
-	store, err := reviewstore.Open(settings.State)
+	if settings.State == "memory" {
+		settings.State = ":memory:"
+	}
+	retention, err := Retention(settings.RetentionDays)
+	if err != nil {
+		return err
+	}
+	store, err := reviewstore.OpenWithRetention(settings.State, retention)
 	if err != nil {
 		return err
 	}
 	defer store.Close()
+	if err := bootstrap(store, settings); err != nil {
+		return err
+	}
 	if err := store.PruneExpired(time.Now()); err != nil {
 		return err
 	}
-	handler, closeService, err := Handler(ctx, store, settings.Account, settings.Token, webui.Assets())
+	handler, closeService, err := MultiHandler(ctx, store, webui.Assets())
 	if err != nil {
 		return err
 	}
@@ -104,6 +156,79 @@ serving:
 	defer cancel()
 	if err := server.Shutdown(shutdown); err != nil {
 		return server.Close()
+	}
+	return nil
+}
+
+func Retention(days int) (time.Duration, error) {
+	if days == 0 {
+		days = 7
+	}
+	const day = 24 * time.Hour
+	if days < 0 || int64(days) > int64((1<<63-1)/day) {
+		return 0, errors.New("retention days must be positive and fit within a duration")
+	}
+	return time.Duration(days) * day, nil
+}
+
+// GenerateToken returns a high-entropy credential suitable for bearer or Basic auth.
+func GenerateToken() (string, error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(raw), nil
+}
+
+func bootstrap(store *reviewstore.Store, settings Settings) error {
+	account := settings.Account
+	if account == "" {
+		account = "admin"
+	}
+	if settings.Token != "" {
+		_, err := store.EnsureRemoteUser(account, settings.Token)
+		return err
+	}
+	users, err := store.RemoteUsers()
+	if err != nil {
+		return err
+	}
+	for _, user := range users {
+		if user.Name == account {
+			return nil
+		}
+	}
+	if settings.State == "" || settings.State == ":memory:" || settings.State == "memory" {
+		return errors.New("in-memory remote server requires SERVEDIFF_TOKEN")
+	}
+	path := settings.State + ".admin-token"
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		token, err := GenerateToken()
+		if err != nil {
+			return err
+		}
+		file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err != nil {
+			return err
+		}
+		_, writeErr := file.WriteString(token + "\n")
+		syncErr := file.Sync()
+		if err := errors.Join(writeErr, syncErr, file.Close()); err != nil {
+			return err
+		}
+		raw = []byte(token)
+	} else if err != nil {
+		return err
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		return err
+	}
+	if _, err := store.EnsureRemoteUser(account, strings.TrimSpace(string(raw))); err != nil {
+		return err
+	}
+	if settings.BootstrapReady != nil {
+		settings.BootstrapReady(path)
 	}
 	return nil
 }
