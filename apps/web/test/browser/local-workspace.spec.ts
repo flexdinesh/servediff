@@ -162,6 +162,60 @@ async function ready(page: Page, value = "all-v1") {
   ).toBeVisible();
 }
 
+test("watch follows this checkout across clean and branch transitions while historical URLs stay pinned", async ({
+  page,
+}) => {
+  const state = await localWorkspace(page);
+  const original: ApiContext = {
+    ...state.context,
+    id: "original",
+    kind: "observation",
+    observation: {
+      sourceId: "machine",
+      hostname: "host",
+      runId: "",
+      agent: "",
+      trigger: "manual",
+      repositoryKey: "repo",
+      repositoryName: "repo",
+      remoteUrl: "",
+      checkoutKey: "checkout",
+      root: "/repo",
+      worktreeName: "repo",
+      branch: "main",
+      head: null,
+      collectedAt: 1,
+      collectorVersion: "test",
+    },
+  };
+  const contexts: ApiContext[] = [original];
+  await page.route("**/api/v2/contexts?*", (route) =>
+    route.fulfill({ json: { contexts, nextCursor: null } }),
+  );
+  await page.route("**/api/v2/contexts/*", (route) => {
+    const id = new URL(route.request().url()).pathname.split("/").at(-1);
+    const context = contexts.find((entry) => entry.id === id);
+    return route.fulfill({ json: context });
+  });
+  await page.goto("/?watch=checkout&source=machine");
+  await expect(page).toHaveURL(/\/contexts\/original\?watch=/);
+  contexts.unshift({
+    ...original,
+    id: "clean-other-branch",
+    branch: "feature",
+    changedFileCount: 0,
+  });
+  await page.evaluate(() =>
+    document.dispatchEvent(new Event("visibilitychange")),
+  );
+  await expect(page).toHaveURL(/\/contexts\/clean-other-branch\?watch=/);
+  await page.goto("/contexts/original");
+  await page.evaluate(() =>
+    document.dispatchEvent(new Event("visibilitychange")),
+  );
+  await expect(page).toHaveURL(/\/contexts\/original$/);
+});
+
 async function deletableWorkspace(
   page: Page,
   snapshot = false,

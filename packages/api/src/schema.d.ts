@@ -278,6 +278,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v2/ingestion-jobs": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** @description Durably accept an immutable submission. Identical retries return the same job; changed payloads conflict. Acceptance is not publication. */
+    post: operations["acceptIngestion"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v2/ingestion-jobs/{jobId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** @description Owner-scoped durable job status. Cancellation of a client does not cancel accepted work. */
+    get: operations["getIngestionJob"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v2/events": {
     parameters: {
       query?: never;
@@ -646,6 +680,15 @@ export interface components {
       patches: {
         [key: string]: components["schemas"]["FilePatch"];
       };
+    };
+    IngestionJob: {
+      id: string;
+      submissionId: string;
+      /** @enum {string} */
+      state: "queued" | "running" | "retrying" | "succeeded" | "failed";
+      attempt: number;
+      contextId?: string;
+      detail?: string;
     };
     IngestionRequest: {
       /**
@@ -1440,6 +1483,7 @@ export interface operations {
           "application/json": {
             stateId: string;
             protocolVersion: number;
+            queuedIngestion?: boolean;
           };
         };
       };
@@ -1469,6 +1513,59 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["IngestionReceipt"];
+        };
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
+  acceptIngestion: {
+    parameters: {
+      query?: never;
+      header?: {
+        "X-Servediff-State"?: string;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["IngestionRequest"];
+      };
+    };
+    responses: {
+      /** @description Durable job accepted; poll its Location until succeeded or failed. */
+      202: {
+        headers: {
+          Location?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["IngestionJob"];
+        };
+      };
+      default: components["responses"]["Problem"];
+    };
+  };
+  getIngestionJob: {
+    parameters: {
+      query?: never;
+      header?: {
+        "X-Servediff-State"?: string;
+      };
+      path: {
+        jobId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Current job status and committed context identity when successful. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["IngestionJob"];
         };
       };
       default: components["responses"]["Problem"];

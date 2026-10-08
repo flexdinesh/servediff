@@ -16,8 +16,8 @@ import (
 	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/processmetrics"
 	"github.com/flexdinesh/servediff/internal/review"
+	"github.com/flexdinesh/servediff/internal/reviewdata"
 	"github.com/flexdinesh/servediff/internal/reviewservice"
-	"github.com/flexdinesh/servediff/internal/reviewstore"
 	"github.com/flexdinesh/servediff/internal/session"
 	contract "github.com/flexdinesh/servediff/packages/api"
 )
@@ -44,7 +44,7 @@ func newSnapshotCache(background context.Context) *snapshotCache {
 
 type Handler struct {
 	session       session.Session
-	store         *reviewstore.Store
+	store         Store
 	review        *reviewservice.Service
 	assets        fs.FS
 	metrics       *processmetrics.Collector
@@ -52,7 +52,7 @@ type Handler struct {
 	strictContext bool
 }
 
-func New(active session.Session, store *reviewstore.Store, service *reviewservice.Service, assets fs.FS) *Handler {
+func New(active session.Session, store Store, service *reviewservice.Service, assets fs.FS) *Handler {
 	return &Handler{
 		session: active, store: store, review: service, assets: assets,
 		metrics: processmetrics.New(), cache: newSnapshotCache(context.Background()),
@@ -84,7 +84,7 @@ func (handler *Handler) snapshot(request *http.Request, mode review.DiffMode, fr
 				if handler.session.VersionID != "" {
 					snapshot.VersionID = handler.session.VersionID
 				} else if snapshot.VersionID == "" {
-					snapshot.VersionID = reviewstore.VersionID(snapshot.ID, snapshot.Revision)
+					snapshot.VersionID = reviewdata.VersionID(snapshot.ID, snapshot.Revision)
 				}
 			}
 			encoded, _ := json.Marshal(snapshot)
@@ -216,7 +216,7 @@ func (handler *Handler) api(response http.ResponseWriter, request *http.Request)
 			return true, diffsource.Error(404, "Diff version not found")
 		}
 		snapshot, err := handler.store.StoredVersion(handler.session.User.ID, diffID, versionID, time.Now())
-		if errors.Is(err, reviewstore.ErrNotFound) {
+		if errors.Is(err, reviewdata.ErrNotFound) {
 			err = diffsource.Error(404, "Diff version not found")
 		}
 		return true, writeResult(response, snapshot, err)
@@ -431,7 +431,7 @@ func (handler *Handler) getFile(response http.ResponseWriter, request *http.Requ
 		current, currentError := handler.snapshot(request, mode, false)
 		if currentError != nil || current.VersionID != versionID {
 			stored, err := handler.store.StoredVersion(handler.session.User.ID, route.diffID, versionID, time.Now())
-			if errors.Is(err, reviewstore.ErrNotFound) {
+			if errors.Is(err, reviewdata.ErrNotFound) {
 				if currentError != nil {
 					return currentError
 				}
@@ -461,7 +461,7 @@ func (handler *Handler) getFile(response http.ResponseWriter, request *http.Requ
 	}
 	if route.diffID != handler.session.DiffIDs[mode] {
 		stored, err := handler.store.StoredVersion(handler.session.User.ID, route.diffID, versionID, time.Now())
-		if errors.Is(err, reviewstore.ErrNotFound) {
+		if errors.Is(err, reviewdata.ErrNotFound) {
 			return diffsource.Error(404, "Diff version not found")
 		}
 		if err != nil {

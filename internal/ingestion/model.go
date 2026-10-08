@@ -1,5 +1,5 @@
-// Package ingestion defines the producer-to-server snapshot contract.
-// It contains no filesystem, transport, or persistence behavior.
+// Package ingestion defines snapshot contracts, pure identity rules and HTTP clients.
+// It contains no collector filesystem or server persistence behavior.
 package ingestion
 
 import "github.com/flexdinesh/servediff/internal/review"
@@ -74,4 +74,13 @@ type Filter struct {
 	Harness     string
 	SessionID   string
 	SessionName string
+}
+
+type Job struct {
+	ID           string `json:"id"`
+	SubmissionID string `json:"submissionId"`
+	State        string `json:"state"`
+	Attempt      int    `json:"attempt"`
+	ContextID    string `json:"contextId,omitempty"`
+	Detail       string `json:"detail,omitempty"`
 }

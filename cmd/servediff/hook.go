@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/flexdinesh/servediff/internal/collector"
+	"github.com/flexdinesh/servediff/internal/daemon"
 	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/hooks"
 	"github.com/flexdinesh/servediff/internal/ingestion"
@@ -280,11 +281,10 @@ func newHookEngine(directory string) hooks.Engine {
 		if err != nil {
 			return hooks.Target{}, err
 		}
-		settings, explicit, err := resolvedServerSettings(values)
-		if err != nil {
-			return hooks.Target{}, err
+		if values.server == "" || values.token == "" {
+			return hooks.Target{}, errors.New("plugins require a remote server and bearer token; configure servediff config")
 		}
-		destination, err = resolveDestination(ctx, values, settings, explicit, engine.Start)
+		destination, err = resolveDestination(ctx, values, daemon.Settings{}, daemon.Explicit{}, nil)
 		if err != nil {
 			return hooks.Target{}, err
 		}

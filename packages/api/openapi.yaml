@@ -393,6 +393,8 @@ paths:
                     type: string
                   protocolVersion:
                     type: integer
+                  queuedIngestion:
+                    type: boolean
         default:
           $ref: "#/components/responses/Problem"
   /api/v2/ingestions:
@@ -418,6 +420,61 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/IngestionReceipt"
+        default:
+          $ref: "#/components/responses/Problem"
+  /api/v2/ingestion-jobs:
+    post:
+      operationId: acceptIngestion
+      description: Durably accept an immutable submission. Identical retries return the same job; changed payloads conflict. Acceptance is not publication.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-Servediff-State
+          in: header
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IngestionRequest"
+      responses:
+        "202":
+          description: Durable job accepted; poll its Location until succeeded or failed.
+          headers:
+            Location:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestionJob"
+        default:
+          $ref: "#/components/responses/Problem"
+  /api/v2/ingestion-jobs/{jobId}:
+    get:
+      operationId: getIngestionJob
+      description: Owner-scoped durable job status. Cancellation of a client does not cancel accepted work.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Servediff-State
+          in: header
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Current job status and committed context identity when successful.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestionJob"
         default:
           $ref: "#/components/responses/Problem"
   /api/v2/events:
@@ -900,6 +957,10 @@ paths:
         default:
           $ref: "#/components/responses/Problem"
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
   parameters:
     ContextId:
       name: contextId
@@ -1085,6 +1146,24 @@ components:
           description: File previews keyed by snapshot file ID.
           additionalProperties:
             $ref: "#/components/schemas/FilePatch"
+    IngestionJob:
+      type: object
+      additionalProperties: false
+      required: [id, submissionId, state, attempt]
+      properties:
+        id:
+          type: string
+        submissionId:
+          type: string
+        state:
+          type: string
+          enum: [queued, running, retrying, succeeded, failed]
+        attempt:
+          type: integer
+        contextId:
+          type: string
+        detail:
+          type: string
     IngestionRequest:
       type: object
       additionalProperties: false

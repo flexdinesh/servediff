@@ -5,17 +5,11 @@ import (
 	"encoding/json"
 
 	"github.com/flexdinesh/servediff/internal/ingestion"
+	"github.com/flexdinesh/servediff/internal/reviewdata"
 )
 
 // SessionAssociation records observation, never ownership or authorship.
-type SessionAssociation struct {
-	SourceID        string `json:"sourceId"`
-	Harness         string `json:"harness"`
-	ID              string `json:"id"`
-	Name            string `json:"name,omitempty"`
-	FirstObservedAt int64  `json:"firstObservedAt"`
-	LastObservedAt  int64  `json:"lastObservedAt"`
-}
+type SessionAssociation = reviewdata.SessionAssociation
 
 func initializeSessions(tx *sql.Tx) error {
 	for _, statement := range []string{

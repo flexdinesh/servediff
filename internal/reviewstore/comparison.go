@@ -2,16 +2,14 @@ package reviewstore
 
 import (
 	"database/sql"
+
 	"github.com/flexdinesh/servediff/internal/ingestion"
 )
 
 // HEAD and missing comparisons share legacy identity. Resolved commits belong
 // to the snapshot, not the durable policy stream.
 func comparisonPolicy(metadata ingestion.Metadata) string {
-	if metadata.Comparison == nil || metadata.Comparison.Kind == "working-tree" {
-		return ""
-	}
-	return metadata.Comparison.Kind + ":" + metadata.Comparison.BaseRef
+	return ingestion.ComparisonPolicy(metadata)
 }
 
 func comparisonPolicySQL(metadata string) string {

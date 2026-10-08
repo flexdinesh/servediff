@@ -10,7 +10,7 @@ import (
 
 	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/review"
-	"github.com/flexdinesh/servediff/internal/reviewstore"
+	"github.com/flexdinesh/servediff/internal/reviewdata"
 	"github.com/flexdinesh/servediff/internal/session"
 )
 
@@ -51,7 +51,7 @@ func (service *Service) snapshot(ctx context.Context, mode review.DiffMode, fres
 		snapshot.VersionID = service.session.VersionID
 	}
 	if snapshot.VersionID == "" {
-		snapshot.VersionID = reviewstore.VersionID(snapshot.ID, snapshot.Revision)
+		snapshot.VersionID = reviewdata.VersionID(snapshot.ID, snapshot.Revision)
 	}
 	return snapshot, err
 }
@@ -231,7 +231,7 @@ func (service *Service) validateReference(ctx context.Context, diffID, versionID
 	if err == nil {
 		return nil
 	}
-	if !errors.Is(err, reviewstore.ErrNotFound) {
+	if !errors.Is(err, reviewdata.ErrNotFound) {
 		return err
 	}
 	for mode, id := range service.session.DiffIDs {

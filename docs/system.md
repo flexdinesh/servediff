@@ -32,114 +32,49 @@ register paths for later server collection or maintain its own catalog.
 
 ## Processes and deployment
 
-There is **one long-running server process per deployment**. Collection commands
-and hook invocations are short-lived. There is no watcher or collector daemon.
+The application core has two compositions. See [architecture.md](architecture.md)
+for contracts, durability rules and migration details.
 
-Two server entry points compose the same application logic:
+`servediff PATH` is one foreground process: collect the selected checkout,
+ingest directly, serve UI/REST/MCP, and poll that checkout for changes. Branch
+switches are followed. A failed capture leaves the last valid observation intact.
+The home-directory database survives process termination. Only one local process
+owns it; another invocation prompts before authenticated graceful replacement.
+Noninteractive callers use `--replace`. There is no collector daemon.
 
-- **Local:** `servediff service start` runs the per-user background server.
-  Local `review` and `pipe` start it automatically when needed.
-- **Remote:** `servediff-server` runs in the foreground. A hosting environment
-  manages its lifetime, persistent storage and TLS termination.
+`servediff sync` collects the originating checkout and registered worktrees once,
+saves immutable pending payloads, and submits them over authenticated HTTP.
+The Docker server owns durable queue admission, the ingestion worker, shared
+application services and persistent storage. Sync waits for committed results.
+Plugins schedule finite remote-only collector invocations with harness metadata.
 
-These are separate applications in the monorepo, not two required processes on
-each machine. A producer selects a local or remote destination. Both deployments
-may exist simultaneously; neither requires the other, and there is no automatic
-local-to-remote relay.
-
-```mermaid
-flowchart LR
-    User[User command] --> Collector[Producer: CLI collector]
-    Hook[Agent hook] --> Collector
-    Direct[Plugin implementing ingestion] --> Ingest
-    Checkout[Git checkout or supplied patch] --> Collector
-    Collector -->|HTTP: complete observation| Ingest
-    subgraph Server[One server process: local or remote]
-        Ingest[Validate and ingest] --> Core[Shared application services]
-        Core --> DB[(SQLite)]
-        REST[REST queries and review operations] --> Core
-        MCP[MCP tools] --> Core
-        Web[Web assets]
-        Core --> Events[Ingestion event stream]
-    end
-    Browser[Browser dashboard] --> Web
-    Browser --> REST
-    Events --> Browser
-    Agent[Reviewing agent] --> MCP
-```
-
-Local discovery and lifecycle use a separate authenticated loopback control
-listener inside the same process. Local CLI submissions use this private HTTP
-adapter; direct plugins and remote collectors use `POST /api/v2/ingestions`.
-Both adapters call the same ingestion operation. REST and MCP call application
-services directly rather than calling each other over HTTP.
+Both modes use identical collection, validation, identity, ingestion, catalog
+and review operations. Their lifecycle and submission delivery differ.
 
 ## Request and response flows
 
 ### Collect and ingest
 
-`servediff review` collects the current checkout and all registered worktrees;
-`review --path PATH` selects the originating checkout. Both manual review and
-hooks default to branch changes from the default branch's merge base plus dirty
-files; staged/unstaged retain HEAD/index semantics. `--base HEAD` selects working
-changes only. Comparison metadata records the baseline ref, baseline tip and
-actual merge-base commit. Missing defaults and unborn checkouts fall back
-explicitly to working-tree/HEAD. Detached HEAD can compare against an available
-default branch. No comparison fetches refs.
+Collection resolves the baseline and all/staged/unstaged scopes together with
+full-content identity and bounded immutable previews. It never fetches refs.
+Local watching selects one checkout; remote sync discovers all registered
+worktrees. Explicit `--branch` recovery remains available for remote collection.
 
-Hooks ignore non-Git directories and do not scan child repositories or recover
-unmerged branches automatically. `review --branch NAME` explicitly reads a
-branch's committed Git objects, ignoring the live checkout's dirty files.
-An agent hook supplies harness, session ID, optional session name, source
-identity and the triggering directory.
-The trigger changes provenance and browser-opening behavior, not the ingestion
-model. `servediff pipe` submits an explicit patch from stdin without Git lookup;
-its absolute submission directory is provenance only.
+Local composition calls `contextservice.Ingest` directly. Remote collectors
+POST to `/api/v2/ingestion-jobs`, receiving 202 with a durable job/status URL.
+Acceptance records owner, payload hash, submission identity and arrival sequence
+atomically. A leased worker calls the same ingestion operation. The observation,
+scopes, session associations, retry identity and stream head commit atomically.
+Then the worker acknowledges the job.
 
-1. The producer captures metadata and complete diff data before submission.
-   Git reviews contain all, staged and unstaged scopes. Piped patches contain
-   only the all scope and do not supply full file contents.
-2. Collection checks for concurrent checkout changes and uses bounded retries
-   and deadlines. Collection failure is reported. A successfully collected
-   empty diff is a valid observation, not an error placeholder. Automatic hooks
-   skip initially clean checkouts, publish dirty-to-clean transitions and retain
-   new session associations even when content has not changed. Manual review
-   always submits and returns the originating checkout's review URL.
-3. For local submission, the CLI discovers or starts the server. An explicit
-   remote destination skips local service bootstrap.
-4. The producer sends the versioned request, submission ID, metadata and scopes.
-   The server establishes the owner, validates the request and checks replay
-   identity.
-5. One SQLite transaction stores the observation, scope manifests, patches,
-   available contents, review bindings and replay identity. No partially stored
-   observation becomes visible.
-6. After commit, the application emits an ingestion notification. The public
-   endpoint returns HTTP 200 with the context ID, review URL, MCP URL and stored
-   all-scope snapshot. The local adapter returns the equivalent application
-   result; the CLI prints URLs and optionally opens the browser.
-7. The producer exits. The server continues serving the committed data even
-   after the producer or checkout disappears.
+Clients poll owner-scoped status; succeeded includes the context ID.
+Transient ingestion notifications remain hints; clients reload durable catalog
+state after reconnecting. Queue workers may execute out of order, but stream
+freshness follows collection time and acceptance sequence.
 
-```mermaid
-sequenceDiagram
-    participant P as Producer
-    participant G as Checkout
-    participant S as Server
-    participant D as SQLite
-    participant B as Dashboard
-    P->>G: Collect metadata, scopes, patches and contents
-    G-->>P: Bounded, checked observation
-    P->>S: POST ingestion with source and submission IDs
-    S->>S: Resolve owner and validate
-    S->>D: Atomic write or matching replay lookup
-    D-->>S: Committed context and scope bindings
-    S-->>B: Ingestion notification, if connected
-    S-->>P: Receipt with stored context and URLs
-    B->>S: Query stored catalog and selected observation
-    S->>D: Read stored data
-    D-->>S: Observation and review state
-    S-->>B: Query response
-```
+The older `POST /api/v2/ingestions` endpoint preserves its synchronous response
+contract for existing clients. Existing explicit daemon commands remain
+compatibility paths while callers migrate to positional local mode and sync.
 
 ### Browse and review
 
@@ -237,7 +172,7 @@ worktree contexts cannot trigger server Git reads; users submit a new review.
 | One server process, layered entry points                     | Local use stays simple; remote deployment adds authentication around shared logic. This is not a distributed worker system.                                  |
 | SQLite first                                                 | Durable queries and transactions with a small operational footprint. Other storage and queue backends remain future implementation work.                     |
 | Event notifications plus catalog queries                     | The database remains authoritative when a connection drops. Notifications may be missed or repeated.                                                         |
-| No watcher                                                   | Explicit CLI calls and agent events are the only new collection triggers. There is no filesystem polling, Git-hook installer or background freshness repair. |
+| Local watcher                                                | Foreground mode polls only its selected checkout; remote collectors remain finite.                                                                           |
 
 “Latest” means the most recently collected submission within a source, repository,
 checkout, branch and comparison policy; arrival order breaks ties. Delayed uploads remain stale.
@@ -277,47 +212,19 @@ is not a replay of a previous failed submission.
 
 ## Local and remote boundaries
 
-Local service discovery, process lifetime locks and database ownership belong
-to the local adapter. Persisted service settings default to
-`~/.config/servediff/config.json`; service config commands update them and
-start/restart `--config` overrides apply to that invocation. These settings do
-not constitute a catalog of producer checkouts.
-Collector `server`/`token` settings select one HTTP(S) destination and bearer
-credential. Defaults resolve through config file, then environment, then explicit
-flags. Remote failures never fall back to local ingestion. `retentionDays`
-configures server expiry; collectors cannot change a remote server's retention.
+Local and remote deployment share application/storage contracts and the HTTP
+runtime. Local-only lifecycle discovery is authenticated, private and limited to
+status/shutdown for watched sessions. Collection in those sessions never uses HTTP.
 
-The local server supplies one default user. Its public API is unauthenticated.
-It binds to loopback by default. Exposing that listener exposes its data to
-reachable clients; the private control token protects lifecycle operations,
-not public REST/MCP/web access.
-
-The remote entry point serves individual users in one SQLite database and one
-replica. Bearer authentication selects the user for producer/API/MCP requests;
-HTTP Basic uses username/token for browsers. Application services, caches and
-events are user-scoped. First startup bootstraps `admin` with a generated token,
-saved privately at `<database>.admin-token`; the database stores token hashes.
-Startup prints the token file path. `servediff-server user create --name NAME
---state DB` provisions another user while the server is stopped; restart activates
-it. Deployments supply TLS and a persistent database volume.
-
-A container producer needs the collector, Git and checkout access only for the
-duration of collection. It can submit directly to a remote server without a
-background servediff process. A local server inside a container can instead
-run under its process supervisor. The ingestion architecture supports both;
-container packaging and hook integration are separate deployment work.
+Remote credentials establish owner identity. REST, MCP, ingestion jobs, job status
+and browser assets require authentication. Plugins never fall back to local
+routing. Production terminates TLS at the deployment boundary and mounts a
+persistent database volume.
 
 ## Extension direction
 
-Keep checkout access on the producer side and owner resolution on the server
-side. Extend remote authentication or introduce concrete storage/queue adapters
-at server composition boundaries while preserving the shared application
-operations and versioned ingestion contract.
-
-Alternative storage backends must preserve atomic publication, user isolation
-and replay identity. A future
-queue must distinguish accepted work from committed, queryable observations
-rather than silently weakening the existing receipt semantics.
-
-Alternative storage, server queues, organizations and any upstream relay remain
-future work. No generic backend framework is introduced before a concrete need.
+Implement new adapters against the existing consuming-package contracts and
+behavioral conformance tests. Preserve atomic commit boundaries, owner isolation,
+identity bytes and retry semantics. External queues need durable payload/status
+storage plus transactional scheduling intent; multiple processes require a
+storage backend designed for that concurrency. SQLite retains one owning process.

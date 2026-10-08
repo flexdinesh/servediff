@@ -154,12 +154,27 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setContexts(entries);
         setCatalogLoaded(true);
         setCatalogError("");
-        const first = entries.find(contextHasChanges);
-        if (!contextFromUrl() && first) {
+        const query = new URLSearchParams(window.location.search);
+        const checkout = query.get("watch");
+        const source = query.get("source");
+        const watching = checkout !== null && source !== null;
+        const first = watching
+          ? entries.find(
+              (entry) =>
+                entry.observation?.checkoutKey === checkout &&
+                entry.observation.sourceId === source &&
+                entry.availability === "available",
+            )
+          : entries.find(contextHasChanges);
+        if (
+          first &&
+          (watching || !contextFromUrl()) &&
+          first.id !== contextFromUrl()
+        ) {
           window.history.replaceState(
             null,
             "",
-            `/contexts/${encodeURIComponent(first.id)}`,
+            `/contexts/${encodeURIComponent(first.id)}${watching ? window.location.search : ""}`,
           );
           setSelectedId(first.id);
         }
@@ -268,7 +283,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             </h1>
             <p>
               {empty
-                ? "Run servediff review in a repository, or pipe a diff into servediff pipe."
+                ? "Run servediff . to watch a checkout, or servediff sync to publish remotely."
                 : state.status === "error"
                   ? state.detail
                   : catalogError || "Reading review context…"}

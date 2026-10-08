@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/flexdinesh/servediff/internal/review"
+	"github.com/flexdinesh/servediff/internal/reviewdata"
 )
 
 func (store *Store) PinVersion(snapshot review.RepositoryDiff, previews map[string]review.FilePatch) error {
@@ -283,5 +283,5 @@ func (store *Store) StoredVersion(ownerID, diffID, versionID string, now time.Ti
 }
 
 func VersionID(diffID, revision string) string {
-	return strings.Join([]string{diffID, revision}, ".")
+	return reviewdata.VersionID(diffID, revision)
 }

@@ -6,12 +6,16 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/flexdinesh/servediff/internal/config"
 )
 
 func runConfig(arguments []string, writer io.Writer) error {
-	flags := flag.NewFlagSet("servediff service config", flag.ContinueOnError)
+	return runConfigInput(arguments, nil, writer)
+}
+func runConfigInput(arguments []string, input io.Reader, writer io.Writer) error {
+	flags := flag.NewFlagSet("servediff config", flag.ContinueOnError)
 	flags.SetOutput(writer)
 	path := flags.String("config-file", "", "machine JSON config path")
 	if err := flags.Parse(normalizeArguments(arguments)); err != nil {
@@ -22,7 +26,7 @@ func runConfig(arguments []string, writer io.Writer) error {
 	}
 	arguments = flags.Args()
 	if len(arguments) < 2 {
-		return errors.New("usage: servediff service config {set KEY VALUE|get KEY|remove KEY}")
+		return errors.New("usage: servediff config {set KEY VALUE|get KEY|remove KEY}")
 	}
 	action, key := arguments[0], arguments[1]
 	switch action {
@@ -30,7 +34,24 @@ func runConfig(arguments []string, writer io.Writer) error {
 		if len(arguments) != 3 {
 			return errors.New("config set requires a key and value")
 		}
-		if err := config.EditFile(*path, key, &arguments[2]); err != nil {
+		value := arguments[2]
+		if key == "token" && value == "-" {
+			if input == nil {
+				return errors.New("token input unavailable")
+			}
+			raw, err := io.ReadAll(io.LimitReader(input, 4097))
+			if err != nil {
+				return err
+			}
+			if len(raw) > 4096 {
+				return errors.New("token exceeds 4096 bytes")
+			}
+			value = strings.TrimSpace(string(raw))
+			if value == "" {
+				return errors.New("token cannot be empty")
+			}
+		}
+		if err := config.EditFile(*path, key, &value); err != nil {
 			return err
 		}
 	case "remove":
@@ -52,6 +73,9 @@ func runConfig(arguments []string, writer io.Writer) error {
 		value, ok := fields[key]
 		if !ok {
 			return fmt.Errorf("unknown config key %q", key)
+		}
+		if key == "token" && values.Token != "" {
+			value = "[redacted]"
 		}
 		return json.NewEncoder(writer).Encode(value)
 	default:

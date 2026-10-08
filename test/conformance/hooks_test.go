@@ -19,6 +19,9 @@ import (
 	"github.com/flexdinesh/servediff/internal/hooks"
 	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/review"
+	"github.com/flexdinesh/servediff/internal/reviewstore"
+	"github.com/flexdinesh/servediff/internal/serverapp"
+	"github.com/flexdinesh/servediff/internal/webui"
 )
 
 func hookInput(t *testing.T, path string) []byte {
@@ -48,6 +51,12 @@ func waitHookCatalog(t *testing.T, harness serviceHarness, count int) (serviceSt
 	client := http.Client{Timeout: 2 * time.Second}
 	for time.Now().Before(deadline) {
 		output, err := harness.run(nil, "service", "status", "--json")
+		for _, value := range harness.environment {
+			if strings.HasPrefix(value, "SERVEDIFF_SERVER_URL=") && strings.TrimPrefix(value, "SERVEDIFF_SERVER_URL=") != "" {
+				output, _ = json.Marshal(serviceStatus{State: "running", BrowserURL: strings.TrimPrefix(value, "SERVEDIFF_SERVER_URL=")})
+				err = nil
+			}
+		}
 		var status serviceStatus
 		if err == nil && json.Unmarshal(output, &status) == nil && status.State == "running" {
 			response, err := client.Get(status.BrowserURL + "/api/v2/contexts")
@@ -71,6 +80,21 @@ func waitHookCatalog(t *testing.T, harness serviceHarness, count int) (serviceSt
 
 func TestAgentHooksPublishLatestCheckoutAndCompleteFileContents(t *testing.T) {
 	harness := newServiceHarness(t)
+	store, err := reviewstore.Open("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	owner, err := store.User("remote-hook-test", "remote")
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := contextservice.NewWithContext(t.Context(), store, owner)
+	defer service.Close()
+	server := httptest.NewServer(serverapp.Handler(t.Context(), service, store, webui.Assets(), ""))
+	defer server.Close()
+	harness.environment = append(harness.environment, "SERVEDIFF_SERVER_URL="+server.URL, "SERVEDIFF_TOKEN=test-token")
+
 	harness.environment = append(harness.environment, "XDG_CONFIG_HOME="+filepath.Join(t.TempDir(), "config"))
 	configFile := filepath.Join(t.TempDir(), "machine.json")
 	config, err := json.Marshal(map[string]interface{}{"state": harness.state, "port": 0, "host": "0.0.0.0"})
