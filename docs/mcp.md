@@ -12,8 +12,8 @@ The browser does not need to remain open while an MCP client works.
 
 ## Connect
 
-Use `/mcp` to search stored reviews, or run `servediff review`/`servediff pipe`
-and use the printed scoped MCP URL.
+Start `servediff` with a path or piped patch and use the printed MCP URL to
+search stored reviews. `servediff review` prints a scoped MCP URL.
 For example:
 
 ```text
@@ -43,8 +43,8 @@ example, current OpenCode can be configured in `opencode.jsonc`:
 Use the equivalent remote MCP configuration in Codex, Claude Code, or another
 harness only when that version supports protocol `2026-07-28`. Supplying the
 servediff web-page URL alone is not enough; a coding harness connects to the
-MCP endpoint as an MCP client. In local watch mode MCP stops when the foreground command
-exits. Context IDs remain stable across persistent-service restarts.
+MCP endpoint as an MCP client. In local mode MCP stops when the foreground
+command exits. Context IDs remain stable across persistent-service restarts.
 
 Global `/mcp` supports multiple contexts without ambiguity. Supply `context_id`
 for its diff, patch and comment tools. Scoped endpoints supply their URL's

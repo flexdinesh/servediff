@@ -94,10 +94,10 @@ func parseOptionsMode(arguments []string, stderr io.Writer, internal bool, foreg
 	flags.BoolVar(&values.version, "version", false, "print version and exit")
 	flags.Usage = func() {
 		fmt.Fprintln(stderr, "  Usage: servediff PATH [--host IP] [--replace]")
+		fmt.Fprintln(stderr, "         git diff | servediff [options]")
 		fmt.Fprintln(stderr, "         servediff sync [--path DIRECTORY] [--print] [--debug] [--retry]")
 		fmt.Fprintln(stderr, "         servediff config {set|get|remove} KEY [VALUE]")
 		fmt.Fprintln(stderr, "         servediff review [--path DIRECTORY] [options]")
-		fmt.Fprintln(stderr, "         servediff pipe [--path DIRECTORY] [options]")
 		fmt.Fprintln(stderr, "         servediff service {start|stop|restart|status} [options]")
 		fmt.Fprintln(stderr, "         servediff service config {set KEY VALUE|get KEY|remove KEY}")
 		fmt.Fprintln(stderr, "         servediff serve [directory | - | --fixture FILE] [options]")

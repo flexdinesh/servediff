@@ -28,8 +28,19 @@ var errServiceStopped = errors.New("service is stopped")
 
 func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr io.Writer) (failure error) {
 	if len(arguments) == 0 {
-		writeHelp(stdout)
-		return nil
+		piped := false
+		if stdin != nil {
+			var err error
+			piped, err = redirected(stdin)
+			if err != nil {
+				return err
+			}
+		}
+		if !piped {
+			writeHelp(stdout)
+			return nil
+		}
+		return runLocal(ctx, arguments, stdin, stdout, stderr)
 	}
 	if arguments[0] == "config" {
 		return runConfigInput(arguments[1:], stdin, stdout)
@@ -38,7 +49,7 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 		return runSync(ctx, arguments[1:], stdin, stdout, stderr)
 	}
 	switch arguments[0] {
-	case "hook", "collector", "__hook-worker", "review", "pipe", "service", "serve", "__daemon", "--help", "-h", "--version":
+	case "hook", "collector", "__hook-worker", "review", "service", "serve", "__daemon", "--help", "-h", "--version":
 	default:
 		return runLocal(ctx, arguments, stdin, stdout, stderr)
 	}
@@ -54,12 +65,12 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 	command := ""
 	if len(arguments) > 0 {
 		switch arguments[0] {
-		case "review", "pipe", "service", "serve", "__daemon":
+		case "review", "service", "serve", "__daemon":
 			command, arguments = arguments[0], arguments[1:]
 		}
 	}
 	if command == "" && arguments[0] != "--help" && arguments[0] != "-h" && arguments[0] != "--version" {
-		return fmt.Errorf("unknown command %q; use servediff review or servediff pipe", arguments[0])
+		return fmt.Errorf("unknown command %q; use servediff PATH or pipe a Git diff into servediff", arguments[0])
 	}
 	action := ""
 	if command == "service" {
@@ -83,7 +94,7 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 		}
 		return err
 	}
-	if command == "review" || command == "pipe" {
+	if command == "review" {
 		values, err = resolvedCollectorSettings(values)
 		if err != nil {
 			return err
@@ -111,14 +122,11 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 	if (command == "service" || command == "serve" || command == "__daemon") && (values.serverSet || values.tokenSet || values.agent != "" || values.runID != "" || values.sessionName != "" || values.sourceID != "" || values.trigger != "manual") {
 		return errors.New("server lifecycle commands do not accept collector options")
 	}
-	if (command == "review" || command == "pipe") && values.server != "" && (values.hostSet || values.portSet || values.stateSet || values.webDirSet || values.retentionDaysSet) {
+	if command == "review" && values.server != "" && (values.hostSet || values.portSet || values.stateSet || values.webDirSet || values.retentionDaysSet) {
 		return errors.New("remote ingestion does not accept local server settings")
 	}
 	if command == "review" && (values.fixture != "" || values.directory == "-") {
-		return errors.New("review collects Git data; use servediff pipe for stdin")
-	}
-	if command == "pipe" && (values.fixture != "" || values.capture != "") {
-		return errors.New("pipe only accepts a diff from stdin")
+		return errors.New("review collects Git data; pipe a Git diff into servediff for stdin")
 	}
 	if command != "review" && (values.base != "" || values.branch != "") {
 		return errors.New("base and branch are only supported by review")
@@ -139,7 +147,7 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 	if command == "__daemon" {
 		// The parent passes a resolved snapshot; never reread file/environment.
 		settings, explicit, err = serverSettings(values)
-	} else if (command == "service" && (action == "start" || action == "restart")) || command == "serve" || ((command == "review" || command == "pipe") && values.server == "") {
+	} else if (command == "service" && (action == "start" || action == "restart")) || command == "serve" || (command == "review" && values.server == "") {
 		settings, explicit, err = resolvedServerSettings(values)
 		if command == "service" {
 			explicit = daemon.Explicit{Host: true, Port: true, State: true, WebDir: true, RetentionDays: true}
@@ -272,9 +280,6 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 	if input.Ingestion != nil {
 		loaded := submissionInput(submitted, time.Since(started))
 		loaded.mode = "git"
-		if command == "pipe" {
-			loaded.mode = "pipe"
-		}
 		loaded.directory = input.Ingestion.Metadata.Root
 		loaded.contextID, loaded.mcpURL, loaded.submitted = submitted.Context.ID, status.BrowserURL+"/mcp/contexts/"+submitted.Context.ID, true
 		writeStartup(stdout, loaded, urls...)
@@ -399,10 +404,10 @@ func main() {
 
 func writeHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "  Usage: servediff PATH [--host IP] [--replace]")
+	fmt.Fprintln(writer, "         git diff | servediff [options]")
 	fmt.Fprintln(writer, "         servediff sync [--path DIRECTORY] [--print] [--debug] [--retry]")
 	fmt.Fprintln(writer, "         servediff config {set|get|remove} KEY [VALUE]")
 	fmt.Fprintln(writer, "         servediff review [--path DIRECTORY] [options]")
-	fmt.Fprintln(writer, "         servediff pipe [--path DIRECTORY] [options]")
 	fmt.Fprintln(writer, "         servediff hook --harness NAME [--path DIRECTORY] [--config-file FILE]")
 	fmt.Fprintln(writer, "         servediff collector {status|retry} [--config-file FILE]")
 	fmt.Fprintln(writer, "         servediff service {start|stop|restart|status} [options]")

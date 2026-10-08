@@ -635,7 +635,7 @@ export function DiffWorkspace() {
     : filter
       ? "Try a different filename or clear the filter."
       : piped
-        ? "Run a command that emits a Git patch, then pipe it into servediff pipe."
+        ? "Run a command that emits a Git patch, then pipe it into servediff."
         : mode === "staged"
           ? "No staged changes were collected in this snapshot."
           : "No changes in this snapshot. Run servediff review to submit another.";

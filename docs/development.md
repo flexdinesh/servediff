@@ -94,7 +94,10 @@ mise run dev:server -- --no-browser
 the personal daemon. `review` collects the originating checkout and all registered
 worktrees against the default branch merge base, plus working changes. Use
 `--base HEAD` for working changes only, and `--branch` for explicit object-only
-recovery. `review` and `pipe` submit to one configured destination and exit.
+recovery. `review` submits to one configured destination and exits.
+Redirected stdin (`git diff | servediff`) starts a foreground local process with
+a fixed patch, ignores remote config, and does not watch Git. A path argument or
+`--path` cannot be combined with redirected stdin.
 `CollectPatch` preserves the supplied patch without Git lookup;
 its absolute submission directory is provenance only, not repository identity.
 Use isolated

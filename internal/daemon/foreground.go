@@ -49,6 +49,7 @@ func RunForeground(ctx context.Context, settings Settings, input InitialInput, c
 	defer RemoveDescriptor(client.RuntimeDirectory, id)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	input.IngestionDisabled = true
 	return runServer(ctx, cancel, settings, client.RuntimeDirectory, id, &input, func(status Status, submitted *contextservice.Submission) {
 		_ = lifecycle.Close()
 		if ready != nil {

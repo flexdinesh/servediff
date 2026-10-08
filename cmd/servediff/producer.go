@@ -217,16 +217,13 @@ func submitCollected(ctx context.Context, command string, values options, settin
 			failures = append(failures, fmt.Errorf("submit %s: %w", request.Metadata.Root, err))
 			continue
 		}
-		if command == "pipe" || values.branch != "" || request.Metadata.Root == originRoot {
+		if values.branch != "" || request.Metadata.Root == originRoot {
 			originReceipt = &receipt
 			originRequest = request
 		}
 	}
 	if originReceipt != nil {
 		input := loadedInput{directory: originRequest.Metadata.Root, snapshot: originReceipt.Snapshot, processed: time.Since(started), mode: "git", contextID: originReceipt.ContextID, mcpURL: originReceipt.MCPURL, submitted: true, remote: target.remote != nil}
-		if command == "pipe" {
-			input.mode = "pipe"
-		}
 		var status *daemon.Status
 		if target.local != nil {
 			current := target.local.Status()
