@@ -15,6 +15,9 @@ import (
 	"time"
 
 	"github.com/flexdinesh/servediff/internal/contextservice"
+	"github.com/flexdinesh/servediff/internal/diffsource"
+	"github.com/flexdinesh/servediff/internal/ingestion"
+	"github.com/flexdinesh/servediff/internal/ingestionqueue"
 	"github.com/flexdinesh/servediff/internal/reviewstore"
 	"github.com/flexdinesh/servediff/internal/serverapp"
 	"github.com/flexdinesh/servediff/internal/webui"
@@ -39,19 +42,34 @@ func Handler(ctx context.Context, store *reviewstore.Store, account, token strin
 // MultiHandler composes one application service per provisioned user. Provisioning
 // uses the database ownership lock, so the account set is fixed while serving.
 func MultiHandler(ctx context.Context, store *reviewstore.Store, assets fs.FS) (http.Handler, func() error, error) {
-	users, err := store.RemoteUsers()
+	ctx, cancel := context.WithCancel(ctx)
+	handler, closeServices, worker, err := compose(ctx, store, assets)
 	if err != nil {
+		cancel()
 		return nil, nil, err
 	}
+	done := make(chan error, 1)
+	go func() { done <- worker(ctx) }()
+	return handler, func() error { cancel(); return errors.Join(<-done, closeServices()) }, nil
+}
+
+func compose(ctx context.Context, store *reviewstore.Store, assets fs.FS) (http.Handler, func() error, serverapp.Task, error) {
+	users, err := store.RemoteUsers()
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	if len(users) == 0 {
-		return nil, nil, errors.New("remote server has no provisioned users")
+		return nil, nil, nil, errors.New("remote server has no provisioned users")
 	}
 	handlers := make(map[string]http.Handler, len(users))
 	services := make([]*contextservice.Service, 0, len(users))
+	byOwner := make(map[string]*contextservice.Service)
+	queue := store.Queue()
 	for _, user := range users {
 		service := contextservice.NewWithContext(ctx, store, user)
 		services = append(services, service)
-		handlers[user.ID] = serverapp.Handler(ctx, service, store, assets, "")
+		byOwner[user.ID] = service
+		handlers[user.ID] = serverapp.Handler(ctx, service, store, assets, "", serverapp.Options{Queue: queue})
 	}
 	closeServices := func() error {
 		var err error
@@ -59,6 +77,16 @@ func MultiHandler(ctx context.Context, store *reviewstore.Store, assets fs.FS) (
 			err = errors.Join(err, service.Close())
 		}
 		return err
+	}
+	worker := func(ctx context.Context) error {
+		return ingestionqueue.Run(ctx, queue, func(ctx context.Context, owner string, input ingestion.Request) (string, error) {
+			service, ok := byOwner[owner]
+			if !ok {
+				return "", diffsource.Error(403, "Account unavailable")
+			}
+			result, err := service.Ingest(ctx, input)
+			return result.Context.ID, err
+		})
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		securityHeaders(w)
@@ -81,7 +109,7 @@ func MultiHandler(ctx context.Context, store *reviewstore.Store, assets fs.FS) (
 			return
 		}
 		handler.ServeHTTP(w, r)
-	}), closeServices, nil
+	}), closeServices, worker, nil
 }
 
 func securityHeaders(w http.ResponseWriter) {
@@ -117,7 +145,7 @@ func Run(ctx context.Context, settings Settings, ready func(string)) error {
 	if err := store.PruneExpired(time.Now()); err != nil {
 		return err
 	}
-	handler, closeService, err := MultiHandler(ctx, store, webui.Assets())
+	handler, closeService, worker, err := compose(ctx, store, webui.Assets())
 	if err != nil {
 		return err
 	}
@@ -129,35 +157,11 @@ func Run(ctx context.Context, settings Settings, ready func(string)) error {
 	defer listener.Close()
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 2 * time.Minute, IdleTimeout: 60 * time.Second}
 	defer server.Close()
-	ticker := time.NewTicker(time.Hour)
-	defer ticker.Stop()
-	done := make(chan error, 1)
-	go func() { done <- server.Serve(listener) }()
-	if ready != nil {
-		ready(listener.Addr().String())
-	}
-serving:
-	for {
-		select {
-		case err := <-done:
-			if !errors.Is(err, http.ErrServerClosed) {
-				return err
-			}
-			break serving
-		case <-ctx.Done():
-			break serving
-		case <-ticker.C:
-			if err := store.PruneExpired(time.Now()); err != nil {
-				return err
-			}
+	return serverapp.Run(ctx, []serverapp.Endpoint{{Server: server, Listener: listener}}, []serverapp.Task{worker, serverapp.Prune(store.PruneExpired)}, func() {
+		if ready != nil {
+			ready(listener.Addr().String())
 		}
-	}
-	shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := server.Shutdown(shutdown); err != nil {
-		return server.Close()
-	}
-	return nil
+	})
 }
 
 func Retention(days int) (time.Duration, error) {

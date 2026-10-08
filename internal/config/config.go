@@ -13,10 +13,17 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/flexdinesh/servediff/internal/controlapi"
 	"github.com/flexdinesh/servediff/internal/processlock"
 	"github.com/flexdinesh/servediff/internal/reviewstore"
 )
+
+type ServerSettings struct {
+	Host          string `json:"host"`
+	Port          int    `json:"port"`
+	State         string `json:"state"`
+	WebDir        string `json:"webDir"`
+	RetentionDays int    `json:"retentionDays"`
+}
 
 type Values struct {
 	Host          string `json:"host"`
@@ -193,11 +200,11 @@ func (values Values) Validate() error {
 	return nil
 }
 
-func (values Values) Settings() (controlapi.Settings, error) {
+func (values Values) Settings() (ServerSettings, error) {
 	if err := values.Validate(); err != nil {
-		return controlapi.Settings{}, err
+		return ServerSettings{}, err
 	}
-	settings := controlapi.Settings{Host: net.ParseIP(values.Host).String(), Port: -1, State: values.State, WebDir: values.WebDir, RetentionDays: values.RetentionDays}
+	settings := ServerSettings{Host: net.ParseIP(values.Host).String(), Port: -1, State: values.State, WebDir: values.WebDir, RetentionDays: values.RetentionDays}
 	if values.Port != nil {
 		settings.Port = *values.Port
 	}

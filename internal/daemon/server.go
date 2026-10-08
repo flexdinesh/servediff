@@ -28,6 +28,7 @@ import (
 
 // InitialInput is acquired by a foreground CLI, never by the daemon's stdin.
 type InitialInput struct {
+	Watch         func(context.Context, *contextservice.Service) error
 	Ingestion     *ingestion.Request
 	Kind          string
 	Path          string
@@ -147,11 +148,14 @@ func runServer(ctx context.Context, cancel context.CancelFunc, settings Settings
 		value.Worktrees, value.Captures, err = service.Count(ctx)
 		return value, err
 	}
-	mux := serverapp.Handler(ctx, service, store, assets, defaultContextID)
+	configuration := serverapp.Options{}
+	if initial != nil && initial.Watch != nil {
+		configuration.IngestionDisabled = true
+		status.WatchPath = initial.Path
+	}
+	mux := serverapp.Handler(ctx, service, store, assets, defaultContextID, configuration)
 	webServer := &http.Server{Handler: publicRequests(mux, settings), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second, ErrorLog: logger}
-	servers := []*http.Server{webServer}
-	serverErrors := make(chan error, 2)
-	go func() { serverErrors <- webServer.Serve(listener) }()
+	endpoints := []serverapp.Endpoint{{Server: webServer, Listener: listener}}
 	if runtimeDir != "" {
 		controlListener, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
@@ -159,59 +163,33 @@ func runServer(ctx context.Context, cancel context.CancelFunc, settings Settings
 		}
 		defer controlListener.Close()
 		token := rand.Text() + rand.Text()
-		controlServer := &http.Server{Handler: controlapi.New(token, service, statusFunc, cancel), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 2 * time.Minute, IdleTimeout: 60 * time.Second, ErrorLog: logger}
-		servers = append(servers, controlServer)
-		go func() { serverErrors <- controlServer.Serve(controlListener) }()
+		controlHandler := controlapi.New(token, service, statusFunc, cancel)
+		if configuration.IngestionDisabled {
+			underlying := controlHandler
+			controlHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/control/v1/status" && r.URL.Path != "/control/v1/shutdown" {
+					http.NotFound(w, r)
+					return
+				}
+				underlying.ServeHTTP(w, r)
+			})
+		}
+		controlServer := &http.Server{Handler: controlHandler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 2 * time.Minute, IdleTimeout: 60 * time.Second, ErrorLog: logger}
+		endpoints = append(endpoints, serverapp.Endpoint{Server: controlServer, Listener: controlListener})
 		descriptor := Descriptor{Endpoint: "http://" + controlListener.Addr().String(), Token: token, Status: status}
 		if err := PublishDescriptor(runtimeDir, descriptor); err != nil {
-			for _, server := range servers {
-				_ = server.Close()
-			}
 			return err
 		}
 	}
-	if ready != nil {
-		ready(status, submitted)
+	tasks := []serverapp.Task{serverapp.Prune(store.PruneExpired)}
+	if initial != nil && initial.Watch != nil {
+		tasks = append(tasks, func(ctx context.Context) error { return initial.Watch(ctx, service) })
 	}
-	pruneDone := make(chan struct{})
-	go func() {
-		defer close(pruneDone)
-		ticker := time.NewTicker(time.Hour)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if err := store.PruneExpired(time.Now()); err != nil {
-					logger.Printf("prune diffs: %v", err)
-				}
-			}
+	return serverapp.Run(ctx, endpoints, tasks, func() {
+		if ready != nil {
+			ready(status, submitted)
 		}
-	}()
-	var result error
-	select {
-	case <-ctx.Done():
-	case err := <-serverErrors:
-		if !errors.Is(err, http.ErrServerClosed) {
-			result = err
-		}
-	}
-	cancel()
-	shutdownCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
-	defer stop()
-	for _, server := range servers {
-		if err := server.Shutdown(shutdownCtx); err != nil {
-			// Expiring the grace period requires forced close, not a failed stop.
-			closeError := server.Close()
-			if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
-				result = errors.Join(result, err)
-			}
-			result = errors.Join(result, closeError)
-		}
-	}
-	<-pruneDone
-	return result
+	})
 }
 
 func initialSubmission(ctx context.Context, service *contextservice.Service, input InitialInput) (contextservice.Submission, error) {

@@ -131,7 +131,7 @@ func TestHookInitialCleanSessionsAndMissingAcknowledgement(t *testing.T) {
 	t.Setenv("SERVEDIFF_SOURCE_ID", "machine")
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	t.Setenv("SERVEDIFF_CONFIG_PATH", configPath)
-	t.Setenv("SERVEDIFF_TOKEN", "")
+	t.Setenv("SERVEDIFF_TOKEN", "test-token")
 	store, err := reviewstore.Open("")
 	if err != nil {
 		t.Fatal(err)

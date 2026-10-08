@@ -43,7 +43,7 @@ example, current OpenCode can be configured in `opencode.jsonc`:
 Use the equivalent remote MCP configuration in Codex, Claude Code, or another
 harness only when that version supports protocol `2026-07-28`. Supplying the
 servediff web-page URL alone is not enough; a coding harness connects to the
-MCP endpoint as an MCP client. The daemon keeps running after the CLI
+MCP endpoint as an MCP client. In local watch mode MCP stops when the foreground command
 exits. Context IDs remain stable across persistent-service restarts.
 
 Global `/mcp` supports multiple contexts without ambiguity. Supply `context_id`

@@ -13,6 +13,11 @@ import (
 var errHelp = errors.New("help requested")
 
 type options struct {
+	replace          bool
+	print            bool
+	debug            bool
+	retry            bool
+	progress         func(string, string)
 	host             string
 	hostSet          bool
 	port             int
@@ -81,10 +86,17 @@ func parseOptionsMode(arguments []string, stderr io.Writer, internal bool, foreg
 		flags.StringVar(&values.runtimeDir, "runtime-dir", "", "internal daemon runtime directory")
 	}
 	flags.BoolVar(&values.json, "json", false, "print service status as JSON")
+	flags.BoolVar(&values.replace, "replace", false, "replace an existing foreground local instance")
+	flags.BoolVar(&values.print, "print", false, "print only the configured server URL after sync")
+	flags.BoolVar(&values.debug, "debug", false, "show sync progress on stderr")
+	flags.BoolVar(&values.retry, "retry", false, "retry saved sync submissions without collecting")
 	flags.BoolVar(&values.noBrowser, "no-browser", false, "do not open a browser")
 	flags.BoolVar(&values.version, "version", false, "print version and exit")
 	flags.Usage = func() {
-		fmt.Fprintln(stderr, "  Usage: servediff review [--path DIRECTORY] [options]")
+		fmt.Fprintln(stderr, "  Usage: servediff PATH [--host IP] [--replace]")
+		fmt.Fprintln(stderr, "         servediff sync [--path DIRECTORY] [--print] [--debug] [--retry]")
+		fmt.Fprintln(stderr, "         servediff config {set|get|remove} KEY [VALUE]")
+		fmt.Fprintln(stderr, "         servediff review [--path DIRECTORY] [options]")
 		fmt.Fprintln(stderr, "         servediff pipe [--path DIRECTORY] [options]")
 		fmt.Fprintln(stderr, "         servediff service {start|stop|restart|status} [options]")
 		fmt.Fprintln(stderr, "         servediff service config {set KEY VALUE|get KEY|remove KEY}")

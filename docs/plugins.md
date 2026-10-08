@@ -1,5 +1,8 @@
 # Agent plugins
 
+Plugins target the remote server only. Configure `servediff config set server URL`
+and `servediff config set token -` before enabling hooks.
+
 Install a plugin to synchronize the latest checkout after an agent finishes.
 Collection and ingestion run in a detached Go worker; the agent only schedules
 work. The web UI's existing latest/stale filters cover all submitted worktrees.
@@ -21,8 +24,7 @@ at runtime; they do not capture an executable path during installation.
 The repository includes ready-to-use plugin artifacts. Installation requires no
 pnpm, mise or build step. Use each harness's own installer;
 restart active sessions after installing or updating.
-Restart the local servediff service with the updated binary too; older running
-servers cannot accept the new branch identity metadata.
+Update the remote server alongside the collector to enable durable ingestion jobs.
 
 CLI harness selection uses `--harness`; `--agent` is no longer accepted. Update
 existing plugins and scripts alongside the servediff executable.
@@ -152,14 +154,14 @@ settings; workers read effective settings each invocation but reuse the running
 server until restarted.
 
 ```sh
-servediff service config set port 7981 --config-file /path/to/config.json
-servediff service config set server https://reviews.example.com
-servediff service config set retentionDays 14
-servediff service restart --config-file /path/to/config.json
+servediff config set port 7981 --config-file /path/to/config.json
+servediff config set server https://reviews.example.com
+servediff config set retentionDays 14
+# Remote config is read by each finite invocation.
 ```
 
 JSON `server` and `token` select remote ingestion through Go; environment and
-explicit `--server`/`--token` override them. Empty `server` uses the local daemon.
+explicit `--server`/`--token` override them. Plugins require a nonempty remote `server` and bearer `token`; no local fallback.
 Config files are private because `token` may contain a credential.
 `retentionDays` is a positive whole-day server setting, default seven;
 `--retention-days` overrides it for server startup. Remote collectors do not
@@ -211,7 +213,7 @@ empty observation, superseding the old changed one. Unknown complete content
 identities are collected conservatively rather than falsely suppressed.
 
 Workers save immutable collected payloads before checking the destination, then
-health-check the destination and start the local service if stopped.
+health-check the configured remote destination. No local service is started.
 Each worker has a one-minute deadline, at most two attempts per payload, and a
 shared one-minute cooldown after failed startup. Pending immutable payloads
 retain retry IDs and survive checkout removal. Retries run on later completion

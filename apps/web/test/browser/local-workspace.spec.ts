@@ -162,6 +162,76 @@ async function ready(page: Page, value = "all-v1") {
   ).toBeVisible();
 }
 
+test("watch follows this checkout across clean and branch transitions while historical URLs stay pinned", async ({
+  page,
+}) => {
+  const state = await localWorkspace(page);
+  const original: ApiContext = {
+    ...state.context,
+    id: "original",
+    kind: "observation",
+    observation: {
+      sourceId: "machine",
+      hostname: "host",
+      runId: "",
+      agent: "",
+      trigger: "manual",
+      repositoryKey: "repo",
+      repositoryName: "repo",
+      remoteUrl: "",
+      checkoutKey: "checkout",
+      root: "/repo",
+      worktreeName: "repo",
+      branch: "main",
+      head: null,
+      collectedAt: 1,
+      collectorVersion: "test",
+    },
+  };
+  const contexts: ApiContext[] = [original];
+  await page.route("**/api/v2/contexts?*", (route) =>
+    route.fulfill({ json: { contexts, nextCursor: null } }),
+  );
+  await page.route("**/api/v2/contexts/*", (route) => {
+    const id = new URL(route.request().url()).pathname.split("/").at(-1);
+    const context = contexts.find((entry) => entry.id === id);
+    return route.fulfill({ json: context });
+  });
+  await page.goto("/?watch=checkout&source=machine");
+  await expect(page).toHaveURL(/\/contexts\/original\?watch=/);
+  contexts.unshift({
+    ...original,
+    id: "clean-other-branch",
+    branch: "feature",
+    changedFileCount: 0,
+  });
+  await page.evaluate(() =>
+    document.dispatchEvent(new Event("visibilitychange")),
+  );
+  await expect(page).toHaveURL(/\/contexts\/clean-other-branch\?watch=/);
+  await ready(page);
+  await page
+    .getByRole("button", {
+      name: "Leave review comment on file src/value.ts",
+      exact: true,
+    })
+    .click();
+  const draft = page.getByRole("textbox", { name: "Review comment" }).first();
+  await draft.fill("Keep this unsaved review");
+  await expect(page).toHaveURL(/\/contexts\/clean-other-branch$/);
+  contexts.unshift({ ...original, id: "later-change" });
+  await page.evaluate(() =>
+    document.dispatchEvent(new Event("visibilitychange")),
+  );
+  await expect(draft).toHaveValue("Keep this unsaved review");
+  await expect(page).toHaveURL(/\/contexts\/clean-other-branch$/);
+  await page.goto("/contexts/original");
+  await page.evaluate(() =>
+    document.dispatchEvent(new Event("visibilitychange")),
+  );
+  await expect(page).toHaveURL(/\/contexts\/original$/);
+});
+
 async function deletableWorkspace(
   page: Page,
   snapshot = false,
@@ -618,9 +688,7 @@ test("context switching isolates delayed repository responses and fixed captures
   await expect(page.locator("#changes-title")).toHaveText("Piped");
 });
 
-test("empty service explains how to review a repository or pipe", async ({
-  page,
-}) => {
+test("empty service explains local watch and remote sync", async ({ page }) => {
   await page.route("**/api/v2/contexts?*", (route) =>
     route.fulfill({ json: { contexts: [], nextCursor: null } }),
   );
@@ -630,7 +698,7 @@ test("empty service explains how to review a repository or pipe", async ({
   ).toBeVisible();
   await expect(
     page.getByText(
-      "Run servediff review in a repository, or pipe a diff into servediff pipe.",
+      "Run servediff . to watch a checkout, or servediff sync to publish remotely.",
     ),
   ).toBeVisible();
 });

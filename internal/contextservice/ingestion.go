@@ -7,7 +7,7 @@ import (
 	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/review"
-	"github.com/flexdinesh/servediff/internal/reviewstore"
+	"github.com/flexdinesh/servediff/internal/reviewdata"
 	"github.com/flexdinesh/servediff/internal/session"
 )
 
@@ -18,7 +18,7 @@ func (service *Service) Ingest(ctx context.Context, input ingestion.Request) (Su
 	if err := ingestion.Validate(input); err != nil {
 		return Submission{}, diffsource.Error(400, "%v", err)
 	}
-	binding, err := service.store.Ingest(service.user.ID, input)
+	binding, err := service.store.IngestContext(ctx, service.user.ID, input)
 	if err != nil {
 		return Submission{}, requestError(err)
 	}
@@ -35,12 +35,12 @@ func (service *Service) Ingest(ctx context.Context, input ingestion.Request) (Su
 }
 
 type storedSource struct {
-	store    *reviewstore.Store
+	store    Store
 	ownerID  string
 	id       string
 	metadata ingestion.Metadata
 	kind     string
-	binding  reviewstore.Binding
+	binding  reviewdata.Binding
 }
 
 func (source *storedSource) Root() string { return source.metadata.Root }

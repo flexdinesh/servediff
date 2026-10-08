@@ -143,3 +143,8 @@ run = "goreleaser release --clean"
 [tasks."release:homebrew:check"]
 description = "Validate the generated Homebrew formula syntax"
 run = "ruby -c homebrew-tap/Formula/servediff.rb"
+
+
+[tasks."docker:build"]
+description = "Build the remote server image using committed embedded assets"
+run = "docker build --tag servediff-server:local ."

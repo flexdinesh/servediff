@@ -2,6 +2,7 @@
 package controlapi
 
 import "github.com/flexdinesh/servediff/internal/diffsource"
+import "github.com/flexdinesh/servediff/internal/config"
 
 const ProtocolVersion = 4
 const MaxPatchBytes = diffsource.MaxInputBytes
@@ -9,15 +10,10 @@ const MaxPatchBytes = diffsource.MaxInputBytes
 const submissionHeader = "X-Servediff-Submission"
 const submittedFromHeader = "X-Servediff-Submitted-From"
 
-type Settings struct {
-	Host          string `json:"host"`
-	Port          int    `json:"port"`
-	State         string `json:"state"`
-	WebDir        string `json:"webDir"`
-	RetentionDays int    `json:"retentionDays"`
-}
+type Settings = config.ServerSettings
 
 type Status struct {
+	WatchPath       string   `json:"watchPath,omitempty"`
 	State           string   `json:"state"`
 	InstanceID      string   `json:"instanceId"`
 	StateID         string   `json:"stateId"`

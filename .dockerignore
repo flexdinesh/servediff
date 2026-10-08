@@ -1,0 +1,12 @@
+*
+!go.mod
+!go.sum
+!cmd/
+!cmd/**
+!internal/
+!internal/**
+!packages/
+!packages/api/
+!packages/api/**
+**/*_test.go
+packages/api/node_modules

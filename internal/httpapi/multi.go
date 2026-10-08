@@ -14,8 +14,8 @@ import (
 	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/processmetrics"
+	"github.com/flexdinesh/servediff/internal/reviewdata"
 	"github.com/flexdinesh/servediff/internal/reviewservice"
-	"github.com/flexdinesh/servediff/internal/reviewstore"
 	"github.com/flexdinesh/servediff/internal/session"
 	contract "github.com/flexdinesh/servediff/packages/api"
 )
@@ -38,7 +38,7 @@ type contextCache struct {
 type Multi struct {
 	background       context.Context
 	provider         Provider
-	store            *reviewstore.Store
+	store            Store
 	assets           fs.FS
 	defaultContextID string
 	metrics          *processmetrics.Collector
@@ -46,12 +46,12 @@ type Multi struct {
 	caches           map[string]contextCache
 }
 
-func NewMulti(provider Provider, store *reviewstore.Store, assets fs.FS, defaultContextID string) http.Handler {
+func NewMulti(provider Provider, store Store, assets fs.FS, defaultContextID string) http.Handler {
 	return NewMultiWithContext(context.Background(), provider, store, assets, defaultContextID)
 }
 
 // NewMultiWithContext ties shared snapshot work to the service lifetime.
-func NewMultiWithContext(background context.Context, provider Provider, store *reviewstore.Store, assets fs.FS, defaultContextID string) http.Handler {
+func NewMultiWithContext(background context.Context, provider Provider, store Store, assets fs.FS, defaultContextID string) http.Handler {
 	return &Multi{background: background, provider: provider, store: store, assets: assets, defaultContextID: defaultContextID, metrics: processmetrics.New(), caches: make(map[string]contextCache)}
 }
 
@@ -252,7 +252,7 @@ func (multi *Multi) ServeHTTP(response http.ResponseWriter, request *http.Reques
 	}
 	active, err := multi.provider.Resolve(request.Context(), contextID)
 	if err != nil {
-		if errors.Is(err, reviewstore.ErrNotFound) {
+		if errors.Is(err, reviewdata.ErrNotFound) {
 			err = diffsource.Error(404, "Context not found")
 		}
 		base.problem(response, err)

@@ -15,33 +15,20 @@ import (
 
 	"github.com/flexdinesh/servediff/internal/processlock"
 	"github.com/flexdinesh/servediff/internal/review"
+	"github.com/flexdinesh/servediff/internal/reviewdata"
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 7
+const schemaVersion = 8
 const CaptureLifetime = 7 * 24 * time.Hour
 
-var ErrNotFound = errors.New("diff not found")
+var ErrNotFound = reviewdata.ErrNotFound
 
-type User struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-}
+type User = reviewdata.User
 
-type Binding struct {
-	ContextID    string
-	LocationID   *string
-	RepositoryID *string
-	DiffIDs      map[review.DiffMode]string
-	VersionID    string
-}
+type Binding = reviewdata.Binding
 
-type CaptureInfo struct {
-	ID        string `json:"id"`
-	VersionID string `json:"versionId"`
-	CreatedAt int64  `json:"createdAt"`
-	ExpiresAt int64  `json:"expiresAt"`
-}
+type CaptureInfo = reviewdata.CaptureInfo
 
 type Store struct {
 	db        *sql.DB
@@ -183,7 +170,7 @@ func (store *Store) initialize() error {
 			return err
 		}
 	}
-	if version > 0 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != schemaVersion {
+	if version > 0 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 && version != schemaVersion {
 		return fmt.Errorf("servediff state schema %d is unsupported; existing data preserved", version)
 	}
 	statements := []string{
@@ -208,6 +195,9 @@ func (store *Store) initialize() error {
 		return err
 	}
 	if err := initializeIngestion(transaction); err != nil {
+		return err
+	}
+	if err := initializeQueue(transaction); err != nil {
 		return err
 	}
 	if err := initializeAuthentication(transaction); err != nil {
@@ -404,6 +394,9 @@ func (store *Store) PruneExpired(now time.Time) error {
 		return err
 	}
 	if _, err := transaction.Exec(`DELETE FROM submissions WHERE created_at<=?`, now.Add(-SubmissionLifetime).UnixMilli()); err != nil {
+		return err
+	}
+	if _, err := transaction.Exec(`DELETE FROM ingestion_records WHERE context_id<>'' AND context_id NOT IN (SELECT context_id FROM observations) AND sequence NOT IN (SELECT sequence FROM ingestion_jobs)`); err != nil {
 		return err
 	}
 	return transaction.Commit()

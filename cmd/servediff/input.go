@@ -131,6 +131,9 @@ func collectionOptions(values options) (collector.Options, error) {
 	return collector.Options{SourceID: sourceID, Hostname: hostname, RunID: values.runID, Agent: values.agent, SessionName: values.sessionName, TriggerRoot: values.directory, Trigger: values.trigger, CollectorVersion: buildversion.String(), SubmissionID: newSubmissionID(), Base: values.base, Branch: values.branch,
 		OnSource: func(metadata ingestion.Metadata, comparison diffsource.Comparison) {
 			recordCollectorActivity(sourceActivity(metadata, comparison))
+			if values.progress != nil {
+				values.progress("Parse", metadata.Root)
+			}
 		}}, nil
 }
 

@@ -31,6 +31,17 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 		writeHelp(stdout)
 		return nil
 	}
+	if arguments[0] == "config" {
+		return runConfigInput(arguments[1:], stdin, stdout)
+	}
+	if arguments[0] == "sync" {
+		return runSync(ctx, arguments[1:], stdin, stdout, stderr)
+	}
+	switch arguments[0] {
+	case "hook", "collector", "__hook-worker", "review", "pipe", "service", "serve", "__daemon", "--help", "-h", "--version":
+	default:
+		return runLocal(ctx, arguments, stdin, stdout, stderr)
+	}
 	if arguments[0] == "hook" {
 		return runHook(arguments[1:], stdin, stdout)
 	}
@@ -387,7 +398,10 @@ func main() {
 }
 
 func writeHelp(writer io.Writer) {
-	fmt.Fprintln(writer, "  Usage: servediff review [--path DIRECTORY] [options]")
+	fmt.Fprintln(writer, "  Usage: servediff PATH [--host IP] [--replace]")
+	fmt.Fprintln(writer, "         servediff sync [--path DIRECTORY] [--print] [--debug] [--retry]")
+	fmt.Fprintln(writer, "         servediff config {set|get|remove} KEY [VALUE]")
+	fmt.Fprintln(writer, "         servediff review [--path DIRECTORY] [options]")
 	fmt.Fprintln(writer, "         servediff pipe [--path DIRECTORY] [options]")
 	fmt.Fprintln(writer, "         servediff hook --harness NAME [--path DIRECTORY] [--config-file FILE]")
 	fmt.Fprintln(writer, "         servediff collector {status|retry} [--config-file FILE]")

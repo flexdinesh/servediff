@@ -7,7 +7,7 @@ import (
 
 	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/review"
-	"github.com/flexdinesh/servediff/internal/reviewstore"
+	"github.com/flexdinesh/servediff/internal/reviewdata"
 )
 
 const (
@@ -105,7 +105,7 @@ func (service *Service) cached(id string) (diffsource.Source, bool) {
 	return entry.source, true
 }
 
-func (service *Service) sourceFor(ctx context.Context, item reviewstore.ContextInfo) (diffsource.Source, error) {
+func (service *Service) sourceFor(ctx context.Context, item reviewdata.ContextInfo) (diffsource.Source, error) {
 	if err := service.background.Err(); err != nil {
 		return nil, err
 	}
@@ -136,7 +136,7 @@ func (service *Service) sourceFor(ctx context.Context, item reviewstore.ContextI
 	}
 }
 
-func (service *Service) loadSource(item reviewstore.ContextInfo, load *sourceLoad) {
+func (service *Service) loadSource(item reviewdata.ContextInfo, load *sourceLoad) {
 	defer service.loaders.Done()
 	ctx, cancel := context.WithTimeout(service.background, 30*time.Second)
 	defer cancel()

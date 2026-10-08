@@ -1,12 +1,10 @@
 package reviewstore
 
 import (
-	"crypto/sha256"
+	"context"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"sort"
 	"strings"
 	"time"
 
@@ -49,33 +47,34 @@ func initializeIngestion(tx *sql.Tx) error {
 // Ingest atomically commits an immutable observation and its retry identity.
 // Checkout paths are labels; this method never accesses a producer filesystem.
 func (store *Store) Ingest(ownerID string, request ingestion.Request) (Binding, error) {
+	return store.IngestContext(context.Background(), ownerID, request)
+}
+func (store *Store) IngestContext(ctx context.Context, ownerID string, request ingestion.Request) (Binding, error) {
 	if request.SubmissionID == "" || request.Metadata.SourceID == "" {
 		return Binding{}, errors.New("submission and source identity required")
 	}
 	if len(request.Scopes) == 0 {
 		return Binding{}, errors.New("observation scopes required")
 	}
-	encoded, err := json.Marshal(request)
+	_, hash, err := payloadBytes(request)
 	if err != nil {
 		return Binding{}, err
 	}
-	digest := sha256.Sum256(encoded)
-	hash := hex.EncodeToString(digest[:])
-	tx, err := store.db.Begin()
+	tx, err := store.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Binding{}, err
 	}
 	defer tx.Rollback()
-	var id, previousHash string
-	err = tx.QueryRow(`SELECT context_id,payload_hash FROM observation_submissions WHERE owner_id=? AND source_id=? AND submission_id=?`, ownerID, request.Metadata.SourceID, request.SubmissionID).Scan(&id, &previousHash)
-	if err == nil {
-		if hash != previousHash {
-			return Binding{}, ErrSubmissionConflict
-		}
-		return observationBinding(tx, ownerID, id)
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
+	sequence, id, err := recordSubmission(tx, ownerID, request, hash)
+	if err != nil {
 		return Binding{}, err
+	}
+	if id != "" {
+		binding, err := observationBinding(tx, ownerID, id)
+		if err != nil {
+			return Binding{}, err
+		}
+		return binding, tx.Commit()
 	}
 	now := time.Now().UnixMilli()
 	branch, _, err := adoptObservationBranch(tx, ownerID, request.Metadata)
@@ -105,7 +104,7 @@ func (store *Store) Ingest(ownerID string, request ingestion.Request) (Binding, 
 			if _, err := tx.Exec(`UPDATE diffs SET expires_at=? WHERE id IN (SELECT diff_id FROM observation_scopes WHERE context_id=?)`, now+store.retention.Milliseconds(), id); err != nil {
 				return Binding{}, err
 			}
-			if err := putObservationSubmission(tx, ownerID, id, hash, request); err != nil {
+			if err := putObservationSubmission(tx, ownerID, id, hash, request, sequence); err != nil {
 				return Binding{}, err
 			}
 			binding, err := observationBinding(tx, ownerID, id)
@@ -200,7 +199,7 @@ func (store *Store) Ingest(ownerID string, request ingestion.Request) (Binding, 
 			return Binding{}, err
 		}
 	}
-	if err := putObservationSubmission(tx, ownerID, id, hash, request); err != nil {
+	if err := putObservationSubmission(tx, ownerID, id, hash, request, sequence); err != nil {
 		return Binding{}, err
 	}
 	if identity != "" {
@@ -213,39 +212,19 @@ func (store *Store) Ingest(ownerID string, request ingestion.Request) (Binding, 
 
 // Missing hashes from older producers dedupe only known empty snapshots.
 func observationIdentity(request ingestion.Request) (string, error) {
-	modes := make([]string, 0, len(request.Scopes))
-	for _, scope := range request.Scopes {
-		modes = append(modes, string(scope.Snapshot.Mode))
-		if request.ContentHash == "" && len(scope.Snapshot.Files) != 0 {
-			return "", nil
-		}
-	}
-	sort.Strings(modes)
-	metadata := request.Metadata
-	branch := metadata.Branch
-	if metadata.BranchID != "" {
-		branch = metadata.BranchID
-	}
-	parts := []any{metadata.SourceID, metadata.RepositoryKey, metadata.CheckoutKey, branch, metadata.Head, request.Scopes[0].Snapshot.Source, modes, request.ContentHash}
-	// Keep legacy HEAD identity hashes; branch policies have separate reviews.
-	if policy := comparisonPolicy(metadata); policy != "" {
-		parts = append(parts, policy)
-	}
-	encoded, err := json.Marshal(parts)
-	if err != nil {
-		return "", err
-	}
-	digest := sha256.Sum256(encoded)
-	return hex.EncodeToString(digest[:]), nil
+	return ingestion.ContentIdentity(request)
 }
 
-func putObservationSubmission(tx *sql.Tx, ownerID, contextID, hash string, request ingestion.Request) error {
+func putObservationSubmission(tx *sql.Tx, ownerID, contextID, hash string, request ingestion.Request, sequence int64) error {
 	metadata, err := json.Marshal(request.Metadata)
 	if err != nil {
 		return err
 	}
 	_, err = tx.Exec(`INSERT INTO observation_submissions(owner_id,source_id,submission_id,context_id,payload_hash,metadata) VALUES(?,?,?,?,?,?)`, ownerID, request.Metadata.SourceID, request.SubmissionID, contextID, hash, string(metadata))
 	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec("UPDATE ingestion_records SET context_id=? WHERE sequence=?", contextID, sequence); err != nil {
 		return err
 	}
 	if err := putSessionAssociation(tx, ownerID, contextID, request.Metadata); err != nil {
@@ -259,9 +238,9 @@ func putObservationSubmission(tx *sql.Tx, ownerID, contextID, hash string, reque
 		return err
 	}
 	// Equal collection times use arrival order. Retries bypass this write.
-	_, err = tx.Exec(`INSERT INTO observation_stream_heads(owner_id,source_id,repository_key,checkout_key,branch,comparison_policy,context_id,collected_at) VALUES(?,?,?,?,?,?,?,?)
-		ON CONFLICT(owner_id,source_id,repository_key,checkout_key,branch,comparison_policy) DO UPDATE SET context_id=excluded.context_id,collected_at=excluded.collected_at
-		WHERE excluded.collected_at>=observation_stream_heads.collected_at`, ownerID, request.Metadata.SourceID, request.Metadata.RepositoryKey, request.Metadata.CheckoutKey, branch, comparisonPolicy(request.Metadata), contextID, request.Metadata.CollectedAt)
+	_, err = tx.Exec(`INSERT INTO observation_stream_heads(owner_id,source_id,repository_key,checkout_key,branch,comparison_policy,context_id,collected_at,arrival_sequence) VALUES(?,?,?,?,?,?,?,?,?)
+		ON CONFLICT(owner_id,source_id,repository_key,checkout_key,branch,comparison_policy) DO UPDATE SET context_id=excluded.context_id,collected_at=excluded.collected_at,arrival_sequence=excluded.arrival_sequence
+		WHERE excluded.collected_at>observation_stream_heads.collected_at OR (excluded.collected_at=observation_stream_heads.collected_at AND excluded.arrival_sequence>observation_stream_heads.arrival_sequence)`, ownerID, request.Metadata.SourceID, request.Metadata.RepositoryKey, request.Metadata.CheckoutKey, branch, comparisonPolicy(request.Metadata), contextID, request.Metadata.CollectedAt, sequence)
 	return err
 }
 
@@ -292,9 +271,9 @@ func adoptObservationBranch(tx *sql.Tx, ownerID string, metadata ingestion.Metad
 	if existing == 0 {
 		// Merge the legacy head into the new stream without regressing a newer
 		// collection, including when a delayed snapshot triggers adoption.
-		if _, err := tx.Exec(`INSERT INTO observation_stream_heads(owner_id,source_id,repository_key,checkout_key,branch,comparison_policy,context_id,collected_at)
-			SELECT owner_id,source_id,repository_key,checkout_key,?,comparison_policy,context_id,collected_at FROM observation_stream_heads WHERE owner_id=? AND source_id=? AND repository_key=? AND checkout_key=? AND branch=?
-			ON CONFLICT(owner_id,source_id,repository_key,checkout_key,branch,comparison_policy) DO UPDATE SET context_id=excluded.context_id,collected_at=excluded.collected_at WHERE excluded.collected_at>=observation_stream_heads.collected_at`, append([]any{metadata.BranchID}, arguments...)...); err != nil {
+		if _, err := tx.Exec(`INSERT INTO observation_stream_heads(owner_id,source_id,repository_key,checkout_key,branch,comparison_policy,context_id,collected_at,arrival_sequence)
+			SELECT owner_id,source_id,repository_key,checkout_key,?,comparison_policy,context_id,collected_at,arrival_sequence FROM observation_stream_heads WHERE owner_id=? AND source_id=? AND repository_key=? AND checkout_key=? AND branch=?
+			ON CONFLICT(owner_id,source_id,repository_key,checkout_key,branch,comparison_policy) DO UPDATE SET context_id=excluded.context_id,collected_at=excluded.collected_at,arrival_sequence=excluded.arrival_sequence WHERE excluded.collected_at>observation_stream_heads.collected_at OR (excluded.collected_at=observation_stream_heads.collected_at AND excluded.arrival_sequence>observation_stream_heads.arrival_sequence)`, append([]any{metadata.BranchID}, arguments...)...); err != nil {
 			return "", false, err
 		}
 	}

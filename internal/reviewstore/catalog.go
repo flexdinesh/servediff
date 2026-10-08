@@ -2,38 +2,23 @@ package reviewstore
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"time"
 
-	"encoding/json"
 	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/review"
+	"github.com/flexdinesh/servediff/internal/reviewdata"
 )
 
 const SubmissionLifetime = 24 * time.Hour
 
 var (
-	ErrExpired            = errors.New("captured diff expired")
-	ErrSubmissionConflict = errors.New("submission ID reused with different input")
+	ErrExpired            = reviewdata.ErrExpired
+	ErrSubmissionConflict = reviewdata.ErrSubmissionConflict
 )
 
-type ContextInfo struct {
-	Stale            bool
-	Sessions         []SessionAssociation
-	Metadata         *ingestion.Metadata
-	ID               string
-	Kind             string
-	Root             *string
-	LocationID       *string
-	RepositoryID     *string
-	CommonDir        *string
-	WorktreeKey      *string
-	SubmittedFrom    *string
-	CreatedAt        int64
-	LastSubmittedAt  int64
-	ExpiresAt        *int64
-	ChangedFileCount *int
-}
+type ContextInfo = reviewdata.ContextInfo
 
 func initializeCatalog(transaction *sql.Tx) error {
 	statements := []string{
@@ -241,6 +226,9 @@ func (store *Store) DeleteContext(ownerID, id string) error {
 		_, err = transaction.Exec(`DELETE FROM diffs WHERE owner_id=? AND id=?`, ownerID, *captureID)
 	}
 	if err != nil {
+		return err
+	}
+	if _, err := transaction.Exec("DELETE FROM ingestion_records WHERE owner_id=? AND context_id=? AND sequence NOT IN (SELECT sequence FROM ingestion_jobs)", ownerID, id); err != nil {
 		return err
 	}
 	return transaction.Commit()

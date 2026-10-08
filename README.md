@@ -31,57 +31,64 @@ go install github.com/flexdinesh/servediff/cmd/servediff@main
 
 ## Usage
 
-Collect a repository and all registered worktrees; open the originating checkout's
-committed review:
+Watch the selected checkout in one foreground process:
 
 ```sh
-servediff review
-servediff review --path /path/to/repo
-servediff review --no-browser
-servediff review --base HEAD
-servediff --version
+servediff .
+servediff /path/to/repo --host 0.0.0.0
+servediff . --replace
+servediff . --base HEAD --no-browser
 ```
 
-The all scope includes committed branch changes from the default branch's merge
-base plus working changes. Staged/unstaged remain against HEAD/the index.
-`--base HEAD` collects working changes only; `--base main` selects a baseline.
-Collection records resolved comparison commits, repository, branch, worktree,
-HEAD, hostname and source metadata. Matching captures reuse their snapshot and
-review state. Retention defaults to seven days after the last fresh submission;
-configure `retentionDays` to change it. Existing expiry changes only on a fresh
-submission; transport retries do not extend it. The local
-server starts automatically when needed and stays running after the CLI exits.
-Bare `servediff` prints help. There is no watcher and opening the dashboard does
-not recollect Git data.
+Collection and ingestion run in-process. The same process serves the web UI,
+REST and MCP until Ctrl-C. It watches only the selected checkout, follows branch
+switches, and preserves observations/comments across restarts in the shared local
+database. The browser follows new observations; choosing a historical review or
+starting a comment pins the current review. Failed collection never substitutes
+an empty diff.
 
-`review` prints the observation's `/contexts/{id}` URL and opens it when a
-browser is available. SSH sessions and headless Linux sessions skip opening;
-`--no-browser` also disables it. Local URLs use `localhost` by default or the
-configured host IP. A `0.0.0.0` listener also prints each LAN IPv4 URL.
+Only one local instance runs. Starting another prompts before replacing it;
+scripts must pass `--replace`. Replacement requests authenticated graceful
+shutdown and waits for database ownership. Unreachable instances are not killed
+using an unverified PID.
 
-Manage the local server explicitly:
+Publish once to a remote server, including every registered worktree:
 
 ```sh
-servediff service start
-servediff service status --json
-servediff service stop
-servediff service restart
-servediff service config set host 0.0.0.0
-servediff service config get host
-servediff service config remove host
-servediff service config set retentionDays 14
-servediff service restart --config '{"host":"127.0.0.1","port":4000}'
+servediff config set server https://reviews.example.com
+servediff config set token - < /path/to/private-token
+servediff sync
+servediff sync --print
+servediff sync --debug
+servediff sync --retry
 ```
 
-Defaults are created in `~/.config/servediff/config.json`; `SERVEDIFF_CONFIG_PATH`
-or `--config-file` overrides the location. Environment variables override JSON
-settings; explicit flags override environment. Collector `server` and `token`
-settings select a remote HTTP(S) origin and bearer credential. See [agent plugins](docs/plugins.md)
-for the configuration variables. Restart after changing server settings.
-Start/restart JSON overrides apply to that invocation. The default
-listener binds to `127.0.0.1` and chooses a port from 7981 through 7990.
-The local API is unauthenticated: a non-loopback listener exposes its review
-data to anyone who can reach it.
+Sync waits for all observations to commit. `--print` prints only the configured
+server URL on success; progress/errors use stderr. `--debug` uses one updating
+terminal line, or plain lines when redirected. Failed uploads remain private,
+immutable pending submissions; `sync --retry` recovers them without the checkout.
+Cancelling a wait does not cancel an accepted server job.
+
+`servediff .` always runs locally, even with remote config. Sync and plugins require
+a remote URL and bearer token; they never bootstrap a local server.
+
+The all scope includes branch changes from the local default branch's merge base
+plus working changes. Staged/unstaged retain HEAD/index semantics.
+`--base HEAD` selects working changes only. Collection never fetches Git refs.
+Matching captures reuse review state. Retention defaults to seven days after the
+last fresh submission; retries do not extend it.
+
+Defaults live in `~/.config/servediff/config.json`; `--config-file` or
+`SERVEDIFF_CONFIG_PATH` overrides the location. Precedence: defaults, JSON,
+environment, explicit flags. `servediff config {set|get|remove}` edits persisted
+settings. Token reads are masked; `set token -` reads stdin.
+
+The default listener binds to `127.0.0.1` on an available port from 7981–7990.
+`--port 0` chooses an OS-assigned port. A non-loopback listener exposes local
+reviews to reachable clients. The browser opens a loopback URL for wildcard binds.
+
+Legacy `review`, `pipe`, `serve`, and `service` commands remain compatibility
+paths during migration. Bare `servediff` prints help.
 
 ## Agent hooks and remote ingestion
 
@@ -93,6 +100,7 @@ codex plugin marketplace add flexdinesh/servediff
 codex plugin add servediff@servediff
 ```
 
+Configure a remote server and token first. Plugins are remote-only.
 The plugin returns after scheduling; a detached Go worker collects the checkout
 and all registered worktrees using the same branch comparison as manual review.
 Non-Git directories are ignored. Child repositories and branches without live
@@ -124,7 +132,7 @@ servediff hook --harness codex --path /path/to/repo
 To collect synchronously with harness metadata:
 
 ```sh
-servediff review --trigger agent-hook --harness codex --run-id run-123 --session-name 'Feature work' --no-browser
+servediff sync --trigger agent-hook --harness codex --run-id run-123 --session-name 'Feature work' --no-browser
 ```
 
 Use `--source-id` to supply a stable source/container identity. Hostnames,
@@ -134,6 +142,21 @@ independently reviewable. Identical content from the same checkout reuses its
 review context. Sessions associate with shared reviews; they do not own or
 claim authorship of every worktree's edits. Harness, session ID and optional
 session name remain searchable even when identical content reuses a review.
+
+Build and run the Docker server (deploy behind HTTPS):
+
+```sh
+mise run docker:build
+docker run --name servediff-server -p 127.0.0.1:7981:7981 \
+  --mount source=servediff-data,target=/data servediff-server:local
+```
+
+The volume contains observations, jobs, credentials and configuration. First
+startup writes the admin token to `/data/state.db.admin-token`; copy it with
+`docker cp servediff-server:/data/state.db.admin-token ./admin-token`.
+The image runs without Git or a repository mount, as an unprivileged user.
+SIGTERM drains HTTP and stops the worker; durable unfinished jobs recover after
+their leases expire. Back up the database while stopped.
 
 Build/install the remote server with Go:
 
@@ -161,7 +184,7 @@ Collectors select that destination with config `server`, `SERVEDIFF_SERVER_URL`
 or `--server`, and authenticate with config `token`, `SERVEDIFF_TOKEN` or `--token`:
 
 ```sh
-servediff review --server https://reviews.example.com --no-browser
+servediff sync --server https://reviews.example.com
 ```
 
 Remote submission does not start a local server. The remote server needs no Git

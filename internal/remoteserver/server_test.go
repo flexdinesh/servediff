@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -32,7 +33,7 @@ func TestRemoteAuthenticationCoversUIAPIAndMCP(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer closeService()
-	for _, path := range []string{"/", "/api/v2/contexts", "/mcp", "/api/v2/events", "/api/v2/ingestions"} {
+	for _, path := range []string{"/", "/api/v2/contexts", "/mcp", "/api/v2/events", "/api/v2/ingestions", "/api/v2/ingestion-jobs", "/api/v2/ingestion-jobs/unknown"} {
 		for _, auth := range []string{"", "Bearer wrong", "bearer " + testToken} {
 			r := httptest.NewRequest("GET", path, nil)
 			r.Header.Set("Authorization", auth)
@@ -138,6 +139,36 @@ func TestMultiUserRESTMCPAndEventIsolation(t *testing.T) {
 	}
 	if adminReceipt.ContextID == otherReceipt.ContextID {
 		t.Fatal("review deduplication crossed user boundary")
+	}
+	// Queue admission and polling use the same authenticated owner boundary.
+	rawInput, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted := request(testToken, "POST", "/api/v2/ingestion-jobs", bytes.NewReader(rawInput))
+	var job ingestion.Job
+	err = json.NewDecoder(accepted.Body).Decode(&job)
+	accepted.Body.Close()
+	if err != nil || accepted.StatusCode != http.StatusAccepted || job.ContextID != adminReceipt.ContextID {
+		t.Fatalf("queue admission: %d %+v %v", accepted.StatusCode, job, err)
+	}
+	for _, tc := range []struct {
+		token  string
+		status int
+	}{{testToken, http.StatusOK}, {otherToken, http.StatusNotFound}} {
+		response := request(tc.token, "GET", "/api/v2/ingestion-jobs/"+job.ID, nil)
+		response.Body.Close()
+		if response.StatusCode != tc.status {
+			t.Fatalf("job owner boundary: %d, want %d", response.StatusCode, tc.status)
+		}
+	}
+	stale := httptest.NewRequest("GET", "/api/v2/ingestion-jobs/"+job.ID, nil)
+	stale.Header.Set("Authorization", "Bearer "+testToken)
+	stale.Header.Set("X-Servediff-State", "replaced-database")
+	staleResult := httptest.NewRecorder()
+	handler.ServeHTTP(staleResult, stale)
+	if staleResult.Code != http.StatusConflict {
+		t.Fatalf("job database identity: %d", staleResult.Code)
 	}
 	for _, tc := range []struct {
 		reader              *bufio.Reader

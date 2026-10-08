@@ -4,7 +4,7 @@ Requires Pi 1.0.0 and an installed servediff binary.
 Uses `agent_settled`, after retries, compaction and queued continuations finish. The earlier `agent_end` event is intentionally unused.
 
 Completion queues `servediff hook --harness pi`. The CLI detaches collection,
-health checks, local startup and ingestion; the hook waits only for scheduling.
+health checks and remote ingestion; the hook waits only for scheduling.
 Failures never request continuation or write into the conversation.
 
 Install the ready-built package from a checkout with Pi's native CLI:
@@ -23,3 +23,6 @@ old installer.
 The committed `dist/index.js` is self-contained; installation needs no build,
 workspace imports or host SDK at runtime. Developers regenerate it with
 `mise run plugins:build`. Host SDK types are development-only.
+
+Requires remote `server` and `token` settings in servediff config. Plugins never
+start a local server.

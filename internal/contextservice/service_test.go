@@ -118,7 +118,7 @@ func TestCatalogOwnershipAndCancelledSubmission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherUser, err := service.store.User("other-user", "other-user")
+	otherUser, err := service.store.(*reviewstore.Store).User("other-user", "other-user")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +246,7 @@ func TestObservationStoredOnlyAfterCheckoutChangesAndRemoval(t *testing.T) {
 func TestLegacyWorktreeDoesNotReadFilesystem(t *testing.T) {
 	service := testService(t)
 	root := testRepo(t)
-	binding, err := service.store.RegisterGit(service.user.ID, root, filepath.Join(root, ".git"), filepath.Join(root, ".git"))
+	binding, err := service.store.(*reviewstore.Store).RegisterGit(service.user.ID, root, filepath.Join(root, ".git"), filepath.Join(root, ".git"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,7 +292,7 @@ func TestObservationOwnershipAndCancelledIngestion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherUser, err := service.store.User("other-observation-user", "other")
+	otherUser, err := service.store.(*reviewstore.Store).User("other-observation-user", "other")
 	if err != nil {
 		t.Fatal(err)
 	}

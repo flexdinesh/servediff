@@ -42,6 +42,8 @@ func resolvedCollectorSettings(values options) (options, error) {
 // destination owns lifecycle and transport. A resolved destination pins every
 // immutable retry to the same database; remote failure never starts locally.
 type destination struct {
+	queued          bool
+	progress        func(ingestion.Job)
 	target          hooks.Target
 	endpoint, token string
 	remote          *ingestion.Client
@@ -58,6 +60,7 @@ func resolveDestination(ctx context.Context, values options, settings daemon.Set
 			return nil, err
 		}
 		digest := sha256.Sum256([]byte(values.token))
+		result.queued = health.QueuedIngestion
 		result.target = hooks.Target{Destination: "remote:" + strings.TrimRight(values.server, "/") + ":" + hex.EncodeToString(digest[:]), Identity: health.StateID}
 		return result, nil
 	}
@@ -110,7 +113,11 @@ func (target *destination) deliver(ctx context.Context, request ingestion.Reques
 		var receipt ingestion.Receipt
 		var err error
 		if target.remote != nil {
-			receipt, err = target.remote.SubmitTo(ctx, request, target.target.Identity)
+			if target.queued {
+				receipt, err = target.remote.SyncTo(ctx, request, target.target.Identity, target.progress)
+			} else {
+				receipt, err = target.remote.SubmitTo(ctx, request, target.target.Identity)
+			}
 		} else {
 			var submitted contextservice.Submission
 			submitted, err = target.local.Ingest(ctx, request)
@@ -196,6 +203,7 @@ func submitCollected(ctx context.Context, command string, values options, settin
 	if err != nil {
 		return err
 	}
+	target.queued = false // Legacy review output includes the synchronous snapshot receipt.
 	var failures []error
 	var originReceipt *ingestion.Receipt
 	var originRequest ingestion.Request

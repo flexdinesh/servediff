@@ -17,31 +17,31 @@ import (
 	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/review"
-	"github.com/flexdinesh/servediff/internal/reviewstore"
+	"github.com/flexdinesh/servediff/internal/reviewdata"
 	"github.com/flexdinesh/servediff/internal/session"
 )
 
 type Context struct {
-	Stale            bool                             `json:"stale"`
-	Sessions         []reviewstore.SessionAssociation `json:"sessions,omitempty"`
-	Observation      *ingestion.Metadata              `json:"observation,omitempty"`
-	ID               string                           `json:"id"`
-	Kind             string                           `json:"kind"`
-	Source           string                           `json:"source"`
-	Name             string                           `json:"name"`
-	Root             *string                          `json:"root"`
-	LocationID       *string                          `json:"locationId"`
-	RepositoryID     *string                          `json:"repositoryId"`
-	CreatedAt        int64                            `json:"createdAt"`
-	LastSubmittedAt  int64                            `json:"lastSubmittedAt"`
-	LastChangedAt    int64                            `json:"lastChangedAt"`
-	ChangedFileCount *int                             `json:"changedFileCount"`
-	ExpiresAt        *int64                           `json:"expiresAt"`
-	SubmittedFrom    *string                          `json:"submittedFrom"`
-	Capabilities     session.Capabilities             `json:"capabilities"`
-	Availability     string                           `json:"availability"`
-	Branch           *string                          `json:"branch"`
-	WorktreeName     *string                          `json:"worktreeName"`
+	Stale            bool                            `json:"stale"`
+	Sessions         []reviewdata.SessionAssociation `json:"sessions,omitempty"`
+	Observation      *ingestion.Metadata             `json:"observation,omitempty"`
+	ID               string                          `json:"id"`
+	Kind             string                          `json:"kind"`
+	Source           string                          `json:"source"`
+	Name             string                          `json:"name"`
+	Root             *string                         `json:"root"`
+	LocationID       *string                         `json:"locationId"`
+	RepositoryID     *string                         `json:"repositoryId"`
+	CreatedAt        int64                           `json:"createdAt"`
+	LastSubmittedAt  int64                           `json:"lastSubmittedAt"`
+	LastChangedAt    int64                           `json:"lastChangedAt"`
+	ChangedFileCount *int                            `json:"changedFileCount"`
+	ExpiresAt        *int64                          `json:"expiresAt"`
+	SubmittedFrom    *string                         `json:"submittedFrom"`
+	Capabilities     session.Capabilities            `json:"capabilities"`
+	Availability     string                          `json:"availability"`
+	Branch           *string                         `json:"branch"`
+	WorktreeName     *string                         `json:"worktreeName"`
 }
 
 type Page struct {
@@ -56,8 +56,8 @@ type Submission struct {
 
 type Service struct {
 	events      events
-	store       *reviewstore.Store
-	user        reviewstore.User
+	store       Store
+	user        reviewdata.User
 	mu          sync.Mutex
 	sources     map[string]*cachedSource
 	loading     map[string]*sourceLoad
@@ -70,11 +70,11 @@ type Service struct {
 	closing     bool
 }
 
-func New(store *reviewstore.Store, user reviewstore.User) *Service {
+func New(store Store, user reviewdata.User) *Service {
 	return NewWithContext(context.Background(), store, user)
 }
 
-func NewWithContext(ctx context.Context, store *reviewstore.Store, user reviewstore.User) *Service {
+func NewWithContext(ctx context.Context, store Store, user reviewdata.User) *Service {
 	background, cancel := context.WithCancel(ctx)
 	return &Service{store: store, user: user,
 		sources: make(map[string]*cachedSource), loading: make(map[string]*sourceLoad),
@@ -173,7 +173,7 @@ func (service *Service) OpenCapture(ctx context.Context, id string) (Submission,
 	if err != nil {
 		return Submission{}, err
 	}
-	binding := reviewstore.Binding{ContextID: resolved.ContextID, LocationID: resolved.LocationID, RepositoryID: resolved.RepositoryID, DiffIDs: resolved.DiffIDs, VersionID: resolved.VersionID}
+	binding := reviewdata.Binding{ContextID: resolved.ContextID, LocationID: resolved.LocationID, RepositoryID: resolved.RepositoryID, DiffIDs: resolved.DiffIDs, VersionID: resolved.VersionID}
 	return Submission{Context: item, Snapshot: bindSnapshot(snapshot, binding)}, nil
 }
 
@@ -259,7 +259,7 @@ func (service *Service) ListFiltered(ctx context.Context, limit int, cursor stri
 			return Page{}, diffsource.Error(400, "Invalid context cursor")
 		}
 	}
-	var items []reviewstore.ContextInfo
+	var items []reviewdata.ContextInfo
 	var err error
 	if filter != (ingestion.Filter{}) {
 		items, err = service.store.ObservationContexts(service.user.ID, limit+1, before.Time, before.ID, filter)
@@ -297,7 +297,7 @@ func (service *Service) Count(ctx context.Context) (int, int, error) {
 	return service.store.ContextCounts(service.user.ID, time.Now())
 }
 
-func (service *Service) present(item reviewstore.ContextInfo) (Context, error) {
+func (service *Service) present(item reviewdata.ContextInfo) (Context, error) {
 	if item.Kind == "observation" && item.Metadata != nil {
 		m := item.Metadata
 		binding, err := service.store.ContextBinding(service.user.ID, item.ID, time.Now())
@@ -367,7 +367,7 @@ func state(enabled bool) session.State {
 	return session.Unavailable
 }
 
-func bindSnapshot(snapshot review.RepositoryDiff, binding reviewstore.Binding) review.RepositoryDiff {
+func bindSnapshot(snapshot review.RepositoryDiff, binding reviewdata.Binding) review.RepositoryDiff {
 	snapshot.ID = binding.DiffIDs[snapshot.Mode]
 	snapshot.LocationID = binding.LocationID
 	snapshot.RepositoryID = binding.RepositoryID
@@ -375,7 +375,7 @@ func bindSnapshot(snapshot review.RepositoryDiff, binding reviewstore.Binding) r
 		snapshot.VersionID = binding.VersionID
 	}
 	if snapshot.VersionID == "" {
-		snapshot.VersionID = reviewstore.VersionID(snapshot.ID, snapshot.Revision)
+		snapshot.VersionID = reviewdata.VersionID(snapshot.ID, snapshot.Revision)
 	}
 	return snapshot
 }
@@ -401,11 +401,11 @@ func payloadHash(parts ...string) string {
 
 func requestError(err error) error {
 	switch {
-	case errors.Is(err, reviewstore.ErrNotFound):
+	case errors.Is(err, reviewdata.ErrNotFound):
 		return diffsource.Error(404, "Context not found")
-	case errors.Is(err, reviewstore.ErrExpired):
+	case errors.Is(err, reviewdata.ErrExpired):
 		return diffsource.Error(410, "Capture expired")
-	case errors.Is(err, reviewstore.ErrSubmissionConflict):
+	case errors.Is(err, reviewdata.ErrSubmissionConflict):
 		return diffsource.Error(409, "Submission ID reused with different input")
 	default:
 		return err

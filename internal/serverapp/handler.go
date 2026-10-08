@@ -16,13 +16,23 @@ import (
 	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/httpapi"
 	"github.com/flexdinesh/servediff/internal/ingestion"
+	"github.com/flexdinesh/servediff/internal/ingestionqueue"
 	"github.com/flexdinesh/servediff/internal/mcpapi"
 	"github.com/flexdinesh/servediff/internal/reviewservice"
-	"github.com/flexdinesh/servediff/internal/reviewstore"
 	buildversion "github.com/flexdinesh/servediff/internal/version"
 )
 
-func Handler(ctx context.Context, service *contextservice.Service, store *reviewstore.Store, assets fs.FS, defaultID string) http.Handler {
+type Options struct {
+	Queue             ingestionqueue.Queue
+	IngestionDisabled bool
+}
+
+func Handler(ctx context.Context, service *contextservice.Service, store httpapi.Store, assets fs.FS, defaultID string, options ...Options) http.Handler {
+	var configuration Options
+	if len(options) > 0 {
+		configuration = options[0]
+	}
+
 	mux := http.NewServeMux()
 	mcp := contextMCP(service, store, defaultID)
 	mux.Handle("/mcp", mcp)
@@ -38,9 +48,15 @@ func Handler(ctx context.Context, service *contextservice.Service, store *review
 			return
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		_ = json.NewEncoder(w).Encode(ingestion.Health{StateID: service.UserID(), ProtocolVersion: ingestion.ProtocolVersion})
+		_ = json.NewEncoder(w).Encode(ingestion.Health{QueuedIngestion: configuration.Queue != nil, StateID: service.UserID(), ProtocolVersion: ingestion.ProtocolVersion})
 	})
-	mux.HandleFunc("/api/v2/ingestions", func(w http.ResponseWriter, r *http.Request) { ingest(service, w, r) })
+	if !configuration.IngestionDisabled {
+		mux.HandleFunc("/api/v2/ingestions", func(w http.ResponseWriter, r *http.Request) { ingest(service, w, r) })
+	}
+	if configuration.Queue != nil {
+		mux.HandleFunc("/api/v2/ingestion-jobs", func(w http.ResponseWriter, r *http.Request) { acceptJob(service, configuration.Queue, w, r) })
+		mux.HandleFunc("/api/v2/ingestion-jobs/", func(w http.ResponseWriter, r *http.Request) { getJob(service, configuration.Queue, w, r) })
+	}
 	mux.HandleFunc("/api/v2/events", func(w http.ResponseWriter, r *http.Request) { stream(ctx, service, w, r) })
 	mux.Handle("/", httpapi.NewMultiWithContext(ctx, service, store, assets, defaultID))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -60,18 +76,18 @@ func SameOrigin(r *http.Request) bool {
 	return r.Header.Get("Sec-Fetch-Site") != "cross-site" && (origin == "" || origin == "http://"+r.Host || origin == "https://"+r.Host)
 }
 
-func ingest(service *contextservice.Service, w http.ResponseWriter, r *http.Request) {
+func decodeIngestion(service *contextservice.Service, w http.ResponseWriter, r *http.Request) (ingestion.Request, bool) {
 	if r.Method != http.MethodPost {
 		problem(w, 405, "Method not allowed")
-		return
+		return ingestion.Request{}, false
 	}
 	if media := strings.Split(r.Header.Get("Content-Type"), ";")[0]; media != "application/json" {
 		problem(w, 415, "Expected application/json")
-		return
+		return ingestion.Request{}, false
 	}
 	if expected := r.Header.Get("X-Servediff-State"); expected != "" && expected != service.UserID() {
 		problem(w, 409, "Server database identity changed; snapshot was not submitted")
-		return
+		return ingestion.Request{}, false
 	}
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, ingestion.MaxRequestBytes))
 	decoder.DisallowUnknownFields()
@@ -83,11 +99,22 @@ func ingest(service *contextservice.Service, w http.ResponseWriter, r *http.Requ
 		} else {
 			problem(w, 400, "Malformed ingestion request")
 		}
-		return
+		return ingestion.Request{}, false
 	}
 	var extra interface{}
 	if decoder.Decode(&extra) != io.EOF {
 		problem(w, 400, "Trailing ingestion data")
+		return ingestion.Request{}, false
+	}
+	if err := ingestion.Validate(input); err != nil {
+		problem(w, 400, err.Error())
+		return ingestion.Request{}, false
+	}
+	return input, true
+}
+func ingest(service *contextservice.Service, w http.ResponseWriter, r *http.Request) {
+	input, ok := decodeIngestion(service, w, r)
+	if !ok {
 		return
 	}
 	result, err := service.Ingest(r.Context(), input)
@@ -150,7 +177,7 @@ func stream(ctx context.Context, service *contextservice.Service, w http.Respons
 	}
 }
 
-func contextMCP(service *contextservice.Service, store *reviewstore.Store, defaultID string) http.Handler {
+func contextMCP(service *contextservice.Service, store httpapi.Store, defaultID string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := defaultID
 		if strings.HasPrefix(r.URL.Path, "/mcp/contexts/") {
