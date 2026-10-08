@@ -69,8 +69,9 @@ terminal line, or plain lines when redirected. Failed uploads remain private,
 immutable pending submissions; `sync --retry` recovers them without the checkout.
 Cancelling a wait does not cancel an accepted server job.
 
-`servediff .` always runs locally, even with remote config. Sync and plugins require
-a remote URL and bearer token; they never bootstrap a local server.
+`servediff .` and piped diffs always run locally, even with remote config. Sync
+and plugins require a remote URL and bearer token; they never bootstrap a local
+server.
 
 The all scope includes branch changes from the local default branch's merge base
 plus working changes. Staged/unstaged retain HEAD/index semantics.
@@ -87,8 +88,8 @@ The default listener binds to `127.0.0.1` on an available port from 7981–7990.
 `--port 0` chooses an OS-assigned port. A non-loopback listener exposes local
 reviews to reachable clients. The browser opens a loopback URL for wildcard binds.
 
-Legacy `review`, `pipe`, `serve`, and `service` commands remain compatibility
-paths during migration. Bare `servediff` prints help.
+Legacy `review`, `serve`, and `service` commands remain compatibility
+paths during migration. Bare `servediff` without redirected stdin prints help.
 
 ## Agent hooks and remote ingestion
 
@@ -207,17 +208,19 @@ stored in SQLite. Display preferences remain in the browser.
 
 ## Piped diffs
 
-Submit a fixed patch explicitly:
+Review a fixed patch in a foreground local process:
 
 ```sh
-git diff | servediff pipe
-git show | servediff pipe
-servediff pipe --path /path/to/repo < saved.patch
+git diff | servediff
+git show | servediff
+servediff < saved.patch
 ```
 
-Pipe uses the same ingestion protocol as review and agent hooks. Its submission
-directory is provenance only; it does not inspect Git or attach repository
-identity. Piped diffs have only the all scope and do not
+The process serves the UI, REST and MCP until Ctrl-C, without watching a checkout.
+Piped diffs ignore remote configuration. `servediff -` explicitly selects stdin;
+combining redirected stdin with a path argument or `--path` is rejected.
+Collection does not inspect Git or attach repository identity.
+Piped diffs have only the all scope and do not
 include full file contents. Standard Git patches are limited to 16 MiB total
 and 2 MiB per file. Combined merge diffs are shown against the first parent.
 Use `git show --diff-merges=separate` to review every parent separately.

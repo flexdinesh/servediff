@@ -135,11 +135,8 @@ func TestDaemonSubmissionCannotFollowDiscoveryToDifferentDatabase(t *testing.T) 
 	completed := installControlTransition(t, harness, "/control/v1/status", func(descriptor daemon.Descriptor) error {
 		return replaceTestDaemon(harness, descriptor, otherState, before.Settings.Port, nil)
 	})
-	patch, err := os.ReadFile("../fixtures/sample.diff")
-	if err != nil {
-		t.Fatal(err)
-	}
-	output, err := harness.run(patch, "pipe", "--state", harness.state, "--no-browser")
+	worktree := createWorktree(t, "database-transition")
+	output, err := harness.run(nil, "review", worktree, "--state", harness.state, "--no-browser")
 	awaitControlTransition(t, completed)
 	if err == nil {
 		t.Fatalf("replacement database must reject submission: %s", output)
@@ -170,11 +167,8 @@ func TestDaemonSubmissionRejectsListenerChangeAfterDiscovery(t *testing.T) {
 			return err
 		})
 	})
-	patch, err := os.ReadFile("../fixtures/sample.diff")
-	if err != nil {
-		t.Fatal(err)
-	}
-	output, err := harness.run(patch, "pipe", "--no-browser")
+	worktree := createWorktree(t, "listener-transition")
+	output, err := harness.run(nil, "review", worktree, "--no-browser")
 	awaitControlTransition(t, completed)
 	if err == nil {
 		t.Fatalf("changed listener must not produce stale success URL: %s", output)
@@ -213,11 +207,8 @@ func TestDaemonLostAcknowledgementRejectsChangedState(t *testing.T) {
 				}
 				return replaceTestDaemon(harness, descriptor, replacementState, before.Settings.Port, mutate)
 			})
-			patch, err := os.ReadFile("../fixtures/sample.diff")
-			if err != nil {
-				t.Fatal(err)
-			}
-			output, err := harness.run(patch, "pipe", "--no-browser")
+			worktree := createWorktree(t, "lost-acknowledgement")
+			output, err := harness.run(nil, "review", worktree, "--no-browser")
 			awaitControlTransition(t, completed)
 			if err == nil || !strings.Contains(string(output), "may have been") {
 				t.Fatalf("lost acknowledgement needs explicit uncertain outcome, without replay: err=%v output=%s", err, output)
@@ -236,12 +227,12 @@ func TestDaemonLostAcknowledgementRejectsChangedState(t *testing.T) {
 	}
 }
 
-func TestDaemonCaptureValidationDoesNotRestart(t *testing.T) {
+func TestDaemonReviewValidationDoesNotRestart(t *testing.T) {
 	harness := newServiceHarness(t)
 	before := harness.start(t)
-	output, err := harness.run([]byte("not a Git patch\n"), "pipe", "--no-browser")
+	output, err := harness.run(nil, "review", t.TempDir(), "--no-browser")
 	if err == nil {
-		t.Fatalf("invalid patch must fail: %s", output)
+		t.Fatalf("non-repository path must fail: %s", output)
 	}
 	after := harness.status(t)
 	if after.InstanceID != before.InstanceID || after.Captures != 0 {

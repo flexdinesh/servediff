@@ -28,13 +28,14 @@ import (
 
 // InitialInput is acquired by a foreground CLI, never by the daemon's stdin.
 type InitialInput struct {
-	Watch         func(context.Context, *contextservice.Service) error
-	Ingestion     *ingestion.Request
-	Kind          string
-	Path          string
-	Raw           []byte
-	SubmittedFrom string
-	CaptureID     string
+	IngestionDisabled bool
+	Watch             func(context.Context, *contextservice.Service) error
+	Ingestion         *ingestion.Request
+	Kind              string
+	Path              string
+	Raw               []byte
+	SubmittedFrom     string
+	CaptureID         string
 }
 
 func Run(ctx context.Context, settings Settings, runtimeDir string, initial *InitialInput, ready func(Status, *contextservice.Submission)) error {
@@ -149,6 +150,9 @@ func runServer(ctx context.Context, cancel context.CancelFunc, settings Settings
 		return value, err
 	}
 	configuration := serverapp.Options{}
+	if initial != nil {
+		configuration.IngestionDisabled = initial.IngestionDisabled
+	}
 	if initial != nil && initial.Watch != nil {
 		configuration.IngestionDisabled = true
 		status.WatchPath = initial.Path

@@ -165,23 +165,10 @@ func collectSubmission(ctx context.Context, command string, values options, stdi
 	if err != nil {
 		return ingestion.Request{}, err
 	}
-	if command == "review" {
-		return collector.Collect(ctx, values.directory, settings)
+	if command != "review" {
+		return ingestion.Request{}, errors.New("expected review command")
 	}
-	if command != "pipe" {
-		return ingestion.Request{}, errors.New("expected review or pipe command")
-	}
-	if stdin == nil {
-		return ingestion.Request{}, errors.New("stdin unavailable")
-	}
-	raw, err := io.ReadAll(io.LimitReader(stdin, diffsource.MaxInputBytes+1))
-	if err != nil {
-		return ingestion.Request{}, err
-	}
-	if len(raw) > diffsource.MaxInputBytes {
-		return ingestion.Request{}, errors.New("piped diff exceeds the 16 MiB input limit")
-	}
-	return collector.CollectPatch(ctx, string(raw), values.directory, settings)
+	return collector.Collect(ctx, values.directory, settings)
 }
 
 func recordCollectorActivity(activity hooks.Activity, secrets ...string) {

@@ -42,7 +42,11 @@ func cliRepository(t *testing.T) string {
 }
 
 func TestBareInvocationShowsHelpWithoutConsumingStdin(t *testing.T) {
-	stdin := testInputFile(t, []byte("not a diff"))
+	stdin, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stdin.Close()
 	var output bytes.Buffer
 	if err := run(t.Context(), nil, stdin, &output, io.Discard); err != nil {
 		t.Fatal(err)
@@ -51,7 +55,7 @@ func TestBareInvocationShowsHelpWithoutConsumingStdin(t *testing.T) {
 	if err != nil || position != 0 {
 		t.Fatalf("stdin consumed: %d %v", position, err)
 	}
-	if !strings.Contains(output.String(), "servediff review") || !strings.Contains(output.String(), "servediff pipe") {
+	if !strings.Contains(output.String(), "servediff PATH") || !strings.Contains(output.String(), "git diff | servediff") || strings.Contains(output.String(), "servediff pipe") {
 		t.Fatalf("help: %s", output.String())
 	}
 }
@@ -131,13 +135,16 @@ func TestReviewManualAndAgentHookShareGitCollection(t *testing.T) {
 	}
 }
 
-func TestPipeKeepsSubmissionDirectoryWithoutGitIdentity(t *testing.T) {
-	root := cliRepository(t)
-	patch, err := os.ReadFile("../../test/fixtures/sample.diff")
+func TestPipedInputKeepsSubmissionDirectoryWithoutGitIdentity(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	patch := []byte("diff --git a/file.txt b/file.txt\n--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-before\n+after\n")
+	values := options{directory: ".", sourceID: "test-source", trigger: "manual"}
+	input, err := acquireLocalInput(values, testInputFile(t, patch))
 	if err != nil {
 		t.Fatal(err)
 	}
-	request, err := collectSubmission(t.Context(), "pipe", options{directory: root, sourceID: "test-source", trigger: "manual"}, testInputFile(t, patch))
+	request, err := collectInitialInput(t.Context(), values, input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +155,7 @@ func TestPipeKeepsSubmissionDirectoryWithoutGitIdentity(t *testing.T) {
 
 func TestCollectorOptionsRejectAmbiguousInputsBeforeStartup(t *testing.T) {
 	cases := [][]string{
-		{"."}, {"change"}, {"watch"},
+		{".", "--server", "http://example.test"}, {"change"}, {"watch"},
 		{"review", "--server", "http://example.test", "--state", "memory"},
 		{"review", "--trigger", "unknown"},
 		{"review", "--fixture", "input.diff"},
