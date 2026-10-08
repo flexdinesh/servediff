@@ -43,8 +43,9 @@ servediff . --base HEAD --no-browser
 Collection and ingestion run in-process. The same process serves the web UI,
 REST and MCP until Ctrl-C. It watches only the selected checkout, follows branch
 switches, and preserves observations/comments across restarts in the shared local
-database. The browser follows new observations; choosing a historical review
-stops following. Failed collection never substitutes an empty diff.
+database. The browser follows new observations; choosing a historical review or
+starting a comment pins the current review. Failed collection never substitutes
+an empty diff.
 
 Only one local instance runs. Starting another prompts before replacing it;
 scripts must pass `--replace`. Replacement requests authenticated graceful
