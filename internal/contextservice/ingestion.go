@@ -52,7 +52,7 @@ func (source *storedSource) Support() diffsource.Support {
 			scopes = append(scopes, mode)
 		}
 	}
-	return diffsource.Support{Scopes: scopes, StagingMetadata: len(scopes) > 1, FileContents: source.kind == "local"}
+	return storedSupport(scopes, source.kind == "local")
 }
 func (source *storedSource) Snapshot(ctx context.Context, mode review.DiffMode) (review.RepositoryDiff, error) {
 	if err := ctx.Err(); err != nil {
@@ -94,11 +94,11 @@ func (source *storedSource) Contents(ctx context.Context, mode review.DiffMode, 
 }
 
 func storedCapabilities(scopes []review.DiffMode, contents bool) session.Capabilities {
-	return session.Capabilities{
-		Diff:   session.DiffCapabilities{Scopes: session.ScopesCapability{State: session.Enabled, Values: scopes}, Refresh: session.Capability{State: session.Unavailable}, StagingMetadata: session.Capability{State: state(len(scopes) > 1)}},
-		Files:  session.FileCapabilities{Contents: session.Capability{State: state(contents)}},
-		Review: session.ReviewCapabilities{Comments: session.Capability{State: session.Enabled}},
-	}
+	return session.ResolveCapabilities(storedSupport(scopes, contents), session.Policies{})
+}
+
+func storedSupport(scopes []review.DiffMode, contents bool) diffsource.Support {
+	return diffsource.Support{Scopes: scopes, StagingMetadata: len(scopes) > 1, FileContents: contents}
 }
 
 func valueOrEmpty(value *string) string {

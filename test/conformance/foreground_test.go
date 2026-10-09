@@ -86,7 +86,7 @@ func TestForegroundPipedPatchAndPersistentHistory(t *testing.T) {
 				}
 				time.Sleep(20 * time.Millisecond)
 			}
-			if status.PID != command.Process.Pid || status.WatchPath != "" {
+			if status.PID != command.Process.Pid {
 				t.Fatalf("patch not served in invoking process: %+v", status)
 			}
 			var catalog contextservice.Page
@@ -153,14 +153,24 @@ func TestForegroundRejectsPathAndPipedStdinBeforeStartup(t *testing.T) {
 	}
 }
 
-func TestForegroundWatchReplacementAndPersistentHistory(t *testing.T) {
+func TestForegroundSnapshotReplacementAndPersistentHistory(t *testing.T) {
 	harness := newServiceHarness(t)
-	first, second := createWorktree(t, "first-local"), createWorktree(t, "second-local")
+	first := createWorktree(t, "first-local")
+	second := filepath.Join(t.TempDir(), "second-local")
+	collectorGit(t, first, "worktree", "add", "-b", "linked-branch", second)
+	if err := os.WriteFile(filepath.Join(second, "value.txt"), []byte("linked edit\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	client := &daemon.Client{RuntimeDirectory: harness.runtimeDir}
 	start := func(path string, extra ...string) (*exec.Cmd, chan error) {
 		t.Helper()
-		args := append([]string{path, "--state", harness.state, "--port", "0", "--no-browser"}, extra...)
+		args := []string{"--state", harness.state, "--port", "0", "--no-browser"}
+		if path != "" {
+			args = append(args, path)
+		}
+		args = append(args, extra...)
 		command := exec.Command(serviceBinary, args...)
+		command.Dir = first
 		command.Env = append(harness.environment, "SERVEDIFF_SERVER_URL=http://127.0.0.1:1")
 		command.Stdout, command.Stderr = io.Discard, io.Discard
 		if err := command.Start(); err != nil {
@@ -184,10 +194,30 @@ func TestForegroundWatchReplacementAndPersistentHistory(t *testing.T) {
 		t.Fatal("foreground instance unavailable")
 		return daemon.Status{}
 	}
-	original, done := start(first)
+	original, done := start("")
 	status := await("")
-	if status.PID != original.Process.Pid || status.WatchPath != first {
+	if status.PID != original.Process.Pid {
 		t.Fatalf("wrong foreground owner: %+v", status)
+	}
+	var initial contextservice.Page
+	requestJSON(t, status.BrowserURL+"/api/v2/contexts", &initial)
+	if len(initial.Contexts) != 1 {
+		t.Fatalf("local collection included sibling worktree: %+v", initial)
+	}
+	entry := initial.Contexts[0]
+	metadata := entry.Observation
+	if metadata == nil || metadata.Root != first || metadata.RepositoryKey == "" || metadata.CheckoutKey == "" || metadata.Branch == "" || metadata.LinkedWorktree == nil || *metadata.LinkedWorktree || entry.Capabilities.Diff.Refresh.Enabled() {
+		t.Fatalf("local checkout metadata/capabilities: %+v", entry)
+	}
+	var snapshot review.RepositoryDiff
+	requestJSON(t, status.BrowserURL+"/api/v2/contexts/"+entry.ID+"/diffs/current?scope=all", &snapshot)
+	var health struct {
+		IngestionEnabled bool `json:"ingestionEnabled"`
+		QueuedIngestion  bool `json:"queuedIngestion"`
+	}
+	requestJSON(t, status.BrowserURL+"/api/v2/health", &health)
+	if health.IngestionEnabled || health.QueuedIngestion {
+		t.Fatalf("foreground advertised external ingestion: %+v", health)
 	}
 	response, err := http.Post(status.BrowserURL+"/api/v2/ingestions", "application/json", strings.NewReader("{}"))
 	if err != nil {
@@ -200,22 +230,29 @@ func TestForegroundWatchReplacementAndPersistentHistory(t *testing.T) {
 	if output, err := harness.run(nil, second, "--no-browser"); err == nil || !strings.Contains(string(output), "--replace") {
 		t.Fatalf("noninteractive replacement not guarded: %s %v", output, err)
 	}
-	if err := os.WriteFile(filepath.Join(first, "value.txt"), []byte("watch update\n"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(first, "value.txt"), []byte("later edit\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(6 * time.Second)
-	for {
+	collectorGit(t, first, "switch", "-c", "later-branch")
+	deadline := time.Now().Add(1500 * time.Millisecond)
+	for time.Now().Before(deadline) {
 		var catalog contextCatalog
 		requestJSON(t, status.BrowserURL+"/api/v2/contexts", &catalog)
-		if len(catalog.Contexts) == 2 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("watch failed to ingest edit")
+		if len(catalog.Contexts) != 1 || catalog.Contexts[0].ID != entry.ID {
+			t.Fatalf("foreground recollected checkout: %+v", catalog)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	_, replacementDone := start(second, "--replace", "--host", "0.0.0.0")
+	var retained review.RepositoryDiff
+	requestJSON(t, status.BrowserURL+"/api/v2/contexts/"+entry.ID+"/diffs/current?scope=all", &retained)
+	if retained.Revision != snapshot.Revision || retained.Branch != snapshot.Branch {
+		t.Fatalf("snapshot followed edits or branch switch: %+v", retained)
+	}
+	subdir := filepath.Join(second, "subdir")
+	if err := os.Mkdir(subdir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	_, replacementDone := start(subdir, "--replace", "--host", "0.0.0.0")
 	replacement := await(status.InstanceID)
 	if replacement.Settings.Host != "0.0.0.0" {
 		t.Fatal("host flag ignored")
@@ -228,10 +265,14 @@ func TestForegroundWatchReplacementAndPersistentHistory(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("old process survived replacement")
 	}
-	var catalog contextCatalog
+	var catalog contextservice.Page
 	requestJSON(t, replacement.BrowserURL+"/api/v2/contexts", &catalog)
-	if len(catalog.Contexts) != 3 {
+	if len(catalog.Contexts) != 2 {
 		t.Fatalf("replacement lost history: %+v", catalog)
+	}
+	linked := catalog.Contexts[0].Observation
+	if linked == nil || linked.Root != second || linked.TriggerRoot != subdir || linked.Branch != "linked-branch" || linked.LinkedWorktree == nil || !*linked.LinkedWorktree || linked.RepositoryKey != metadata.RepositoryKey || linked.CheckoutKey == metadata.CheckoutKey {
+		t.Fatalf("linked checkout metadata lost: %+v", linked)
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()

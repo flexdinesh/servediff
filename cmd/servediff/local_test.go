@@ -11,14 +11,16 @@ import (
 	"github.com/flexdinesh/servediff/internal/diffsource"
 )
 
-func TestLocalInputRequiresPathOrPatch(t *testing.T) {
+func TestLocalInputDefaultsToCurrentDirectory(t *testing.T) {
 	root := t.TempDir()
+	t.Chdir(root)
 	input, err := acquireLocalInput(options{directory: root, repositorySet: true}, nil)
 	if err != nil || input.Kind != "worktree" || input.Path != root {
 		t.Fatalf("path input: %+v %v", input, err)
 	}
-	if _, err := acquireLocalInput(options{directory: "."}, nil); err == nil {
-		t.Fatal("accepted missing path and stdin")
+	input, err = acquireLocalInput(options{directory: "."}, nil)
+	if err != nil || input.Kind != "worktree" || input.Path != root {
+		t.Fatalf("default input: %+v %v", input, err)
 	}
 }
 

@@ -13,7 +13,6 @@ const submittedFromHeader = "X-Servediff-Submitted-From"
 type Settings = config.ServerSettings
 
 type Status struct {
-	WatchPath       string   `json:"watchPath,omitempty"`
 	State           string   `json:"state"`
 	InstanceID      string   `json:"instanceId"`
 	StateID         string   `json:"stateId"`

@@ -24,9 +24,10 @@ type Receipt struct {
 
 // Health identifies the durable destination, including replacement databases.
 type Health struct {
-	QueuedIngestion bool   `json:"queuedIngestion,omitempty"`
-	StateID         string `json:"stateId"`
-	ProtocolVersion int    `json:"protocolVersion"`
+	IngestionEnabled bool   `json:"ingestionEnabled"`
+	QueuedIngestion  bool   `json:"queuedIngestion"`
+	StateID          string `json:"stateId"`
+	ProtocolVersion  int    `json:"protocolVersion"`
 }
 
 type Problem struct {

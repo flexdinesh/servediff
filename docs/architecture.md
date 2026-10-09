@@ -5,7 +5,7 @@ remote runtimes. React/Vite assets are embedded; Node is a build dependency.
 
 ## Composition
 
-- `servediff PATH`: collect once, ingest directly, then watch only that checkout.
+- `servediff [PATH]`: collect only that checkout once and ingest directly.
   The foreground process owns shared persistent SQLite state, UI, REST and MCP.
   Ctrl-C stops collection and serving; observations and review state persist.
 - `servediff sync`: finite collector including registered worktrees; authenticated
@@ -14,8 +14,8 @@ remote runtimes. React/Vite assets are embedded; Node is a build dependency.
   durable queue, worker, UI, REST and MCP. No Git or checkout mount.
 
 `serverapp.Run` shares HTTP/task cancellation, graceful shutdown and pruning.
-Local composition adds authenticated singleton discovery/replacement and a
-collector watcher. Remote composition adds credential resolution and a worker.
+Local composition adds authenticated singleton discovery/replacement.
+Remote composition adds credential resolution and an ingestion worker.
 REST and MCP call the same query/review services, never each other over HTTP.
 
 The local lifecycle lock serializes replacement/startup until the new descriptor
@@ -27,7 +27,7 @@ through their HTTP ingestion adapter.
 ## Modules and contracts
 
 - `collector`, `diffsource`: Git discovery, stable enrollment, parsing, bounded
-  previews and content identity. Watch reuses CollectChanged with bounded polling.
+  previews and content identity. Finite producers reuse CollectChanged for suppression.
 - `ingestion`: versioned request/job/receipt contracts, validation, pure content
   identity and comparison policy, and HTTP clients.
 - `contextservice.Store`: atomic observation publication and stored catalog reads.
@@ -98,4 +98,33 @@ types and embedded web assets are committed.
 
 Validation covers legacy identities/retention, queue acceptance order, restart
 after commit, lease fencing, terminal failure, owner isolation, full CLI sync
-recovery, local edit watching and singleton replacement.
+recovery, fixed local snapshots and singleton replacement.
+
+## Mode contracts and capabilities
+
+| Boundary                    | Foreground local                                             | Remote server and producers                                             |
+| --------------------------- | ------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| Collection                  | Selected checkout once; omitted path means current directory | Sync/plugins collect all registered worktrees per invocation/event      |
+| Observation schema          | `ingestion.Request`                                          | Same `ingestion.Request`; hooks add optional harness/session provenance |
+| Ingestion                   | Direct `contextservice.Ingest` call                          | Authenticated HTTP admission; worker calls the same service             |
+| HTTP ingestion capabilities | Disabled                                                     | Direct and queued admission enabled                                     |
+| Checkout observation        | No watcher                                                   | No watcher; plugins trigger finite collection on agent events           |
+| Snapshot capabilities       | Stored scopes, previews and comments; no Git refresh         | Identical for identical captured source support                         |
+| Browser selection           | Open the submitted snapshot URL                              | Catalog updates on ingestion events; selected snapshot remains pinned   |
+
+Mode differences belong to producer/runtime composition, not the observation
+schema, storage model or review components. `serverapp.Options.Capabilities`
+resolves transport admission once and drives both routes and health advertising.
+`session.ResolveCapabilities` resolves source support and policy for both catalog
+metadata and review sessions. The web UI reads these shared capabilities.
+
+Captured metadata retains repository/checkout identity, root, worktree name and
+linked-worktree status, branch/HEAD and comparison baseline in both modes.
+The triggering directory remains separate from each discovered checkout root.
+Harness/session metadata adds provenance without changing content identity.
+Queries read stored snapshots; a catalog notification never initiates collection.
+
+The shared core already supplies collection, validation, atomic ingestion,
+storage, REST/MCP and review contracts. This change removes watching/following and
+duplicate capability resolution; it needs no mode-specific payload, schema
+migration, parallel service implementation or generic feature-toggle framework.

@@ -96,7 +96,10 @@ worktrees against the default branch merge base, plus working changes. Use
 `--base HEAD` for working changes only, and `--branch` for explicit object-only
 recovery. `review` submits to one configured destination and exits.
 Redirected stdin (`git diff | servediff`) starts a foreground local process with
-a fixed patch, ignores remote config, and does not watch Git. A path argument or
+a fixed patch and ignores remote config. `servediff [PATH]` likewise collects
+once, defaults to the current directory, and opens a fixed checkout snapshot.
+Neither mode watches Git or automatically replaces the selected snapshot.
+A path argument or
 `--path` cannot be combined with redirected stdin.
 `CollectPatch` preserves the supplied patch without Git lookup;
 its absolute submission directory is provenance only, not repository identity.

@@ -64,7 +64,7 @@ export function FileExplorerNav() {
       ? "Connecting…"
       : "Disconnected"
     : refreshEnabled
-      ? "Watching changes"
+      ? "Refresh available"
       : "Fixed snapshot";
   return (
     <aside

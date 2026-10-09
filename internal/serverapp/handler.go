@@ -27,11 +27,26 @@ type Options struct {
 	IngestionDisabled bool
 }
 
+// Capabilities are resolved once by the transport composition. Both admission
+// paths accept ingestion.Request; local collection calls the service directly.
+type Capabilities struct {
+	IngestionEnabled bool
+	QueuedIngestion  bool
+}
+
+func (options Options) Capabilities() Capabilities {
+	return Capabilities{
+		IngestionEnabled: !options.IngestionDisabled,
+		QueuedIngestion:  !options.IngestionDisabled && options.Queue != nil,
+	}
+}
+
 func Handler(ctx context.Context, service *contextservice.Service, store httpapi.Store, assets fs.FS, defaultID string, options ...Options) http.Handler {
 	var configuration Options
 	if len(options) > 0 {
 		configuration = options[0]
 	}
+	capabilities := configuration.Capabilities()
 
 	mux := http.NewServeMux()
 	mcp := contextMCP(service, store, defaultID)
@@ -48,12 +63,12 @@ func Handler(ctx context.Context, service *contextservice.Service, store httpapi
 			return
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		_ = json.NewEncoder(w).Encode(ingestion.Health{QueuedIngestion: configuration.Queue != nil, StateID: service.UserID(), ProtocolVersion: ingestion.ProtocolVersion})
+		_ = json.NewEncoder(w).Encode(ingestion.Health{IngestionEnabled: capabilities.IngestionEnabled, QueuedIngestion: capabilities.QueuedIngestion, StateID: service.UserID(), ProtocolVersion: ingestion.ProtocolVersion})
 	})
-	if !configuration.IngestionDisabled {
+	if capabilities.IngestionEnabled {
 		mux.HandleFunc("/api/v2/ingestions", func(w http.ResponseWriter, r *http.Request) { ingest(service, w, r) })
 	}
-	if configuration.Queue != nil {
+	if capabilities.QueuedIngestion {
 		mux.HandleFunc("/api/v2/ingestion-jobs", func(w http.ResponseWriter, r *http.Request) { acceptJob(service, configuration.Queue, w, r) })
 		mux.HandleFunc("/api/v2/ingestion-jobs/", func(w http.ResponseWriter, r *http.Request) { getJob(service, configuration.Queue, w, r) })
 	}

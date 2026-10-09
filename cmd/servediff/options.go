@@ -93,7 +93,7 @@ func parseOptionsMode(arguments []string, stderr io.Writer, internal bool, foreg
 	flags.BoolVar(&values.noBrowser, "no-browser", false, "do not open a browser")
 	flags.BoolVar(&values.version, "version", false, "print version and exit")
 	flags.Usage = func() {
-		fmt.Fprintln(stderr, "  Usage: servediff PATH [--host IP] [--replace]")
+		fmt.Fprintln(stderr, "  Usage: servediff [PATH] [--host IP] [--replace]")
 		fmt.Fprintln(stderr, "         git diff | servediff [options]")
 		fmt.Fprintln(stderr, "         servediff sync [--path DIRECTORY] [--print] [--debug] [--retry]")
 		fmt.Fprintln(stderr, "         servediff config {set|get|remove} KEY [VALUE]")

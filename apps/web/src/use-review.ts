@@ -245,7 +245,7 @@ export function useReview(
         },
       });
       setSaveError(null);
-      setFeedback("Draft open — automatic refresh paused.");
+      setFeedback("Draft open.");
     },
     [enabled, setDraft],
   );
@@ -327,7 +327,7 @@ export function useReview(
       }
       setDraft({ ...comment });
       setSaveError(null);
-      setFeedback("Draft open — automatic refresh paused.");
+      setFeedback("Draft open.");
       return true;
     },
     [setDraft],

@@ -104,7 +104,12 @@ func (err *CapabilityError) Error() string {
 }
 
 func Resolve(source diffsource.Source, policies Policies) Session {
-	support := source.Support()
+	return Session{ID: rand.Text(), Source: source, Capabilities: ResolveCapabilities(source.Support(), policies)}
+}
+
+// ResolveCapabilities is shared by catalog metadata and resolved review sessions.
+// Capabilities describe source support and policy, never the deployment mode.
+func ResolveCapabilities(support diffsource.Support, policies Policies) Capabilities {
 	capabilities := Capabilities{}
 	capabilities.Diff.Scopes = ScopesCapability{
 		State:  supported(len(support.Scopes) > 0),
@@ -114,7 +119,7 @@ func Resolve(source diffsource.Source, policies Policies) Session {
 	capabilities.Diff.StagingMetadata = Capability{State: supported(support.StagingMetadata)}
 	capabilities.Files.Contents = Capability{State: supported(support.FileContents)}
 	capabilities.Review.Comments = Capability{State: policyState(true, policies.Comments)}
-	return Session{ID: rand.Text(), Source: source, Capabilities: capabilities}
+	return capabilities
 }
 
 func supported(value bool) State {

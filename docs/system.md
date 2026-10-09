@@ -35,9 +35,9 @@ register paths for later server collection or maintain its own catalog.
 The application core has two compositions. See [architecture.md](architecture.md)
 for contracts, durability rules and migration details.
 
-`servediff PATH` is one foreground process: collect the selected checkout,
-ingest directly, serve UI/REST/MCP, and poll that checkout for changes. Branch
-switches are followed. A failed capture leaves the last valid observation intact.
+`servediff [PATH]` is one foreground process: collect the selected checkout once,
+ingest directly, and serve UI/REST/MCP. Omitted paths mean the current directory.
+The captured snapshot remains fixed after edits and branch switches.
 The home-directory database survives process termination. Only one local process
 owns it; another invocation prompts before authenticated graceful replacement.
 Noninteractive callers use `--replace`. There is no collector daemon.
@@ -57,7 +57,7 @@ and review operations. Their lifecycle and submission delivery differ.
 
 Collection resolves the baseline and all/staged/unstaged scopes together with
 full-content identity and bounded immutable previews. It never fetches refs.
-Local watching selects one checkout; remote sync discovers all registered
+Local collection selects one checkout; remote sync discovers all registered
 worktrees. Explicit `--branch` recovery remains available for remote collection.
 
 Local composition calls `contextservice.Ingest` directly. Remote collectors
@@ -172,7 +172,7 @@ worktree contexts cannot trigger server Git reads; users submit a new review.
 | One server process, layered entry points                     | Local use stays simple; remote deployment adds authentication around shared logic. This is not a distributed worker system.                                  |
 | SQLite first                                                 | Durable queries and transactions with a small operational footprint. Other storage and queue backends remain future implementation work.                     |
 | Event notifications plus catalog queries                     | The database remains authoritative when a connection drops. Notifications may be missed or repeated.                                                         |
-| Local watcher                                                | Foreground mode polls only its selected checkout; remote collectors remain finite.                                                                           |
+| Finite collection                                            | Foreground mode captures its selected checkout once. Remote producers capture registered worktrees per command or agent event. No checkout watchers.         |
 
 “Latest” means the most recently collected submission within a source, repository,
 checkout, branch and comparison policy; arrival order breaks ties. Delayed uploads remain stale.
@@ -214,7 +214,7 @@ is not a replay of a previous failed submission.
 
 Local and remote deployment share application/storage contracts and the HTTP
 runtime. Local-only lifecycle discovery is authenticated, private and limited to
-status/shutdown for watched sessions. Collection in those sessions never uses HTTP.
+status/shutdown for foreground snapshots. Collection in those sessions never uses HTTP.
 
 Remote credentials establish owner identity. REST, MCP, ingestion jobs, job status
 and browser assets require authentication. Plugins never fall back to local

@@ -10,6 +10,9 @@ const fixture = fileURLToPath(
   new URL("../fixtures/sample.diff", import.meta.url),
 );
 const binary = fileURLToPath(new URL("../../dist/servediff", import.meta.url));
+const remoteBinary = fileURLToPath(
+  new URL("../../dist/servediff-server", import.meta.url),
+);
 const apiValues = { allScope: "all" } satisfies { allScope: "all" };
 
 async function freePort() {
@@ -29,11 +32,14 @@ async function freePort() {
   return address.port;
 }
 
-async function waitForServer(url: string) {
+async function waitForServer(
+  url: string,
+  headers: Record<string, string> = {},
+) {
   let lastError: unknown;
   for (let attempt = 0; attempt < 80; attempt++) {
     try {
-      const response = await fetch(`${url}/openapi.yaml`);
+      const response = await fetch(`${url}/openapi.yaml`, { headers });
       if (response.ok) return;
     } catch (error) {
       lastError = error;
@@ -63,6 +69,9 @@ test("Go distribution implements the API contract", async (t) => {
   const url = `http://127.0.0.1:${port}`;
   await waitForServer(url);
   const client = createApiClient({ baseUrl: url });
+  const health = await client.GET("/api/v2/health");
+  assert.equal(health.data?.ingestionEnabled, false);
+  assert.equal(health.data?.queuedIngestion, false);
 
   const catalog = await client.GET("/api/v2/contexts");
   assert.equal(catalog.data?.contexts.length, 1);
@@ -194,14 +203,41 @@ test("Go distribution implements the API contract", async (t) => {
       },
     ],
   } satisfies components["schemas"]["IngestionRequest"];
-  const ingested = await client.POST("/api/v2/ingestions", { body });
+  const localIngestion = await client.POST("/api/v2/ingestions", { body });
+  assert.equal(localIngestion.response.status, 404);
+  const localJob = await client.POST("/api/v2/ingestion-jobs", { body });
+  assert.equal(localJob.response.status, 404);
+
+  const remotePort = await freePort();
+  const token = "servediff-contract-test-token-000001";
+  const remoteServer = spawn(
+    remoteBinary,
+    ["--listen", `127.0.0.1:${remotePort}`, "--state", "memory"],
+    { stdio: "ignore", env: { ...process.env, SERVEDIFF_TOKEN: token } },
+  );
+  t.after(() => remoteServer.kill("SIGTERM"));
+  const remoteUrl = `http://127.0.0.1:${remotePort}`;
+  await waitForServer(remoteUrl, { Authorization: `Bearer ${token}` });
+  const remote = createApiClient({ baseUrl: remoteUrl });
+  const unauthenticated = await remote.GET("/api/v2/health");
+  assert.equal(unauthenticated.response.status, 401);
+  remote.use({
+    onRequest({ request }) {
+      request.headers.set("Authorization", `Bearer ${token}`);
+      return request;
+    },
+  });
+  const remoteHealth = await remote.GET("/api/v2/health");
+  assert.equal(remoteHealth.data?.ingestionEnabled, true);
+  assert.equal(remoteHealth.data?.queuedIngestion, true);
+  const ingested = await remote.POST("/api/v2/ingestions", { body });
   assert.equal(ingested.response.status, 200);
   assert.ok(ingested.data);
   assert.notEqual(ingested.data.contextId, contextId);
-  const replay = await client.POST("/api/v2/ingestions", { body });
+  const replay = await remote.POST("/api/v2/ingestions", { body });
   assert.deepEqual(replay.data, ingested.data);
 
-  const filtered = await client.GET("/api/v2/contexts", {
+  const filtered = await remote.GET("/api/v2/contexts", {
     params: {
       query: {
         repository: "contract-repo",
@@ -217,7 +253,7 @@ test("Go distribution implements the API contract", async (t) => {
   assert.equal(filtered.data?.contexts[0]?.id, ingested.data.contextId);
   assert.deepEqual(filtered.data?.contexts[0]?.observation, body.metadata);
 
-  const conflict = await client.POST("/api/v2/ingestions", {
+  const conflict = await remote.POST("/api/v2/ingestions", {
     body: {
       ...body,
       metadata: { ...body.metadata, hostname: "different-host" },

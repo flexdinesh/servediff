@@ -1474,7 +1474,7 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Ingestion is available. */
+      /** @description Database readiness and available HTTP ingestion capabilities. */
       200: {
         headers: {
           [name: string]: unknown;
@@ -1483,6 +1483,8 @@ export interface operations {
           "application/json": {
             stateId: string;
             protocolVersion: number;
+            /** @description Whether this runtime accepts HTTP ingestion. False for foreground local snapshots. */
+            ingestionEnabled?: boolean;
             queuedIngestion?: boolean;
           };
         };
