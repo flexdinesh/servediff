@@ -16,6 +16,7 @@ import (
 	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/mcpapi"
 	"github.com/flexdinesh/servediff/internal/reviewstore"
+	"github.com/flexdinesh/servediff/internal/testsupport"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -133,7 +134,7 @@ func TestGlobalMCPOwnershipAcrossUsers(t *testing.T) {
 	}
 	contexts := make([]string, 2)
 	for index, token := range tokens {
-		receipt, err := ingestion.NewClient(server.URL, token).Submit(t.Context(), input)
+		receipt, err := testsupport.NewClient(server.URL, token).Submit(t.Context(), input)
 		if err != nil {
 			t.Fatal(err)
 		}

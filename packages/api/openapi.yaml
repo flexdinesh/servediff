@@ -6,375 +6,6 @@ info:
 servers:
   - url: /
 paths:
-  /api/v1/metrics:
-    get:
-      operationId: getServerMetrics
-      responses:
-        "200":
-          description: CPU and resident memory used by the ServeDiff server process.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ServerMetrics"
-        default:
-          $ref: "#/components/responses/Problem"
-  /api/v1/session:
-    get:
-      operationId: getSession
-      responses:
-        "200":
-          description: Active diff source and capabilities.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Session"
-        default:
-          $ref: "#/components/responses/Problem"
-  /api/v1/diffs/current:
-    get:
-      operationId: getCurrentDiff
-      parameters:
-        - $ref: "#/components/parameters/Scope"
-      responses:
-        "200":
-          description: Current diff snapshot.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RepositoryDiff"
-        default:
-          $ref: "#/components/responses/Problem"
-  /api/v1/diffs/captures:
-    get:
-      operationId: listCaptures
-      responses:
-        "200":
-          description: Retained captures for the current user.
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [captures]
-                properties:
-                  captures:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/CaptureInfo"
-        default:
-          $ref: "#/components/responses/Problem"
-  /api/v1/diffs/{diffId}/versions/{versionId}:
-    get:
-      operationId: getDiffVersion
-      parameters:
-        - $ref: "#/components/parameters/DiffId"
-        - $ref: "#/components/parameters/VersionIdPath"
-      responses:
-        "200":
-          description: Retained immutable diff version.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RepositoryDiff"
-        default:
-          $ref: "#/components/responses/Problem"
-  /api/v1/diffs/{diffId}/files/{fileId}/patch:
-    get:
-      operationId: getFilePatch
-      parameters:
-        - $ref: "#/components/parameters/DiffId"
-        - $ref: "#/components/parameters/FileId"
-        - $ref: "#/components/parameters/VersionId"
-        - $ref: "#/components/parameters/Scope"
-        - $ref: "#/components/parameters/FileVersion"
-      responses:
-        "200":
-          description: File patch.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FilePatch"
-        default:
-          $ref: "#/components/responses/Problem"
-  /api/v1/diffs/{diffId}/files/{fileId}/contents:
-    get:
-      operationId: getFileContents
-      parameters:
-        - $ref: "#/components/parameters/DiffId"
-        - $ref: "#/components/parameters/FileId"
-        - $ref: "#/components/parameters/VersionId"
-        - $ref: "#/components/parameters/Scope"
-        - $ref: "#/components/parameters/FileVersion"
-      responses:
-        "200":
-          description: Complete before and after contents.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FileContents"
-        default:
-          $ref: "#/components/responses/Problem"
-  /api/v1/comments:
-    get:
-      operationId: listComments
-      responses:
-        "200":
-          description: All comments for the active source.
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [comments]
-                properties:
-                  comments:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/ReviewComment"
-        default:
-          $ref: "#/components/responses/Problem"
-    delete:
-      operationId: deleteComments
-      parameters:
-        - name: status
-          in: query
-          required: true
-          schema:
-            type: string
-            enum: [all, open, resolved, stale]
-      responses:
-        "200":
-          description: Remaining comments after bulk deletion.
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: false
-                required: [comments, deleted]
-                properties:
-                  comments:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/ReviewComment"
-                  deleted:
-                    type: integer
-                    minimum: 0
-        default:
-          $ref: "#/components/responses/Problem"
-    post:
-      operationId: createComment
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateComment"
-      responses:
-        "201":
-          description: Created comment.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ReviewComment"
-        default:
-          $ref: "#/components/responses/Problem"
-  /api/v1/comments/import:
-    post:
-      operationId: importComments
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [comments]
-              properties:
-                comments:
-                  type: array
-                  items:
-                    $ref: "#/components/schemas/ReviewComment"
-      responses:
-        "200":
-          description: Idempotently imported comments.
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [comments]
-                properties:
-                  comments:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/ReviewComment"
-        default:
-          $ref: "#/components/responses/Problem"
-  /api/v1/comments/export:
-    get:
-      operationId: exportComments
-      parameters:
-        - name: includeResolved
-          in: query
-          required: false
-          schema:
-            type: boolean
-            default: false
-        - name: commentId
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: revision
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: scope
-          in: query
-          required: false
-          schema:
-            $ref: "#/components/schemas/DiffMode"
-      responses:
-        "200":
-          description: Canonical agent-ready export.
-          content:
-            application/xml:
-              schema:
-                type: string
-        default:
-          $ref: "#/components/responses/Problem"
-  /api/v1/comments/{commentId}:
-    patch:
-      operationId: updateComment
-      parameters:
-        - $ref: "#/components/parameters/CommentId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateComment"
-      responses:
-        "200":
-          description: Updated comment.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ReviewComment"
-        default:
-          $ref: "#/components/responses/Problem"
-    delete:
-      operationId: deleteComment
-      parameters:
-        - $ref: "#/components/parameters/CommentId"
-      responses:
-        "204":
-          description: Comment deleted.
-        default:
-          $ref: "#/components/responses/Problem"
-  /api/v1/review/comments:
-    get:
-      operationId: listAgentReviewComments
-      parameters:
-        - name: includeResolved
-          in: query
-          required: false
-          schema:
-            type: boolean
-            default: false
-      responses:
-        "200":
-          description: Agent-ready comments with current applicability.
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: false
-                required: [comments]
-                properties:
-                  comments:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/AgentReviewComment"
-        default:
-          $ref: "#/components/responses/Problem"
-  /api/v1/review/comments/{commentId}/resolve:
-    post:
-      operationId: resolveAgentReviewComment
-      parameters:
-        - $ref: "#/components/parameters/CommentId"
-      responses:
-        "200":
-          description: Idempotently resolved comment.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ResolveReviewComment"
-        default:
-          $ref: "#/components/responses/Problem"
-  /api/v1/review-marks:
-    get:
-      operationId: listReviewMarks
-      parameters:
-        - $ref: "#/components/parameters/Scope"
-      responses:
-        "200":
-          description: Reviewed file versions.
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [marks]
-                properties:
-                  marks:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/ReviewMark"
-        default:
-          $ref: "#/components/responses/Problem"
-    delete:
-      operationId: clearReviewMarks
-      parameters:
-        - $ref: "#/components/parameters/Scope"
-      responses:
-        "204":
-          description: Scope review marks cleared.
-        default:
-          $ref: "#/components/responses/Problem"
-  /api/v1/review-marks/{fileId}:
-    put:
-      operationId: putReviewMark
-      parameters:
-        - $ref: "#/components/parameters/FileId"
-        - $ref: "#/components/parameters/Scope"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [fileVersion, versionId]
-              properties:
-                fileVersion:
-                  type: string
-                versionId:
-                  type: string
-      responses:
-        "200":
-          description: Stored review mark.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ReviewMark"
-        default:
-          $ref: "#/components/responses/Problem"
-    delete:
-      operationId: deleteReviewMark
-      parameters:
-        - $ref: "#/components/parameters/FileId"
-        - $ref: "#/components/parameters/Scope"
-      responses:
-        "204":
-          description: Review mark deleted.
-        default:
-          $ref: "#/components/responses/Problem"
   /api/v2/health:
     get:
       operationId: getIngestionHealth
@@ -398,31 +29,6 @@ paths:
                     type: boolean
                   queuedIngestion:
                     type: boolean
-        default:
-          $ref: "#/components/responses/Problem"
-  /api/v2/ingestions:
-    post:
-      operationId: ingestSnapshot
-      description: Commit an immutable Git-aware observation. Retrying the same submission ID and payload returns its original receipt. Fresh submissions with matching source, checkout, branch, HEAD and stable content reuse an unexpired snapshot and reset its seven-day TTL.
-      parameters:
-        - name: X-Servediff-State
-          in: header
-          description: Optional destination state identity from the health endpoint. A changed database rejects submission with HTTP 409.
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/IngestionRequest"
-      responses:
-        "200":
-          description: Snapshot committed or an identical submission replayed.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/IngestionReceipt"
         default:
           $ref: "#/components/responses/Problem"
   /api/v2/ingestion-jobs:
@@ -551,7 +157,7 @@ paths:
             type: string
       responses:
         "200":
-          description: Stored observations and retained legacy contexts. Listing never accesses a checkout or runs Git.
+          description: Stored observations. Listing never accesses a checkout or runs Git.
           content:
             application/json:
               schema:
@@ -1174,7 +780,7 @@ components:
       properties:
         protocolVersion:
           type: integer
-          enum: [1, 2]
+          enum: [3]
           description: Current producers send 2. Legacy version 1 remains accepted for ingestion and replay.
         submissionId:
           type: string
@@ -1192,19 +798,6 @@ components:
           maxItems: 3
           items:
             $ref: "#/components/schemas/IngestionScope"
-    IngestionReceipt:
-      type: object
-      additionalProperties: false
-      required: [contextId, reviewUrl, mcpUrl, snapshot]
-      properties:
-        contextId:
-          type: string
-        reviewUrl:
-          type: string
-        mcpUrl:
-          type: string
-        snapshot:
-          $ref: "#/components/schemas/RepositoryDiff"
     ContextPage:
       type: object
       additionalProperties: false
@@ -1243,7 +836,7 @@ components:
           type: string
         kind:
           type: string
-          enum: [worktree, capture, observation]
+          enum: [observation]
         source:
           type: string
           enum: [local, stdin]
@@ -1286,7 +879,7 @@ components:
           enum: [unchecked, available, unavailable]
         stale:
           type: boolean
-          description: A newer collection superseded this snapshot for the same owner, source, repository, checkout, branch, and comparison policy. Collection time determines freshness; arrival order breaks ties. Freshness survives snapshot expiry and pruning. False for ungrouped captures and legacy contexts.
+          description: A newer collection superseded this snapshot for the same owner, source, repository, checkout, branch, and comparison policy. Collection time determines freshness; arrival order breaks ties. Freshness survives snapshot expiry and pruning. False for ungrouped piped observations.
         capabilities:
           $ref: "#/components/schemas/Session/properties/capabilities"
         observation:
@@ -1775,19 +1368,6 @@ components:
           type: string
         name:
           type: string
-    CaptureInfo:
-      type: object
-      additionalProperties: false
-      required: [id, versionId, createdAt, expiresAt]
-      properties:
-        id:
-          type: string
-        versionId:
-          type: string
-        createdAt:
-          type: integer
-        expiresAt:
-          type: integer
     Problem:
       type: object
       additionalProperties: false

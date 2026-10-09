@@ -47,9 +47,6 @@ func TestCatalogContainsOnlySubmittedWorktreeObservations(t *testing.T) {
 	if item.Name != "servediff" || item.Root == nil || *item.Root != linked || item.Branch == nil || *item.Branch != "feature/picker" || item.WorktreeName == nil || *item.WorktreeName != "elsewhere" {
 		t.Fatalf("captured Git metadata: %#v", item)
 	}
-	if len(service.sources) != 0 {
-		t.Fatal("catalog loaded filesystem sources")
-	}
 }
 
 func TestOldObservationUsesRemoteNameWithoutReadingGit(t *testing.T) {

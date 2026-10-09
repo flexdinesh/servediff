@@ -355,7 +355,7 @@ func TestRuntimeIsolationAndSafeJobNames(t *testing.T) {
 	runtime := t.TempDir()
 	t.Setenv("SERVEDIFF_RUNTIME_DIR", runtime)
 	directory, err := StateDirectory()
-	if err != nil || directory != filepath.Join(runtime, "hooks") {
+	if err != nil || directory != filepath.Join(runtime, "hooks-v3") {
 		t.Fatalf("directory = %q %v", directory, err)
 	}
 	engine := Engine{Directory: directory}

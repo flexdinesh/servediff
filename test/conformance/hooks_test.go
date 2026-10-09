@@ -20,8 +20,7 @@ import (
 	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/review"
 	"github.com/flexdinesh/servediff/internal/reviewstore"
-	"github.com/flexdinesh/servediff/internal/serverapp"
-	"github.com/flexdinesh/servediff/internal/webui"
+	"github.com/flexdinesh/servediff/internal/testsupport"
 )
 
 func hookInput(t *testing.T, path string) []byte {
@@ -47,34 +46,28 @@ func promptHook(t *testing.T, harness serviceHarness, input []byte, args ...stri
 
 func waitHookCatalog(t *testing.T, harness serviceHarness, count int) (serviceStatus, []contextservice.Context) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	client := http.Client{Timeout: 2 * time.Second}
-	for time.Now().Before(deadline) {
-		output, err := harness.run(nil, "service", "status", "--json")
-		for _, value := range harness.environment {
-			if strings.HasPrefix(value, "SERVEDIFF_SERVER_URL=") && strings.TrimPrefix(value, "SERVEDIFF_SERVER_URL=") != "" {
-				output, _ = json.Marshal(serviceStatus{State: "running", BrowserURL: strings.TrimPrefix(value, "SERVEDIFF_SERVER_URL=")})
-				err = nil
-			}
+	endpoint := ""
+	for _, value := range harness.environment {
+		if strings.HasPrefix(value, "SERVEDIFF_SERVER_URL=") {
+			endpoint = strings.TrimPrefix(value, "SERVEDIFF_SERVER_URL=")
 		}
-		var status serviceStatus
-		if err == nil && json.Unmarshal(output, &status) == nil && status.State == "running" {
-			response, err := client.Get(status.BrowserURL + "/api/v2/contexts")
-			if err == nil {
-				var page struct {
-					Contexts []contextservice.Context `json:"contexts"`
-				}
-				decodeErr := json.NewDecoder(response.Body).Decode(&page)
-				_ = response.Body.Close()
-				if decodeErr == nil && len(page.Contexts) == count {
-					return status, page.Contexts
-				}
+	}
+	client := http.Client{Timeout: 2 * time.Second}
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		response, err := client.Get(endpoint + "/api/v2/contexts")
+		if err == nil {
+			var page contextservice.Page
+			decodeErr := json.NewDecoder(response.Body).Decode(&page)
+			response.Body.Close()
+			if decodeErr == nil && len(page.Contexts) == count {
+				return serviceStatus{BrowserURL: endpoint}, page.Contexts
 			}
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	log, _ := os.ReadFile(filepath.Join(harness.runtimeDir, "hooks", "hooks.log"))
-	t.Fatalf("hook did not publish %d contexts; %s", count, log)
+	log, _ := os.ReadFile(filepath.Join(harness.runtimeDir, "hooks-v3", "hooks.log"))
+	t.Fatalf("hook did not publish %d contexts: %s", count, log)
 	return serviceStatus{}, nil
 }
 
@@ -91,7 +84,7 @@ func TestAgentHooksPublishLatestCheckoutAndCompleteFileContents(t *testing.T) {
 	}
 	service := contextservice.NewWithContext(t.Context(), store, owner)
 	defer service.Close()
-	server := httptest.NewServer(serverapp.Handler(t.Context(), service, store, webui.Assets(), ""))
+	server := testsupport.Server(t, service, store)
 	defer server.Close()
 	harness.environment = append(harness.environment, "SERVEDIFF_SERVER_URL="+server.URL, "SERVEDIFF_TOKEN=test-token")
 
@@ -130,7 +123,7 @@ func TestAgentHooksPublishLatestCheckoutAndCompleteFileContents(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(first, "value.txt"), []byte("manual change\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	harness.requireRun(t, nil, "review", "--path", first, "--config-file", configFile, "--no-browser")
+	harness.requireRun(t, nil, "sync", "--path", first, "--config-file", configFile, "--no-browser")
 	if err := os.WriteFile(filepath.Join(first, "value.txt"), []byte(filepath.Base(first)+"\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +170,7 @@ func TestHookReturnsBeforeRemoteIngestionAndSkipsUnchangedUploads(t *testing.T) 
 	var once sync.Once
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v2/health" {
-			_ = json.NewEncoder(w).Encode(ingestion.Health{StateID: "test-database", ProtocolVersion: ingestion.ProtocolVersion})
+			_ = json.NewEncoder(w).Encode(ingestion.Health{StateID: "test-database", ProtocolVersion: ingestion.ProtocolVersion, QueuedIngestion: true, IngestionEnabled: true})
 			return
 		}
 		if r.URL.Path == "/api/v2/contexts/context" {
@@ -185,7 +178,7 @@ func TestHookReturnsBeforeRemoteIngestionAndSkipsUnchangedUploads(t *testing.T) 
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": "context", "kind": "observation", "availability": "available", "stale": false, "expiresAt": time.Now().Add(time.Hour).UnixMilli()})
 			return
 		}
-		if r.URL.Path != "/api/v2/ingestions" || r.Header.Get("X-Servediff-State") != "test-database" {
+		if r.URL.Path != "/api/v2/ingestion-jobs" || r.Header.Get("X-Servediff-State") != "test-database" {
 			http.NotFound(w, r)
 			return
 		}
@@ -200,7 +193,7 @@ func TestHookReturnsBeforeRemoteIngestionAndSkipsUnchangedUploads(t *testing.T) 
 		case <-r.Context().Done():
 			return
 		}
-		_ = json.NewEncoder(w).Encode(ingestion.Receipt{ContextID: "context", ReviewURL: "/contexts/context", MCPURL: "/mcp/contexts/context", Snapshot: input.Scopes[0].Snapshot})
+		_ = json.NewEncoder(w).Encode(ingestion.Job{ID: input.SubmissionID, SubmissionID: input.SubmissionID, State: "succeeded", ContextID: "context"})
 	}))
 	defer func() {
 		once.Do(func() { close(release) })
@@ -221,10 +214,10 @@ func TestHookReturnsBeforeRemoteIngestionAndSkipsUnchangedUploads(t *testing.T) 
 	otherRequests := make(chan ingestion.Request, 1)
 	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v2/health" {
-			_ = json.NewEncoder(w).Encode(ingestion.Health{StateID: "other-database", ProtocolVersion: ingestion.ProtocolVersion})
+			_ = json.NewEncoder(w).Encode(ingestion.Health{StateID: "other-database", ProtocolVersion: ingestion.ProtocolVersion, QueuedIngestion: true, IngestionEnabled: true})
 			return
 		}
-		if r.URL.Path != "/api/v2/ingestions" || r.Header.Get("X-Servediff-State") != "other-database" {
+		if r.URL.Path != "/api/v2/ingestion-jobs" || r.Header.Get("X-Servediff-State") != "other-database" {
 			http.NotFound(w, r)
 			return
 		}
@@ -234,7 +227,7 @@ func TestHookReturnsBeforeRemoteIngestionAndSkipsUnchangedUploads(t *testing.T) 
 			return
 		}
 		otherRequests <- input
-		_ = json.NewEncoder(w).Encode(ingestion.Receipt{ContextID: "other", ReviewURL: "/contexts/other", MCPURL: "/mcp/contexts/other", Snapshot: input.Scopes[0].Snapshot})
+		_ = json.NewEncoder(w).Encode(ingestion.Job{ID: input.SubmissionID, SubmissionID: input.SubmissionID, State: "succeeded", ContextID: "other"})
 	}))
 	defer other.Close()
 	otherHarness := harness
@@ -249,7 +242,7 @@ func TestHookReturnsBeforeRemoteIngestionAndSkipsUnchangedUploads(t *testing.T) 
 	once.Do(func() { close(release) })
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		acks, _ := filepath.Glob(filepath.Join(harness.runtimeDir, "hooks", "jobs", "*", "*.ack.json"))
+		acks, _ := filepath.Glob(filepath.Join(harness.runtimeDir, "hooks-v3", "jobs", "*", "*.ack.json"))
 		if len(acks) >= 2 {
 			break
 		}
@@ -281,10 +274,7 @@ func TestHookReturnsBeforeRemoteIngestionAndSkipsUnchangedUploads(t *testing.T) 
 	case <-time.After(5 * time.Second):
 		t.Fatal("new session did not submit unchanged content")
 	}
-	output, err := harness.run(nil, "service", "status", "--json")
-	if err == nil || !strings.Contains(string(output), "stopped") {
-		t.Fatalf("remote hook started a local service: %v %s", err, output)
-	}
+
 }
 
 func isolatedCollectorHarness(t *testing.T) serviceHarness {
@@ -325,14 +315,14 @@ func waitCollectorStatus(t *testing.T, harness serviceHarness, matches func(hook
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	log, _ := os.ReadFile(filepath.Join(harness.runtimeDir, "hooks", "hooks.log"))
+	log, _ := os.ReadFile(filepath.Join(harness.runtimeDir, "hooks-v3", "hooks.log"))
 	t.Fatalf("collector status never matched: %s\n%s", output, log)
 	return hooks.Activity{}
 }
 
 func collectorActivities(t *testing.T, harness serviceHarness) []hooks.Activity {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(harness.runtimeDir, "hooks", "hooks.log"))
+	data, err := os.ReadFile(filepath.Join(harness.runtimeDir, "hooks-v3", "hooks.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -349,6 +339,20 @@ func collectorActivities(t *testing.T, harness serviceHarness) []hooks.Activity 
 
 func TestHookIgnoresParentWorkspaceAndReviewRecoversExplicitBranch(t *testing.T) {
 	harness := isolatedCollectorHarness(t)
+	store, err := reviewstore.Open("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	user, err := store.User("test", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := contextservice.NewWithContext(t.Context(), store, user)
+	defer service.Close()
+	server := testsupport.Server(t, service, store)
+	defer server.Close()
+	harness.environment = append(harness.environment, "SERVEDIFF_SERVER_URL="+server.URL, "SERVEDIFF_TOKEN=test-token")
 	root := createWorktree(t, "renamed-repository")
 	collectorGit(t, root, "checkout", "--", "value.txt")
 	collectorGit(t, root, "branch", "-M", "main")
@@ -380,14 +384,12 @@ func TestHookIgnoresParentWorkspaceAndReviewRecoversExplicitBranch(t *testing.T)
 	if status.FileCount != 0 {
 		t.Fatalf("non-Git hook discovered child repositories: %+v", status)
 	}
-	if output, err := harness.run(nil, "service", "status", "--json"); err == nil || !strings.Contains(string(output), "stopped") {
-		t.Fatalf("non-Git hook started a service: %v %s", err, output)
-	}
-	captures, err := filepath.Glob(filepath.Join(harness.runtimeDir, "hooks", "jobs", "*", "capture.pending.json"))
+
+	captures, err := filepath.Glob(filepath.Join(harness.runtimeDir, "hooks-v3", "jobs", "*", "capture.pending.json"))
 	if err != nil || len(captures) != 0 {
 		t.Fatalf("non-Git hook captured child repositories: %v %v", captures, err)
 	}
-	output, err := harness.run(nil, "review", "--path", root, "--branch", branch, "--base", "main", "--config-file", configFile, "--no-browser")
+	output, err := harness.run(nil, "sync", "--path", root, "--branch", branch, "--base", "main", "--config-file", configFile, "--no-browser")
 	if err != nil {
 		t.Fatalf("explicit branch recovery: %v %s", err, output)
 	}
@@ -426,7 +428,7 @@ func TestCollectorRetryDeliversCaptureAfterHealthOutageAndCheckoutRemoval(t *tes
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v2/health" {
 			if !available.Load() {
-				paths, err := filepath.Glob(filepath.Join(harness.runtimeDir, "hooks", "jobs", "*", "capture.pending.json"))
+				paths, err := filepath.Glob(filepath.Join(harness.runtimeDir, "hooks-v3", "jobs", "*", "capture.pending.json"))
 				if err != nil || len(paths) != 1 {
 					t.Errorf("health contacted before capture persisted: %v %v", paths, err)
 				} else {
@@ -441,10 +443,10 @@ func TestCollectorRetryDeliversCaptureAfterHealthOutageAndCheckoutRemoval(t *tes
 				http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(ingestion.Health{StateID: "recovered-database", ProtocolVersion: ingestion.ProtocolVersion})
+			_ = json.NewEncoder(w).Encode(ingestion.Health{StateID: "recovered-database", ProtocolVersion: ingestion.ProtocolVersion, QueuedIngestion: true, IngestionEnabled: true})
 			return
 		}
-		if r.URL.Path != "/api/v2/ingestions" || r.Header.Get("X-Servediff-State") != "recovered-database" {
+		if r.URL.Path != "/api/v2/ingestion-jobs" || r.Header.Get("X-Servediff-State") != "recovered-database" {
 			http.NotFound(w, r)
 			return
 		}
@@ -454,13 +456,13 @@ func TestCollectorRetryDeliversCaptureAfterHealthOutageAndCheckoutRemoval(t *tes
 			return
 		}
 		requests <- input
-		_ = json.NewEncoder(w).Encode(ingestion.Receipt{ContextID: "recovered-context", ReviewURL: "/contexts/recovered-context", MCPURL: "/mcp/contexts/recovered-context", Snapshot: input.Scopes[0].Snapshot})
+		_ = json.NewEncoder(w).Encode(ingestion.Job{ID: input.SubmissionID, SubmissionID: input.SubmissionID, State: "succeeded", ContextID: "recovered-context"})
 	}))
 	defer server.Close()
 	harness.environment = append(harness.environment, "SERVEDIFF_SERVER_URL="+server.URL, "SERVEDIFF_TOKEN=isolated-token")
 	promptHook(t, harness, hookInput(t, root), "--harness", "codex")
 	waitCollectorStatus(t, harness, func(activity hooks.Activity) bool { return activity.Status == "waiting" })
-	paths, err := filepath.Glob(filepath.Join(harness.runtimeDir, "hooks", "jobs", "*", "*.pending.json"))
+	paths, err := filepath.Glob(filepath.Join(harness.runtimeDir, "hooks-v3", "jobs", "*", "*.pending.json"))
 	if err != nil || len(paths) != 1 {
 		t.Fatalf("capture not persisted before health: %v %v", paths, err)
 	}
@@ -480,7 +482,7 @@ func TestCollectorRetryDeliversCaptureAfterHealthOutageAndCheckoutRemoval(t *tes
 	otherRequests := make(chan struct{}, 1)
 	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v2/health" {
-			_ = json.NewEncoder(w).Encode(ingestion.Health{StateID: "wrong-database", ProtocolVersion: ingestion.ProtocolVersion})
+			_ = json.NewEncoder(w).Encode(ingestion.Health{StateID: "wrong-database", ProtocolVersion: ingestion.ProtocolVersion, QueuedIngestion: true, IngestionEnabled: true})
 			return
 		}
 		select {
@@ -504,7 +506,7 @@ func TestCollectorRetryDeliversCaptureAfterHealthOutageAndCheckoutRemoval(t *tes
 	select {
 	case delivered = <-requests:
 	case <-time.After(10 * time.Second):
-		log, _ := os.ReadFile(filepath.Join(harness.runtimeDir, "hooks", "hooks.log"))
+		log, _ := os.ReadFile(filepath.Join(harness.runtimeDir, "hooks-v3", "hooks.log"))
 		t.Fatalf("retry lost removed checkout's capture: %s", log)
 	}
 	before, _ := json.Marshal(captured.Request)

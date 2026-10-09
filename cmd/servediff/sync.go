@@ -1,5 +1,7 @@
 package main
 
+import "github.com/mattn/go-isatty"
+
 import (
 	"context"
 	"crypto/sha256"
@@ -11,11 +13,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/flexdinesh/servediff/internal/daemon"
 	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/reviewstore"
 	"github.com/flexdinesh/servediff/internal/submission"
-	"github.com/mattn/go-isatty"
 )
 
 type syncProgress struct {
@@ -42,14 +42,14 @@ func (progress *syncProgress) close() {
 }
 
 func runSync(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr io.Writer) (failure error) {
-	values, err := parseOptionsMode(arguments, stderr, false, true)
+	values, err := parseOptionsMode(arguments, stderr, true)
 	if errors.Is(err, errHelp) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	if values.hostSet || values.portSet || values.stateSet || values.webDirSet || values.retentionDaysSet || values.replace || values.fixture != "" || values.capture != "" {
+	if values.hostSet || values.portSet || values.stateSet || values.webDirSet || values.retentionDaysSet || values.replace || values.fixture != "" {
 		return errors.New("sync does not accept local server options")
 	}
 	values, err = resolvedCollectorSettings(values)
@@ -61,7 +61,7 @@ func runSync(ctx context.Context, arguments []string, stdin *os.File, stdout, st
 	}
 	defer func() {
 		if failure != nil {
-			failure = redactedError{cause: failure, secret: values.token}
+			failure = fmt.Errorf("%s", strings.ReplaceAll(failure.Error(), values.token, "[redacted]"))
 		}
 	}()
 	progress := &syncProgress{writer: stderr, enabled: values.debug}
@@ -88,7 +88,7 @@ func runSync(ctx context.Context, arguments []string, stdin *os.File, stdout, st
 	if !values.retry {
 		progress.show("Collect · discovering worktrees and reading changes")
 		values.progress = func(stage, detail string) { progress.show(stage + " · " + detail) }
-		requests, collectErr := collectSubmissions(ctx, "review", values, stdin)
+		requests, collectErr := collectSubmissions(ctx, values)
 		if collectErr != nil {
 			failures = append(failures, collectErr)
 		}
@@ -107,27 +107,24 @@ func runSync(ctx context.Context, arguments []string, stdin *os.File, stdout, st
 		return errors.New("no pending submissions")
 	}
 	progress.show("Upload · connecting")
-	target, err := resolveDestination(ctx, values, daemon.Settings{}, daemon.Explicit{}, nil)
+	target, err := submission.Resolve(ctx, values.server, values.token)
 	if err != nil {
 		return err
 	}
-	if !target.queued {
-		return errors.New("server does not support queued ingestion; upgrade it and resume with sync --retry")
-	}
-	target.progress = func(job ingestion.Job) {
+	target.Progress = func(job ingestion.Job) {
 		progress.show(fmt.Sprintf("Ingest · %s · attempt %d", job.State, job.Attempt))
 	}
 	for index, item := range pending {
-		if item.StateID != "" && item.StateID != target.target.Identity {
+		if item.StateID != "" && item.StateID != target.Target.Identity {
 			failures = append(failures, fmt.Errorf("submission %s belongs to another server database; retained for recovery", item.Request.SubmissionID))
 			continue
 		}
-		item.StateID = target.target.Identity
+		item.StateID = target.Target.Identity
 		if err := box.Save(item); err != nil {
 			return err
 		}
 		progress.show(fmt.Sprintf("Upload · %d/%d", index+1, len(pending)))
-		if _, err := target.deliver(ctx, item.Request); err != nil {
+		if _, err := target.Deliver(ctx, item.Request); err != nil {
 			failures = append(failures, fmt.Errorf("submission %s retained; resume with sync --retry: %w", item.Request.SubmissionID, err))
 			continue
 		}

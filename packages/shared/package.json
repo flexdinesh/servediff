@@ -8,6 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@pierre/diffs": "catalog:"
+    "@pierre/diffs": "catalog:",
+    "@servediff/api": "workspace:*"
   }
 }

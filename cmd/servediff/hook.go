@@ -14,10 +14,10 @@ import (
 	"time"
 
 	"github.com/flexdinesh/servediff/internal/collector"
-	"github.com/flexdinesh/servediff/internal/daemon"
 	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/hooks"
 	"github.com/flexdinesh/servediff/internal/ingestion"
+	"github.com/flexdinesh/servediff/internal/submission"
 )
 
 // Hooks are notifications, never a reason to block or continue an agent turn.
@@ -275,7 +275,7 @@ func newHookEngine(directory string) hooks.Engine {
 		}
 		return events, nil
 	}
-	var destination *destination
+	var destination *submission.Destination
 	engine.Resolve = func(ctx context.Context, event hooks.Event) (hooks.Target, error) {
 		values, err := resolvedCollectorSettings(options{configFile: event.ConfigFile})
 		if err != nil {
@@ -284,12 +284,12 @@ func newHookEngine(directory string) hooks.Engine {
 		if values.server == "" || values.token == "" {
 			return hooks.Target{}, errors.New("plugins require a remote server and bearer token; configure servediff config")
 		}
-		destination, err = resolveDestination(ctx, values, daemon.Settings{}, daemon.Explicit{}, nil)
+		destination, err = submission.Resolve(ctx, values.server, values.token)
 		if err != nil {
 			return hooks.Target{}, err
 		}
-		destination.target.SourceID, err = collector.SourceID()
-		return destination.target, err
+		destination.Target.SourceID, err = collector.SourceID()
+		return destination.Target, err
 	}
 	engine.Collect = func(ctx context.Context, event hooks.Event, previous string) (ingestion.Request, string, error) {
 		settings, err := collectionOptions(options{directory: event.InputPath, sessionName: event.SessionName, agent: event.Agent, runID: event.RunID, trigger: "agent-hook", base: event.Base, branch: event.Branch})
@@ -311,16 +311,16 @@ func newHookEngine(directory string) hooks.Engine {
 		return request, fingerprint, err
 	}
 	engine.Confirm = func(ctx context.Context, target hooks.Target, id string) (bool, error) {
-		return destination.current(ctx, id)
+		return destination.Current(ctx, id)
 	}
 	engine.SuppressInitialEmpty = func(ctx context.Context, target hooks.Target, request ingestion.Request) (bool, error) {
-		return destination.suppressInitialEmpty(ctx, request)
+		return destination.SuppressInitialEmpty(ctx, request)
 	}
 	engine.Deliver = func(ctx context.Context, target hooks.Target, request ingestion.Request) (string, error) {
-		if target != destination.target {
+		if target != destination.Target {
 			return "", errors.New("destination identity changed before delivery")
 		}
-		receipt, err := destination.deliver(ctx, request)
+		receipt, err := destination.Deliver(ctx, request)
 		return receipt.ContextID, err
 	}
 	return engine

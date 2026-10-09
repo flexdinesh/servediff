@@ -14,6 +14,7 @@ import (
 
 	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/processlock"
+	"github.com/flexdinesh/servediff/internal/submission"
 )
 
 var ErrUnchanged = errors.New("checkout unchanged")
@@ -42,11 +43,7 @@ type Event struct {
 
 // Identity identifies the server's persistent database (or memory instance).
 // An unknown identity disables suppression and prevents uncertain replay.
-type Target struct {
-	Destination string
-	Identity    string
-	SourceID    string
-}
+type Target = submission.Target
 
 type Engine struct {
 	Directory        string
@@ -85,7 +82,7 @@ type pending struct {
 
 func StateDirectory() (string, error) {
 	if runtime := os.Getenv("SERVEDIFF_RUNTIME_DIR"); runtime != "" {
-		return filepath.Join(runtime, "hooks"), nil
+		return filepath.Join(runtime, "hooks-v3"), nil
 	}
 	root := os.Getenv("XDG_STATE_HOME")
 	if root == "" {
@@ -95,7 +92,7 @@ func StateDirectory() (string, error) {
 		}
 		root = filepath.Join(home, ".local", "state")
 	}
-	return filepath.Join(root, "servediff", "hooks"), nil
+	return filepath.Join(root, "servediff", "hooks-v3"), nil
 }
 
 func key(parts ...string) string {

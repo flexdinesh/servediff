@@ -47,6 +47,7 @@ List available tasks with `mise tasks`. Keep personal overrides in
 | Install Playwright Chromium                                | `pnpm test:browser:install`      |
 | Run web unit and browser tests                             | `pnpm test:web`                  |
 | Run Go tests                                               | `mise run test:go`               |
+| Run boundary and shared-rule contracts                     | `mise run test:contracts`        |
 | Run distribution API conformance tests                     | `mise run test:conformance`      |
 | Run TypeScript checks                                      | `pnpm typecheck`                 |
 | Run JavaScript linting                                     | `pnpm lint`                      |
@@ -58,7 +59,7 @@ List available tasks with `mise tasks`. Keep personal overrides in
 Set `SERVEDIFF_TEST_PORT` for a separate browser-test server (default 4173), e.g. `SERVEDIFF_TEST_PORT=4183 mise exec -- pnpm --filter @servediff/web test:browser`.
 
 `mise run setup` enables the Husky `pre-push` hook. Every push runs
-`mise run check:push`: all repository suites and Go race tests, then rejects
+`mise run check:push`: all repository suites, boundary contracts and Go race tests, then rejects
 uncommitted generated API types or embedded assets. `mise run setup` installs
 Playwright Chromium; reinstall it after upgrading Playwright.
 The hook needs mise on `PATH`; mise activates project tools. Checks run on your
@@ -90,11 +91,11 @@ Start the fixture server with built web assets:
 mise run dev:server -- --no-browser
 ```
 
-`serve` collects its fixture before starting in the foreground and does not use
-the personal daemon. `review` collects the originating checkout and all registered
+`dev --fixture` collects its fixture before starting in the foreground and does
+not use personal lifecycle discovery. `sync` collects the originating checkout and all registered
 worktrees against the default branch merge base, plus working changes. Use
 `--base HEAD` for working changes only, and `--branch` for explicit object-only
-recovery. `review` submits to one configured destination and exits.
+recovery. `sync` submits to one configured destination and exits.
 Redirected stdin (`git diff | servediff`) starts a foreground local process with
 a fixed patch and ignores remote config. `servediff [PATH]` likewise collects
 once, defaults to the current directory, and opens a fixed checkout snapshot.
@@ -108,12 +109,10 @@ runtime directories (`SERVEDIFF_RUNTIME_DIR`) and in-memory state for lifecycle 
 must not register inputs in the personal service. `SERVEDIFF_EXIT_ON_STDIN_CLOSE`
 is a foreground development-process lifecycle hook.
 
-Before replacing a running binary, stop the service with `servediff service
-stop`. Stop older foreground binaries separately; they do not honor the new
-database ownership lock. Restart uses the invoking binary and restores retained
-contexts from persistent state. Memory state lasts only for one process. Server
-`retentionDays` defaults to seven; fresh submissions apply the current setting,
-while existing expiry and exact retries retain their earlier expiry.
+Stop running processes before upgrading. Schema 9 resets older versioned
+databases transactionally on first open. Current databases survive restart;
+in-memory state does not. Server `retentionDays` defaults to seven; fresh
+submissions apply the current setting, while exact retries preserve expiry.
 
 For isolated production-user tests, start `servediff-server` with a temporary
 persistent database. Initial admin credentials live in `<database>.admin-token`;
@@ -157,8 +156,8 @@ labels. Piped history uses “Search Piped”, with collection timestamps newest
 and no repository filters. The header identifies these reviews with a terminal
 icon, “Piped”, and collection time, without repository, branch, worktree, or directory.
 The optional API `Context.source` distinguishes `local` and `stdin` independently
-of `context.kind`; legacy captures also belong to Piped. Catalog presentation masks
-repository identity and stale state on legacy stdin observations. Repository
+of its identity. Catalog presentation masks repository identity and stale state
+on stdin observations. Repository
 freshness, host, branch, worktree, and status filters never exclude Piped imports.
 Catalog reads query stored metadata only; ingestion events, reconnect, and tab
 visibility reload the catalog without replacing the selected observation.
@@ -177,7 +176,7 @@ repository grouping. Unavailable entries are disabled and skipped during keyboar
 navigation. Filter selections persist while navigating and reopening the picker.
 Switching disposes the previous workspace's request ownership and resets transient
 state.
-The header's delete action removes the selected snapshot or legacy context, all
+The header's delete action removes the selected snapshot, all
 its stored diff scopes, comments, and reviewed-file marks after confirmation.
 Deletion preserves stream freshness history; older snapshots remain stale.
 It leaves Git files untouched, and a new collection can create a review again.

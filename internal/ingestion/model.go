@@ -4,7 +4,7 @@ package ingestion
 
 import "github.com/flexdinesh/servediff/internal/review"
 
-const ProtocolVersion = 2
+const ProtocolVersion = 3
 const MaxRequestBytes = 64 << 20
 
 // Comparison records the interpretation and resolved Git baseline of a capture.

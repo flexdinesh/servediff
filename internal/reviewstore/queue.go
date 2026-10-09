@@ -17,21 +17,10 @@ import (
 func initializeQueue(tx *sql.Tx) error {
 	for _, statement := range []string{
 		`CREATE TABLE IF NOT EXISTS ingestion_records (sequence INTEGER PRIMARY KEY AUTOINCREMENT, owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, source_id TEXT NOT NULL, submission_id TEXT NOT NULL, payload_hash TEXT NOT NULL, context_id TEXT NOT NULL DEFAULT '', UNIQUE(owner_id,source_id,submission_id))`,
-		`INSERT INTO ingestion_records(owner_id,source_id,submission_id,payload_hash,context_id) SELECT owner_id,source_id,submission_id,payload_hash,context_id FROM observation_submissions WHERE true ORDER BY rowid ON CONFLICT DO NOTHING`,
 		`CREATE TABLE IF NOT EXISTS ingestion_jobs (id TEXT PRIMARY KEY, sequence INTEGER NOT NULL UNIQUE REFERENCES ingestion_records(sequence), payload TEXT NOT NULL, state TEXT NOT NULL, attempt INTEGER NOT NULL DEFAULT 0, available_at INTEGER NOT NULL, lease_until INTEGER NOT NULL DEFAULT 0, lease_token TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '', context_id TEXT NOT NULL DEFAULT '')`,
 		`CREATE INDEX IF NOT EXISTS ingestion_jobs_ready ON ingestion_jobs(state,available_at,lease_until)`,
 	} {
 		if _, err := tx.Exec(statement); err != nil {
-			return err
-		}
-	}
-	var columns int
-	if err := tx.QueryRow("SELECT COUNT(*) FROM pragma_table_info('observation_stream_heads') WHERE name='arrival_sequence'").Scan(&columns); err != nil {
-		return err
-	}
-	if columns == 0 {
-		// Heads from the old synchronous path precede every newly accepted submission.
-		if _, err := tx.Exec(`ALTER TABLE observation_stream_heads ADD COLUMN arrival_sequence INTEGER NOT NULL DEFAULT 0`); err != nil {
 			return err
 		}
 	}

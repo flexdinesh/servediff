@@ -638,7 +638,7 @@ export function DiffWorkspace() {
         ? "Run a command that emits a Git patch, then pipe it into servediff."
         : mode === "staged"
           ? "No staged changes were collected in this snapshot."
-          : "No changes in this snapshot. Run servediff review to submit another.";
+          : "No changes in this snapshot. Collect another snapshot with servediff or servediff sync.";
   return (
     <main>
       <DiffToolbar />

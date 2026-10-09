@@ -29,10 +29,12 @@
     "@earendil-works/pi-coding-agent": "catalog:",
     "@opencode/plugin": "catalog:",
     "@types/node": "catalog:",
+    "ajv": "^8.20.0",
     "husky": "catalog:",
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "yaml": "^2.9.1"
   },
   "engines": {
     "node": ">=26 <27"

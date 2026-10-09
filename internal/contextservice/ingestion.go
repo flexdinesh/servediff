@@ -4,7 +4,6 @@ import (
 	"context"
 	"sync"
 
-	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/review"
 	"github.com/flexdinesh/servediff/internal/reviewdata"
@@ -16,7 +15,7 @@ func (service *Service) Ingest(ctx context.Context, input ingestion.Request) (Su
 		return Submission{}, err
 	}
 	if err := ingestion.Validate(input); err != nil {
-		return Submission{}, diffsource.Error(400, "%v", err)
+		return Submission{}, review.Error(400, "%v", err)
 	}
 	binding, err := service.store.IngestContext(ctx, service.user.ID, input)
 	if err != nil {
@@ -45,7 +44,7 @@ type storedSource struct {
 
 func (source *storedSource) Root() string { return source.metadata.Root }
 func (source *storedSource) Kind() string { return source.kind }
-func (source *storedSource) Support() diffsource.Support {
+func (source *storedSource) Support() review.Support {
 	scopes := []review.DiffMode{}
 	for _, mode := range []review.DiffMode{review.DiffAll, review.DiffStaged, review.DiffUnstaged} {
 		if _, ok := source.binding.DiffIDs[mode]; ok {
@@ -77,7 +76,7 @@ func (source *storedSource) Patch(ctx context.Context, mode review.DiffMode, fil
 		}
 	}
 	if !found {
-		return review.FilePatch{}, diffsource.Error(404, "File not in observation")
+		return review.FilePatch{}, review.Error(404, "File not in observation")
 	}
 	value, err := source.store.ObservationPatch(source.ownerID, source.id, mode, file.ID)
 	return value, requestError(err)
@@ -88,7 +87,7 @@ func (source *storedSource) Contents(ctx context.Context, mode review.DiffMode, 
 		return review.FileContents{}, err
 	}
 	if preview.Contents == nil {
-		return review.FileContents{}, diffsource.Error(404, "Full file contents were not collected")
+		return review.FileContents{}, review.Error(404, "Full file contents were not collected")
 	}
 	return *preview.Contents, nil
 }
@@ -97,8 +96,8 @@ func storedCapabilities(scopes []review.DiffMode, contents bool) session.Capabil
 	return session.ResolveCapabilities(storedSupport(scopes, contents), session.Policies{})
 }
 
-func storedSupport(scopes []review.DiffMode, contents bool) diffsource.Support {
-	return diffsource.Support{Scopes: scopes, StagingMetadata: len(scopes) > 1, FileContents: contents}
+func storedSupport(scopes []review.DiffMode, contents bool) review.Support {
+	return review.Support{Scopes: scopes, StagingMetadata: len(scopes) > 1, FileContents: contents}
 }
 
 func valueOrEmpty(value *string) string {

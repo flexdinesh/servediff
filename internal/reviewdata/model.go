@@ -3,6 +3,7 @@ package reviewdata
 
 import (
 	"errors"
+
 	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/review"
 )
@@ -23,14 +24,6 @@ type Binding struct {
 	LocationID   *string
 	RepositoryID *string
 	DiffIDs      map[review.DiffMode]string
-	VersionID    string
-}
-
-type CaptureInfo struct {
-	ID        string `json:"id"`
-	VersionID string `json:"versionId"`
-	CreatedAt int64  `json:"createdAt"`
-	ExpiresAt int64  `json:"expiresAt"`
 }
 
 type ContextInfo struct {

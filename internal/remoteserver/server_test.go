@@ -18,6 +18,7 @@ import (
 	"github.com/flexdinesh/servediff/internal/collector"
 	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/reviewstore"
+	"github.com/flexdinesh/servediff/internal/testsupport"
 )
 
 const testToken = "remote-test-credential-at-least-thirty-two-bytes"
@@ -129,11 +130,11 @@ func TestMultiUserRESTMCPAndEventIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	adminReceipt, err := ingestion.NewClient(server.URL, testToken).Submit(t.Context(), input)
+	adminReceipt, err := testsupport.NewClient(server.URL, testToken).Submit(t.Context(), input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherReceipt, err := ingestion.NewClient(server.URL, otherToken).Submit(t.Context(), input)
+	otherReceipt, err := testsupport.NewClient(server.URL, otherToken).Submit(t.Context(), input)
 	if err != nil {
 		t.Fatal(err)
 	}

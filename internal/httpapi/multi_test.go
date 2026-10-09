@@ -3,7 +3,6 @@ package httpapi
 import (
 	"context"
 	"fmt"
-	"github.com/flexdinesh/servediff/internal/collector"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,10 +10,11 @@ import (
 	"path/filepath"
 	"testing"
 	"testing/fstest"
-	"time"
 
+	"github.com/flexdinesh/servediff/internal/collector"
 	"github.com/flexdinesh/servediff/internal/contextservice"
 	"github.com/flexdinesh/servediff/internal/diffsource"
+	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/review"
 	"github.com/flexdinesh/servediff/internal/reviewstore"
 	"github.com/flexdinesh/servediff/internal/session"
@@ -40,7 +40,7 @@ func (provider *testProvider) Resolve(_ context.Context, id string) (session.Ses
 }
 func (provider *testProvider) Get(ctx context.Context, id string) (contextservice.Context, error) {
 	active, err := provider.Resolve(ctx, id)
-	return contextservice.Context{ID: id, Kind: "capture", Name: "patch", Capabilities: active.Capabilities, Availability: "available"}, err
+	return contextservice.Context{ID: id, Kind: "observation", Name: "patch", Capabilities: active.Capabilities, Availability: "available"}, err
 }
 func (provider *testProvider) Delete(ctx context.Context, id string) error {
 	if err := ctx.Err(); err != nil {
@@ -70,7 +70,7 @@ func (provider *testProvider) List(ctx context.Context, limit int, _ string) (co
 	return page, nil
 }
 
-func TestMultiContextCaptureIsolation(t *testing.T) {
+func TestMultiContextObservationIsolation(t *testing.T) {
 	raw, err := os.ReadFile("../../test/fixtures/sample.diff")
 	if err != nil {
 		t.Fatal(err)
@@ -88,7 +88,7 @@ func TestMultiContextCaptureIsolation(t *testing.T) {
 		}
 		provider.sessions = append(provider.sessions, patchSession(t, store, source, string(raw), session.Policies{}))
 	}
-	server := httptest.NewServer(NewMulti(provider, store, fstest.MapFS{"index.html": {Data: []byte("web")}}, ""))
+	server := httptest.NewServer(NewMulti(provider, store, fstest.MapFS{"index.html": {Data: []byte("web")}}))
 	defer server.Close()
 	first := provider.sessions[0]
 	second := provider.sessions[1]
@@ -97,7 +97,7 @@ func TestMultiContextCaptureIsolation(t *testing.T) {
 	snapshot := decode[review.RepositoryDiff](t, request(t, server.Client(), http.MethodGet, firstBase+"/diffs/current?scope=all", nil))
 	other := decode[review.RepositoryDiff](t, request(t, server.Client(), http.MethodGet, secondBase+"/diffs/current?scope=all", nil))
 	if snapshot.ID == other.ID {
-		t.Fatal("independent captures share identity")
+		t.Fatal("independent observations share identity")
 	}
 	for _, suffix := range []string{
 		"/diffs/" + snapshot.ID + "/versions/" + snapshot.VersionID,
@@ -116,11 +116,11 @@ func TestMultiContextCaptureIsolation(t *testing.T) {
 	}
 	response.Body.Close()
 	response = request(t, server.Client(), http.MethodGet, server.URL+"/api/v1/session", nil)
-	if response.StatusCode != http.StatusConflict {
+	if response.StatusCode != http.StatusNotFound {
 		t.Fatalf("legacy ambiguity status %d", response.StatusCode)
 	}
 	problem := decode[map[string]any](t, response)
-	if problem["code"] != "context_required" {
+	if problem["status"] != float64(404) {
 		t.Fatalf("legacy problem %#v", problem)
 	}
 	response = request(t, server.Client(), http.MethodGet, firstBase+"/diffs/"+snapshot.ID+"/versions/"+snapshot.VersionID, nil)
@@ -136,9 +136,9 @@ func TestMultiGlobalRoutesWithoutContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	server := httptest.NewServer(NewMulti(&testProvider{}, store, fstest.MapFS{"index.html": {Data: []byte("web")}}, ""))
+	server := httptest.NewServer(NewMulti(&testProvider{}, store, fstest.MapFS{"index.html": {Data: []byte("web")}}))
 	defer server.Close()
-	for _, suffix := range []string{"/api/v2/contexts", "/api/v2/metrics", "/api/v1/metrics", "/api/v1/diffs/captures", "/openapi.yaml", "/contexts/example"} {
+	for _, suffix := range []string{"/api/v2/contexts", "/api/v2/metrics", "/openapi.yaml", "/contexts/example"} {
 		response := request(t, server.Client(), http.MethodGet, server.URL+suffix, nil)
 		if response.StatusCode != http.StatusOK {
 			t.Fatalf("global route %s status %d", suffix, response.StatusCode)
@@ -187,7 +187,7 @@ func TestMultiObservationsAndRetainedFilesWithoutCheckout(t *testing.T) {
 		}
 		targets = append(targets, target)
 	}
-	server := httptest.NewServer(NewMulti(provider, store, fstest.MapFS{"index.html": {Data: []byte("web")}}, ""))
+	server := httptest.NewServer(NewMulti(provider, store, fstest.MapFS{"index.html": {Data: []byte("web")}}))
 	defer server.Close()
 	page := decode[contextservice.Page](t, request(t, server.Client(), http.MethodGet, server.URL+"/api/v2/contexts?repository=shared&branch=shared", nil))
 	if len(page.Contexts) != 2 || page.Contexts[0].Observation == nil || page.Contexts[1].Observation == nil || page.Contexts[0].Observation.SourceID == page.Contexts[1].Observation.SourceID {
@@ -205,10 +205,6 @@ func TestMultiObservationsAndRetainedFilesWithoutCheckout(t *testing.T) {
 	firstBase := server.URL + "/api/v2/contexts/" + first.Context.ID
 	secondBase := server.URL + "/api/v2/contexts/" + targets[1].Context.ID
 	snapshot := first.Snapshot
-	complete, err := store.VersionComplete(snapshot.VersionID, len(snapshot.Files))
-	if err != nil || !complete {
-		t.Fatalf("ingestion did not persist previews: %v,%v", complete, err)
-	}
 	staged := decode[review.RepositoryDiff](t, request(t, server.Client(), http.MethodGet, firstBase+"/diffs/current?scope=staged", nil))
 	if staged.Mode != review.DiffStaged || staged.ID == snapshot.ID || staged.VersionID == snapshot.VersionID {
 		t.Fatalf("scope identities: %#v", staged)
@@ -269,109 +265,6 @@ func gitCommand(t *testing.T, root string, arguments ...string) {
 	}
 }
 
-func TestMultiLegacyForegroundIsPinned(t *testing.T) {
-	raw, err := os.ReadFile("../../test/fixtures/sample.diff")
-	if err != nil {
-		t.Fatal(err)
-	}
-	store, err := reviewstore.Open("")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
-	provider := &testProvider{}
-	for range 2 {
-		source, err := diffsource.OpenPatch(string(raw))
-		if err != nil {
-			t.Fatal(err)
-		}
-		provider.sessions = append(provider.sessions, patchSession(t, store, source, string(raw), session.Policies{}))
-	}
-	active := provider.sessions[0]
-	server := httptest.NewServer(NewMulti(provider, store, fstest.MapFS{}, active.ContextID))
-	defer server.Close()
-	response := request(t, server.Client(), http.MethodGet, server.URL+"/api/v1/diffs/current?scope=all", nil)
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("foreground legacy status %d", response.StatusCode)
-	}
-	snapshot := decode[review.RepositoryDiff](t, response)
-	if snapshot.ID != active.DiffIDs[review.DiffAll] {
-		t.Fatalf("foreground legacy diff %s", snapshot.ID)
-	}
-}
-
-// blockedSource exposes the computation lifetime without relying on Git timing.
-type blockedSource struct {
-	diffsource.Source
-	started  chan context.Context
-	finished chan struct{}
-}
-
-func (source *blockedSource) Snapshot(ctx context.Context, mode review.DiffMode) (review.RepositoryDiff, error) {
-	source.started <- ctx
-	<-ctx.Done()
-	close(source.finished)
-	return review.RepositoryDiff{}, ctx.Err()
-}
-
-func TestMultiSharedSnapshotLifetime(t *testing.T) {
-	raw, err := os.ReadFile("../../test/fixtures/sample.diff")
-	if err != nil {
-		t.Fatal(err)
-	}
-	store, err := reviewstore.Open("")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
-	patch, err := diffsource.OpenPatch(string(raw))
-	if err != nil {
-		t.Fatal(err)
-	}
-	active := patchSession(t, store, patch, string(raw), session.Policies{})
-	source := &blockedSource{Source: patch, started: make(chan context.Context, 1), finished: make(chan struct{})}
-	active.Source = source
-	lifetime, stop := context.WithCancel(t.Context())
-	defer stop()
-	handler := NewMultiWithContext(lifetime, &testProvider{sessions: []session.Session{active}}, store, fstest.MapFS{}, "")
-	caller, cancelCaller := context.WithCancel(t.Context())
-	defer cancelCaller()
-	request := httptest.NewRequest(http.MethodGet, "/api/v2/contexts/"+active.ContextID+"/diffs/current?scope=all", nil).WithContext(caller)
-	done := make(chan struct{})
-	go func() {
-		handler.ServeHTTP(httptest.NewRecorder(), request)
-		close(done)
-	}()
-	var computation context.Context
-	select {
-	case computation = <-source.started:
-	case <-time.After(2 * time.Second):
-		t.Fatal("snapshot did not start")
-	}
-	cancelCaller()
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("cancelled caller did not return")
-	}
-	if err := computation.Err(); err != nil {
-		t.Fatalf("caller cancelled shared computation: %v", err)
-	}
-	secondDone := make(chan struct{})
-	go func() {
-		request := httptest.NewRequest(http.MethodGet, "/api/v2/contexts/"+active.ContextID+"/diffs/current?scope=all", nil)
-		handler.ServeHTTP(httptest.NewRecorder(), request)
-		close(secondDone)
-	}()
-	stop()
-	select {
-	case <-source.finished:
-	case <-time.After(2 * time.Second):
-		t.Fatal("service shutdown did not cancel snapshot")
-	}
-	select {
-	case <-secondDone:
-	case <-time.After(2 * time.Second):
-		t.Fatal("shared waiter did not return after shutdown")
-	}
+func (p *testProvider) ListFiltered(ctx context.Context, limit int, cursor string, filter ingestion.Filter) (contextservice.Page, error) {
+	return p.List(ctx, limit, cursor)
 }

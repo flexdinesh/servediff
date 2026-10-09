@@ -5,16 +5,23 @@ function record(value: unknown): value is Record<string, unknown> {
 }
 
 export async function resetFixtureState(request: APIRequestContext) {
-  const response = await request.get("/api/v1/comments");
+  const catalog: unknown = await (await request.get("/api/v2/contexts")).json();
+  if (!record(catalog) || !Array.isArray(catalog.contexts))
+    throw new Error("Missing fixture catalog");
+  const context: unknown = catalog.contexts[0];
+  if (!record(context) || typeof context.id !== "string")
+    throw new Error("Missing fixture context");
+  const base = "/api/v2/contexts/" + encodeURIComponent(context.id);
+  const response = await request.get(base + "/comments");
   const body: unknown = await response.json();
   if (record(body) && Array.isArray(body.comments)) {
     for (const comment of body.comments) {
       if (record(comment) && typeof comment.id === "string")
         await request.delete(
-          `/api/v1/comments/${encodeURIComponent(comment.id)}`,
+          `${base}/comments/${encodeURIComponent(comment.id)}`,
         );
     }
   }
   for (const scope of ["all", "staged", "unstaged"])
-    await request.delete(`/api/v1/review-marks?scope=${scope}`);
+    await request.delete(`${base}/review-marks?scope=${scope}`);
 }

@@ -18,14 +18,13 @@ import (
 
 func TestAdmissionCapabilitiesMatchHealthAndRoutes(t *testing.T) {
 	for _, test := range []struct {
-		name            string
-		disabled, queue bool
-		want            serverapp.Capabilities
+		name  string
+		queue bool
+		want  serverapp.Capabilities
 	}{
-		{"foreground", true, false, serverapp.Capabilities{}},
-		{"legacy direct", false, false, serverapp.Capabilities{IngestionEnabled: true}},
-		{"remote queued", false, true, serverapp.Capabilities{IngestionEnabled: true, QueuedIngestion: true}},
-		{"disabled with queue", true, true, serverapp.Capabilities{}},
+		{"foreground", false, serverapp.Capabilities{}},
+
+		{"remote queued", true, serverapp.Capabilities{IngestionEnabled: true, QueuedIngestion: true}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			store, err := reviewstore.Open(":memory:")
@@ -39,7 +38,7 @@ func TestAdmissionCapabilitiesMatchHealthAndRoutes(t *testing.T) {
 			}
 			service := contextservice.NewWithContext(t.Context(), store, user)
 			defer service.Close()
-			options := serverapp.Options{IngestionDisabled: test.disabled}
+			options := serverapp.Options{}
 			if test.queue {
 				options.Queue = store.Queue()
 			}
@@ -50,7 +49,7 @@ func TestAdmissionCapabilitiesMatchHealthAndRoutes(t *testing.T) {
 			if health.IngestionEnabled != test.want.IngestionEnabled || health.QueuedIngestion != test.want.QueuedIngestion {
 				t.Fatalf("health capabilities: %+v, want %+v", health, test.want)
 			}
-			for path, enabled := range map[string]bool{"/api/v2/ingestions": test.want.IngestionEnabled, "/api/v2/ingestion-jobs": test.want.QueuedIngestion} {
+			for path, enabled := range map[string]bool{"/api/v2/ingestions": false, "/api/v2/ingestion-jobs": test.want.QueuedIngestion} {
 				response := request(t, d, "POST", path, bytes.NewBufferString("{}"))
 				response.Body.Close()
 				want := http.StatusNotFound
@@ -83,7 +82,7 @@ func TestLocalAndQueuedRemoteShareSnapshotContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	local := httptest.NewServer(serverapp.Handler(t.Context(), service, store, fstest.MapFS{}, submitted.Context.ID, serverapp.Options{IngestionDisabled: true}))
+	local := httptest.NewServer(serverapp.Handler(t.Context(), service, store, fstest.MapFS{}, submitted.Context.ID, serverapp.Options{}))
 	defer local.Close()
 	remote := start(t, ":memory:", true)
 	plugin := input

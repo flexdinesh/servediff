@@ -17,12 +17,12 @@ func TestEscapedDirectoryPreservesFlagDelimiter(t *testing.T) {
 	}
 }
 
-func TestHelpDocumentsServiceWithoutInternalFlags(t *testing.T) {
+func TestHelpDocumentsModesWithoutLegacyCommands(t *testing.T) {
 	var output bytes.Buffer
 	if err := run(t.Context(), []string{"--help"}, nil, io.Discard, &output); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output.String(), "servediff service") || !strings.Contains(output.String(), "servediff serve") || strings.Contains(output.String(), "runtime-dir") {
+	if !strings.Contains(output.String(), "servediff sync") || strings.Contains(output.String(), "servediff service") || strings.Contains(output.String(), "runtime-dir") {
 		t.Fatalf("help = %s", output.String())
 	}
 }
@@ -47,7 +47,7 @@ func TestOptionsRejectRemovedAgentFlag(t *testing.T) {
 }
 
 func TestHelpDocumentsHarnessFlag(t *testing.T) {
-	for _, arguments := range [][]string{{"--help"}, {"review", "--help"}, {"hook", "--help"}} {
+	for _, arguments := range [][]string{{"--help"}, {"sync", "--help"}, {"hook", "--help"}} {
 		var output bytes.Buffer
 		if err := run(t.Context(), arguments, nil, &output, &output); err != nil {
 			t.Fatal(err)
@@ -55,15 +55,5 @@ func TestHelpDocumentsHarnessFlag(t *testing.T) {
 		if !strings.Contains(output.String(), "-harness") || strings.Contains(output.String(), "-agent") {
 			t.Fatalf("help for %v: %s", arguments, output.String())
 		}
-	}
-}
-
-func TestInternalDefaultPortIsNotAPublicPort(t *testing.T) {
-	if _, err := parseOptions([]string{"--port", "-1"}, io.Discard); err == nil {
-		t.Fatal("negative port accepted")
-	}
-	values, err := parseOptionsMode([]string{"--port", "-1", "--runtime-dir", "runtime"}, io.Discard, true)
-	if err != nil || values.port != -1 || values.runtimeDir != "runtime" {
-		t.Fatalf("internal options = %#v, %v", values, err)
 	}
 }

@@ -41,6 +41,7 @@ func (source *sourceStub) Contents(context.Context, review.DiffMode, review.Chan
 }
 
 type storeStub struct {
+	MutationStore
 	comments []review.ReviewComment
 	putCalls int
 	putError error
@@ -79,7 +80,7 @@ func TestListCommentsFiltersAndEnrichesInStoredOrder(t *testing.T) {
 		comment("resolved", review.DiffStaged, "anchored.go", "same", "resolved"),
 		comment("unknown", review.DiffAll, "unknown.go", "unknown", "open"),
 	}}
-	service := New(session.Resolve(source, session.Policies{}), store)
+	service := New(boundSession(source, session.Policies{}), store)
 
 	got, err := service.ListComments(context.Background(), false)
 	if err != nil {
@@ -118,7 +119,7 @@ func TestListCommentsReturnsNonNilEmptySliceWithoutSnapshots(t *testing.T) {
 		support:   diffsource.Support{Scopes: []review.DiffMode{review.DiffAll}},
 		snapshots: make(map[review.DiffMode]review.RepositoryDiff),
 	}
-	service := New(session.Resolve(source, session.Policies{}), &storeStub{})
+	service := New(boundSession(source, session.Policies{}), &storeStub{})
 
 	got, err := service.ListComments(context.Background(), false)
 	if err != nil {
@@ -140,7 +141,7 @@ func TestListCommentsPropagatesSnapshotFailure(t *testing.T) {
 		errors:    map[review.DiffMode]error{review.DiffAll: want},
 	}
 	store := &storeStub{comments: []review.ReviewComment{comment("id", review.DiffAll, "file.go", "old", "open")}}
-	service := New(session.Resolve(source, session.Policies{}), store)
+	service := New(boundSession(source, session.Policies{}), store)
 
 	if _, err := service.ListComments(context.Background(), false); !errors.Is(err, want) {
 		t.Fatalf("error = %v", err)
@@ -153,7 +154,7 @@ func TestListCommentsPropagatesCancellation(t *testing.T) {
 		snapshots: make(map[review.DiffMode]review.RepositoryDiff),
 	}
 	store := &storeStub{comments: []review.ReviewComment{comment("id", review.DiffAll, "file.go", "old", "open")}}
-	service := New(session.Resolve(source, session.Policies{}), store)
+	service := New(boundSession(source, session.Policies{}), store)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -165,7 +166,7 @@ func TestListCommentsPropagatesCancellation(t *testing.T) {
 func TestResolveCommentIsIdempotentAndAllowsStaleIdentity(t *testing.T) {
 	source := &sourceStub{support: diffsource.Support{Scopes: []review.DiffMode{review.DiffAll}}}
 	store := &storeStub{comments: []review.ReviewComment{comment("stale-id", review.DiffAll, "gone.go", "old", "open")}}
-	service := New(session.Resolve(source, session.Policies{}), store)
+	service := New(boundSession(source, session.Policies{}), store)
 
 	got, err := service.ResolveComment("stale-id")
 	if err != nil {
@@ -192,7 +193,7 @@ func TestResolveCommentIsIdempotentAndAllowsStaleIdentity(t *testing.T) {
 
 func TestResolveCommentReturnsTypedNotFoundError(t *testing.T) {
 	source := &sourceStub{support: diffsource.Support{Scopes: []review.DiffMode{review.DiffAll}}}
-	service := New(session.Resolve(source, session.Policies{}), &storeStub{})
+	service := New(boundSession(source, session.Policies{}), &storeStub{})
 
 	_, err := service.ResolveComment("missing")
 	if !errors.Is(err, ErrCommentNotFound) {
@@ -211,7 +212,7 @@ func TestResolveCommentPropagatesStoreFailure(t *testing.T) {
 		comments: []review.ReviewComment{comment("id", review.DiffAll, "file.go", "old", "open")},
 		putError: want,
 	}
-	service := New(session.Resolve(source, session.Policies{}), store)
+	service := New(boundSession(source, session.Policies{}), store)
 
 	if _, err := service.ResolveComment("id"); !errors.Is(err, want) {
 		t.Fatalf("error = %v", err)
@@ -221,7 +222,7 @@ func TestResolveCommentPropagatesStoreFailure(t *testing.T) {
 func TestMethodsRejectDisabledCommentCapability(t *testing.T) {
 	source := &sourceStub{support: diffsource.Support{Scopes: []review.DiffMode{review.DiffAll}}}
 	store := &storeStub{comments: []review.ReviewComment{comment("id", review.DiffAll, "file.go", "old", "open")}}
-	service := New(session.Resolve(source, session.Policies{Comments: session.DisablePolicy}), store)
+	service := New(boundSession(source, session.Policies{Comments: session.DisablePolicy}), store)
 
 	if _, err := service.ListComments(context.Background(), false); !capabilityError(err) {
 		t.Fatalf("list error = %v", err)
@@ -241,14 +242,14 @@ func capabilityError(err error) bool {
 
 func comment(id string, scope review.DiffMode, path, fingerprint, status string) review.ReviewComment {
 	return review.ReviewComment{
-		ID: id, Path: path, Scope: scope, Fingerprint: fingerprint,
+		ID: id, DiffID: "diff-" + string(scope), Path: path, Scope: scope, Fingerprint: fingerprint,
 		Side: "additions", Start: 1, End: 1, Code: "+code", Body: "Fix it",
 		Status: status, CreatedAt: 1,
 	}
 }
 
 func repository(mode review.DiffMode, files ...review.ChangedFile) review.RepositoryDiff {
-	return review.RepositoryDiff{Mode: mode, Files: files}
+	return review.RepositoryDiff{ID: "diff-" + string(mode), Mode: mode, Files: files}
 }
 
 func changedFile(path, fingerprint string) review.ChangedFile {
@@ -267,7 +268,7 @@ func TestUpdateCommentPreservesAnchorAndValidatesBeforeWriting(t *testing.T) {
 	source := &sourceStub{support: diffsource.Support{Scopes: []review.DiffMode{review.DiffAll}}}
 	original := comment("id", review.DiffAll, "file.go", "fingerprint", "open")
 	store := &storeStub{comments: []review.ReviewComment{original}}
-	service := New(session.Resolve(source, session.Policies{}), store)
+	service := New(boundSession(source, session.Policies{}), store)
 	body, status := "  revised concern  ", "resolved"
 	got, err := service.UpdateComment("id", UpdateCommentInput{Body: &body, Status: &status})
 	if err != nil {
@@ -284,11 +285,17 @@ func TestUpdateCommentPreservesAnchorAndValidatesBeforeWriting(t *testing.T) {
 			t.Fatalf("accepted invalid update: %#v", input)
 		}
 	}
-	disabled := New(session.Resolve(source, session.Policies{Comments: session.DisablePolicy}), store)
+	disabled := New(boundSession(source, session.Policies{Comments: session.DisablePolicy}), store)
 	if _, err := disabled.UpdateComment("id", UpdateCommentInput{Body: &body}); !capabilityError(err) {
 		t.Fatalf("disabled update: %v", err)
 	}
 	if store.putCalls != 1 {
 		t.Fatalf("invalid/disabled update wrote %d times", store.putCalls)
 	}
+}
+
+func boundSession(source review.Source, policies session.Policies) session.Session {
+	active := session.Resolve(source, policies)
+	active.DiffIDs = map[review.DiffMode]string{review.DiffAll: "diff-all", review.DiffStaged: "diff-staged", review.DiffUnstaged: "diff-unstaged"}
+	return active
 }

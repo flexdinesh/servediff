@@ -12,7 +12,6 @@ import (
 
 	"github.com/flexdinesh/servediff/internal/collector"
 	"github.com/flexdinesh/servediff/internal/contextservice"
-	"github.com/flexdinesh/servediff/internal/daemon"
 	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/hooks"
 	"github.com/flexdinesh/servediff/internal/ingestion"
@@ -28,33 +27,29 @@ type loadedInput struct {
 	captureID string
 	contextID string
 	mcpURL    string
-	submitted bool
 	remote    bool
 }
 
-func acquireInput(values options, stdin *os.File) (daemon.InitialInput, error) {
-	if values.capture != "" {
-		return daemon.InitialInput{Kind: "reopen", CaptureID: values.capture}, nil
-	}
+func acquireInput(values options, stdin *os.File) (initialInput, error) {
 	cwd, err := filepath.Abs(".")
 	if err != nil {
-		return daemon.InitialInput{}, err
+		return initialInput{}, err
 	}
 	var input io.Reader
 	if values.fixture != "" {
 		file, err := os.Open(values.fixture)
 		if err != nil {
-			return daemon.InitialInput{}, err
+			return initialInput{}, err
 		}
 		defer file.Close()
 		input = file
 	} else {
 		if stdin == nil {
-			return daemon.InitialInput{}, errors.New("stdin unavailable")
+			return initialInput{}, errors.New("stdin unavailable")
 		}
 		piped, err := redirected(stdin)
 		if err != nil {
-			return daemon.InitialInput{}, err
+			return initialInput{}, err
 		}
 		if values.directory == "-" || piped {
 			input = stdin
@@ -63,34 +58,18 @@ func acquireInput(values options, stdin *os.File) (daemon.InitialInput, error) {
 	if input != nil {
 		raw, err := io.ReadAll(io.LimitReader(input, diffsource.MaxInputBytes+1))
 		if err != nil {
-			return daemon.InitialInput{}, err
+			return initialInput{}, err
 		}
 		if len(raw) > diffsource.MaxInputBytes {
-			return daemon.InitialInput{}, errors.New("piped diff exceeds the 16 MiB input limit")
+			return initialInput{}, errors.New("piped diff exceeds the 16 MiB input limit")
 		}
-		return daemon.InitialInput{Kind: "capture", Raw: raw, SubmittedFrom: cwd}, nil
+		return initialInput{Kind: "capture", Raw: raw, SubmittedFrom: cwd}, nil
 	}
 	path, err := filepath.Abs(values.directory)
-	return daemon.InitialInput{Kind: "worktree", Path: path}, err
+	return initialInput{Kind: "worktree", Path: path}, err
 }
 
 func newSubmissionID() string { return rand.Text() }
-
-func submitInput(ctx context.Context, client *daemon.Connection, id string, input daemon.InitialInput) (contextservice.Submission, error) {
-	if input.Ingestion != nil {
-		return client.Ingest(ctx, *input.Ingestion)
-	}
-	switch input.Kind {
-	case "worktree":
-		return client.Register(ctx, id, input.Path)
-	case "capture":
-		return client.Capture(ctx, id, input.Raw, input.SubmittedFrom)
-	case "reopen":
-		return client.OpenCapture(ctx, input.CaptureID)
-	default:
-		return contextservice.Submission{}, errors.New("unknown diff input")
-	}
-}
 
 func submissionInput(value contextservice.Submission, elapsed time.Duration) loadedInput {
 	input := loadedInput{snapshot: value.Snapshot, processed: elapsed, mode: "git"}
@@ -140,7 +119,7 @@ func sourceActivity(metadata ingestion.Metadata, comparison diffsource.Compariso
 		Base: comparison.BaseRef + "@" + comparison.BaseOID, Head: comparison.HeadOID, Agent: metadata.Agent, RunID: metadata.RunID}
 }
 
-func collectSubmission(ctx context.Context, command string, values options, stdin *os.File) (request ingestion.Request, failure error) {
+func collectSubmission(ctx context.Context, values options) (request ingestion.Request, failure error) {
 	recordCollectorActivity(hooks.Activity{Stage: "collection", Status: "started", InputPath: values.directory, Agent: values.agent, RunID: values.runID, Branch: values.branch, Base: values.base})
 	defer func() {
 		activity := hooks.Activity{Stage: "collection", Status: "collected", InputPath: values.directory}
@@ -162,9 +141,6 @@ func collectSubmission(ctx context.Context, command string, values options, stdi
 	if err != nil {
 		return ingestion.Request{}, err
 	}
-	if command != "review" {
-		return ingestion.Request{}, errors.New("expected review command")
-	}
 	return collector.Collect(ctx, values.directory, settings)
 }
 
@@ -180,7 +156,7 @@ func recordCollectorActivity(activity hooks.Activity, secrets ...string) {
 	}
 }
 
-func collectInitialInput(ctx context.Context, values options, input daemon.InitialInput) (ingestion.Request, error) {
+func collectInitialInput(ctx context.Context, values options, input initialInput) (ingestion.Request, error) {
 	settings, err := collectionOptions(values)
 	if err != nil {
 		return ingestion.Request{}, err
@@ -189,4 +165,11 @@ func collectInitialInput(ctx context.Context, values options, input daemon.Initi
 		return collector.Collect(ctx, input.Path, settings)
 	}
 	return collector.CollectPatch(ctx, string(input.Raw), input.SubmittedFrom, settings)
+}
+
+type initialInput struct {
+	Kind          string
+	Path          string
+	Raw           []byte
+	SubmittedFrom string
 }

@@ -13,18 +13,17 @@ import (
 	"time"
 
 	"github.com/flexdinesh/servediff/internal/contextservice"
-	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/httpapi"
 	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/ingestionqueue"
 	"github.com/flexdinesh/servediff/internal/mcpapi"
+	"github.com/flexdinesh/servediff/internal/review"
 	"github.com/flexdinesh/servediff/internal/reviewservice"
 	buildversion "github.com/flexdinesh/servediff/internal/version"
 )
 
 type Options struct {
-	Queue             ingestionqueue.Queue
-	IngestionDisabled bool
+	Queue ingestionqueue.Queue
 }
 
 // Capabilities are resolved once by the transport composition. Both admission
@@ -36,8 +35,8 @@ type Capabilities struct {
 
 func (options Options) Capabilities() Capabilities {
 	return Capabilities{
-		IngestionEnabled: !options.IngestionDisabled,
-		QueuedIngestion:  !options.IngestionDisabled && options.Queue != nil,
+		IngestionEnabled: options.Queue != nil,
+		QueuedIngestion:  options.Queue != nil,
 	}
 }
 
@@ -65,15 +64,12 @@ func Handler(ctx context.Context, service *contextservice.Service, store httpapi
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(ingestion.Health{IngestionEnabled: capabilities.IngestionEnabled, QueuedIngestion: capabilities.QueuedIngestion, StateID: service.UserID(), ProtocolVersion: ingestion.ProtocolVersion})
 	})
-	if capabilities.IngestionEnabled {
-		mux.HandleFunc("/api/v2/ingestions", func(w http.ResponseWriter, r *http.Request) { ingest(service, w, r) })
-	}
 	if capabilities.QueuedIngestion {
 		mux.HandleFunc("/api/v2/ingestion-jobs", func(w http.ResponseWriter, r *http.Request) { acceptJob(service, configuration.Queue, w, r) })
 		mux.HandleFunc("/api/v2/ingestion-jobs/", func(w http.ResponseWriter, r *http.Request) { getJob(service, configuration.Queue, w, r) })
 	}
 	mux.HandleFunc("/api/v2/events", func(w http.ResponseWriter, r *http.Request) { stream(ctx, service, w, r) })
-	mux.Handle("/", httpapi.NewMultiWithContext(ctx, service, store, assets, defaultID))
+	mux.Handle("/", httpapi.NewMulti(service, store, assets))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -127,22 +123,6 @@ func decodeIngestion(service *contextservice.Service, w http.ResponseWriter, r *
 	}
 	return input, true
 }
-func ingest(service *contextservice.Service, w http.ResponseWriter, r *http.Request) {
-	input, ok := decodeIngestion(service, w, r)
-	if !ok {
-		return
-	}
-	result, err := service.Ingest(r.Context(), input)
-	if err != nil {
-		applicationError(w, err)
-		return
-	}
-	id := result.Context.ID
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(ingestion.Receipt{ContextID: id, ReviewURL: "/contexts/" + id, MCPURL: "/mcp/contexts/" + id, Snapshot: result.Snapshot})
-}
-
 func stream(ctx context.Context, service *contextservice.Service, w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		problem(w, 405, "Method not allowed")
@@ -216,7 +196,7 @@ func contextMCP(service *contextservice.Service, store httpapi.Store, defaultID 
 }
 
 func applicationError(w http.ResponseWriter, err error) {
-	var request *diffsource.RequestError
+	var request *review.RequestError
 	if errors.As(err, &request) {
 		problem(w, request.Status, request.Detail)
 		return

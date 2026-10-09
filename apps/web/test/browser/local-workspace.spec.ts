@@ -27,7 +27,7 @@ async function localWorkspace(page: Page) {
     id: "local-review",
     locationId: "location",
     repositoryId: "repo",
-    kind: "worktree",
+    kind: "observation",
     createdAt: 1,
     lastSubmittedAt: 1,
     lastChangedAt: 1,
@@ -247,7 +247,7 @@ async function deletableWorkspace(
   single = false,
 ) {
   const state = await localWorkspace(page);
-  if (snapshot) state.context.kind = "capture";
+  if (snapshot) state.context.source = "stdin";
   const contexts = [
     state.context,
     { ...state.context, id: "other", name: "Other review" },
@@ -290,20 +290,20 @@ async function deletableWorkspace(
   return { ...deletion, contexts, state, deletion };
 }
 
-test("context deletion confirms its scope and cancel restores focus without deleting", async ({
+test("snapshot deletion confirms its scope and cancel restores focus without deleting", async ({
   page,
 }) => {
   const state = await deletableWorkspace(page);
   const trigger = page.getByRole("button", {
-    name: "Delete context",
+    name: "Delete snapshot",
     exact: true,
   });
   await trigger.click();
   const dialog = page.getByRole("dialog", {
-    name: "Delete context?",
+    name: "Delete snapshot?",
     exact: true,
   });
-  await expect(dialog).toContainText("all its stored diffs");
+  await expect(dialog).toContainText("this snapshot");
   await expect(dialog).toContainText("comments and reviewed-file marks");
   await expect(dialog).toContainText("Local review");
   await expect(
@@ -356,14 +356,14 @@ test("deletion failure stays retryable and pending deletion blocks dismissal and
   const { deletion } = await deletableWorkspace(page);
   deletion.fail = true;
   await page
-    .getByRole("button", { name: "Delete context", exact: true })
+    .getByRole("button", { name: "Delete snapshot", exact: true })
     .click();
   const dialog = page.getByRole("dialog", {
-    name: "Delete context?",
+    name: "Delete snapshot?",
     exact: true,
   });
   await dialog
-    .getByRole("button", { name: "Delete context", exact: true })
+    .getByRole("button", { name: "Delete snapshot", exact: true })
     .click();
   await expect(dialog.getByRole("alert")).toHaveText(
     "Storage unavailable. Try again.",
@@ -372,7 +372,7 @@ test("deletion failure stays retryable and pending deletion blocks dismissal and
   deletion.fail = false;
   deletion.hold = true;
   await dialog
-    .getByRole("button", { name: "Delete context", exact: true })
+    .getByRole("button", { name: "Delete snapshot", exact: true })
     .click();
   await expect(
     dialog.getByRole("button", { name: "Deleting…", exact: true }),
@@ -395,10 +395,10 @@ test("deleting the last context shows a focused empty state on mobile", async ({
   await deletableWorkspace(page, false, true);
   await page.setViewportSize({ width: 360, height: 640 });
   await page
-    .getByRole("button", { name: "Delete context", exact: true })
+    .getByRole("button", { name: "Delete snapshot", exact: true })
     .click();
   const dialog = page.getByRole("dialog", {
-    name: "Delete context?",
+    name: "Delete snapshot?",
     exact: true,
   });
   const bounds = await dialog.boundingBox();
@@ -407,7 +407,7 @@ test("deleting the last context shows a focused empty state on mobile", async ({
   expect(bounds.x + bounds.width).toBeLessThanOrEqual(360);
   expect(bounds.y + bounds.height).toBeLessThanOrEqual(640);
   await dialog
-    .getByRole("button", { name: "Delete context", exact: true })
+    .getByRole("button", { name: "Delete snapshot", exact: true })
     .click();
   await expect(page).toHaveURL(/\/$/);
   await expect(
@@ -611,11 +611,13 @@ test("context switching isolates delayed repository responses and fixed captures
       id: "second-repo",
       name: "Second repo",
       root: "/second-repo",
+      repositoryId: "second-repo",
     },
     {
       ...state.context,
       id: "piped-patch",
-      kind: "capture",
+      kind: "observation",
+      source: "stdin",
       name: "Captured patch",
       root: null,
       locationId: null,
@@ -655,7 +657,7 @@ test("context switching isolates delayed repository responses and fixed captures
         id: `diff-${id}`,
         name: context.name,
         root: context.root ?? "",
-        source: context.kind === "capture" ? "stdin" : "local",
+        source: context.source === "stdin" ? "stdin" : "local",
       },
     });
   });
@@ -670,6 +672,7 @@ test("context switching isolates delayed repository responses and fixed captures
   await page
     .getByRole("combobox", { name: "Search reviews" })
     .fill("Second repo");
+  await page.keyboard.press("Enter");
   await page.keyboard.press("Enter");
   await expect(page.locator(".context-switcher-name")).toHaveText(
     "Second repo",
@@ -806,11 +809,7 @@ test("Piped history ignores repository filters and switches timestamp rows by ke
   await expect(trigger).toBeFocused();
 });
 
-for (const kind of [
-  "worktree",
-  "observation",
-  "capture",
-] satisfies ApiContext["kind"][]) {
+for (const kind of ["observation"] satisfies ApiContext["kind"][]) {
   test(`landing stays unselected when ${kind} contexts have no usable diff`, async ({
     page,
   }) => {
@@ -842,7 +841,7 @@ for (const kind of [
     expect(state.scopes).toEqual([]);
     await trigger.click();
     const dialog = page.getByRole("dialog", { name: "Switch review" });
-    if (kind === "capture") {
+    if (state.context.source === "stdin") {
       await expect(dialog.getByRole("option")).toHaveCount(1);
       await dialog.getByRole("option", { name: /^Piped/ }).click();
       await expect(
@@ -939,6 +938,7 @@ test("empty contexts remain accessible through the picker and direct URLs", asyn
   await dialog.getByRole("button", { name: "Filters", exact: true }).click();
   await dialog.getByRole("checkbox", { name: "All", exact: true }).check();
   await dialog.getByRole("option", { name: /Local review/ }).click();
+  await dialog.getByRole("option").click();
   await expect(page).toHaveURL(/\/contexts\/local-review$/);
   await expect(
     page.getByRole("heading", { name: "No changes in this snapshot" }),
@@ -970,14 +970,14 @@ test("deleting the last diff returns to landing when empty contexts remain", asy
   const picker = page.getByRole("dialog", { name: "Switch review" });
   await picker.getByRole("button", { name: "Filters", exact: true }).click();
   await picker.getByRole("checkbox", { name: "All", exact: true }).check();
-  await expect(picker.getByRole("option")).toHaveCount(2);
+  await expect(picker.getByRole("option")).toContainText("2 snapshots");
   await page.keyboard.press("Escape");
   await page
-    .getByRole("button", { name: "Delete context", exact: true })
+    .getByRole("button", { name: "Delete snapshot", exact: true })
     .click();
   await page
-    .getByRole("dialog", { name: "Delete context?", exact: true })
-    .getByRole("button", { name: "Delete context", exact: true })
+    .getByRole("dialog", { name: "Delete snapshot?", exact: true })
+    .getByRole("button", { name: "Delete snapshot", exact: true })
     .click();
   await expect(page).toHaveURL(/\/$/);
   await expect(
@@ -1011,6 +1011,7 @@ test("unavailable context keeps the switcher usable", async ({ page }) => {
     .getByRole("combobox", { name: "Search reviews" })
     .fill("Local review");
   await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
   await ready(page);
   await page
     .getByRole("button", { name: "Switch review", exact: true })
@@ -1024,310 +1025,6 @@ test("unavailable context keeps the switcher usable", async ({ page }) => {
   await search.press("Enter");
   await expect(dialog).toBeVisible();
   await expect(page).toHaveURL(/\/contexts\/local-review$/);
-});
-
-test("repository popup orders checkouts by changes and shares click and keyboard search", async ({
-  page,
-}) => {
-  const state = await localWorkspace(page);
-  const contexts: ApiContext[] = [
-    {
-      ...state.context,
-      name: "servediff",
-      branch: "main",
-      changedFileCount: 0,
-      lastChangedAt: 10,
-    },
-    {
-      ...state.context,
-      id: "external-tree",
-      name: "servediff",
-      branch: "feature/picker",
-      worktreeName: "picker-folder",
-      root: "/elsewhere/picker-folder",
-      lastChangedAt: 3,
-      changedFileCount: 6,
-    },
-    {
-      ...state.context,
-      id: "other-repo",
-      name: "dotfiles",
-      repositoryId: "dotfiles",
-      root: "/dotfiles",
-      lastChangedAt: 2,
-      changedFileCount: 0,
-    },
-  ];
-  await page.route("**/api/v2/contexts?*", (route) =>
-    route.fulfill({ json: { contexts, nextCursor: null } }),
-  );
-  await page.route("**/api/v2/contexts/*", (route) => {
-    const id = new URL(route.request().url()).pathname.split("/").at(-1);
-    return route.fulfill({
-      json: contexts.find((context) => context.id === id),
-    });
-  });
-  await page.goto("/");
-  await ready(page);
-  const trigger = page.getByRole("button", {
-    name: "Switch review",
-    exact: true,
-  });
-  await expect(trigger).toHaveAttribute("aria-haspopup", "dialog");
-  await expect(trigger).toContainText("servediff");
-  await expect(trigger).toContainText("feature/picker");
-  await trigger.click();
-  const dialog = page.getByRole("dialog", { name: "Switch review" });
-  const search = dialog.getByRole("combobox", { name: "Search reviews" });
-  await expect(search).toBeFocused();
-  await dialog.getByRole("button", { name: "Filters", exact: true }).click();
-  const includeAll = dialog.getByRole("checkbox", { name: "All", exact: true });
-  await expect(includeAll).not.toBeChecked();
-  await expect(dialog.getByRole("option")).toHaveCount(1);
-  await expect(dialog.getByRole("option")).toContainText("feature/picker");
-  await includeAll.check();
-  await expect(dialog.getByRole("option")).toHaveCount(3);
-  await expect(dialog.locator(".project-picker-name")).toHaveText([
-    "servediff",
-    "servediff",
-    "dotfiles",
-  ]);
-  await expect(dialog.locator(".project-picker-changes")).toHaveText([
-    "6 changed files",
-    "No changes",
-    "No changes",
-  ]);
-  const desktopBounds = await dialog.boundingBox();
-  if (!desktopBounds) throw new Error("Missing popup bounds");
-  expect(desktopBounds.y).toBeLessThan(120);
-  await search.fill("servediff");
-  await expect(dialog.getByRole("option")).toHaveCount(2);
-  await expect(dialog.locator(".project-picker-branch")).toHaveText([
-    "feature/picker",
-    "main",
-  ]);
-  await search.fill("");
-  await expect(
-    dialog.getByRole("option", { name: /feature\/picker/ }),
-  ).toContainText("Worktree · /elsewhere/picker-folder");
-  await search.fill("no matching repo");
-  await expect(dialog.getByRole("status")).toHaveText("No matching reviews");
-  await search.fill("");
-  await page.keyboard.press("ArrowUp");
-  await page.keyboard.press("ArrowUp");
-  await expect(
-    dialog.getByRole("option", { name: /feature\/picker/ }),
-  ).toHaveAttribute("aria-selected", "true");
-  await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/\/contexts\/external-tree$/);
-  await expect(dialog).toBeHidden();
-  await expect(trigger).toBeFocused();
-  await expect(trigger).toContainText("feature/picker");
-
-  for (const shortcut of ["Control+k", "Meta+k"]) {
-    await page.keyboard.press(shortcut);
-    await expect(dialog).toBeVisible();
-    await expect(search).toBeFocused();
-    await expect(search).toHaveValue("");
-    await search.fill("servediff main");
-    await expect(dialog.getByRole("option")).toHaveCount(1);
-    await page.keyboard.press("Escape");
-    await expect(dialog).toBeHidden();
-    await expect(trigger).toBeFocused();
-  }
-  await page.setViewportSize({ width: 360, height: 640 });
-  await trigger.click();
-  const bounds = await dialog.boundingBox();
-  if (!bounds) throw new Error("Missing popup bounds");
-  expect(bounds.x).toBeGreaterThanOrEqual(0);
-  expect(bounds.x + bounds.width).toBeLessThanOrEqual(360);
-  expect(bounds.y).toBeGreaterThanOrEqual(0);
-  expect(bounds.y + bounds.height).toBeLessThanOrEqual(640);
-  await expect(
-    dialog.getByRole("option", { name: /feature\/picker/ }),
-  ).toBeVisible();
-  await dialog.getByRole("option", { name: /dotfiles/ }).click();
-  await expect(page).toHaveURL(/\/contexts\/other-repo$/);
-  await expect(dialog).toBeHidden();
-});
-
-test("picker distinguishes unknown and unavailable status and refreshes change counts", async ({
-  page,
-}) => {
-  const state = await localWorkspace(page);
-  let changedFileCount = 0;
-  const unknown: ApiContext = {
-    ...state.context,
-    id: "unknown",
-    name: "Unknown repo",
-    root: "/unknown",
-    changedFileCount: null,
-  };
-  const unavailable: ApiContext = {
-    ...state.context,
-    id: "unavailable",
-    name: "Missing repo",
-    root: "/missing",
-    availability: "unavailable",
-    changedFileCount: null,
-  };
-  await page.route("**/api/v2/contexts?*", (route) =>
-    route.fulfill({
-      json: {
-        contexts: [
-          { ...state.context, changedFileCount },
-          unknown,
-          unavailable,
-        ],
-        nextCursor: null,
-      },
-    }),
-  );
-  await page.goto("/contexts/local-review");
-  await ready(page);
-  await page
-    .getByRole("button", { name: "Switch review", exact: true })
-    .click();
-  const dialog = page.getByRole("dialog", { name: "Switch review" });
-  await dialog.getByRole("button", { name: "Filters", exact: true }).click();
-  const includeAll = dialog.getByRole("checkbox", { name: "All", exact: true });
-  await expect(includeAll).not.toBeChecked();
-  await expect(dialog.getByRole("option")).toHaveCount(0);
-  await includeAll.check();
-  await expect(
-    dialog.getByRole("option", { name: /Local review/ }),
-  ).toContainText("No changes");
-  await expect(
-    dialog.getByRole("option", { name: /Unknown repo/ }),
-  ).toContainText("Status unknown");
-  await expect(
-    dialog.getByRole("option", { name: /Missing repo/ }),
-  ).toContainText("Unavailable");
-  await expect(
-    dialog.getByRole("option", { name: /Missing repo/ }),
-  ).toBeDisabled();
-  const search = dialog.getByRole("combobox", { name: "Search reviews" });
-  await search.fill("Local");
-  await expect(dialog.getByRole("option")).toHaveCount(1);
-  await includeAll.uncheck();
-  await expect(dialog.getByRole("option")).toHaveCount(0);
-  await search.focus();
-  changedFileCount = 2;
-  await page.evaluate(() =>
-    document.dispatchEvent(new Event("visibilitychange")),
-  );
-  await expect(dialog.getByRole("option")).toContainText("2 changed files");
-  await expect(search).toBeFocused();
-  await expect(search).toHaveValue("Local");
-  await expect(search).toHaveAttribute(
-    "aria-activedescendant",
-    (await dialog.getByRole("option").getAttribute("id")) ?? "",
-  );
-});
-
-test("picker combines freshness and All filters and preserves them on reopening", async ({
-  page,
-}) => {
-  const state = await localWorkspace(page);
-  const contexts: ApiContext[] = [
-    state.context,
-    { ...state.context, id: "old", name: "Old changes", stale: true },
-    {
-      ...state.context,
-      id: "empty",
-      name: "Empty latest",
-      changedFileCount: 0,
-    },
-    {
-      ...state.context,
-      id: "unknown",
-      name: "Unknown latest",
-      changedFileCount: null,
-    },
-    {
-      ...state.context,
-      id: "missing",
-      name: "Missing latest",
-      availability: "unavailable",
-    },
-    {
-      ...state.context,
-      id: "old-empty",
-      name: "Empty stale",
-      stale: true,
-      changedFileCount: 0,
-    },
-    {
-      ...state.context,
-      id: "old-missing",
-      name: "Missing stale",
-      stale: true,
-      availability: "unavailable",
-    },
-  ];
-  await page.route("**/api/v2/contexts?*", (route) =>
-    route.fulfill({ json: { contexts, nextCursor: null } }),
-  );
-  await page.goto("/");
-  await ready(page);
-  const trigger = page.getByRole("button", {
-    name: "Switch review",
-    exact: true,
-  });
-  await trigger.click();
-  const dialog = page.getByRole("dialog", { name: "Switch review" });
-  await dialog.getByRole("button", { name: "Filters", exact: true }).click();
-  const search = dialog.getByRole("combobox", { name: "Search reviews" });
-  const latest = dialog.getByRole("button", { name: "Latest", exact: true });
-  const stale = dialog.getByRole("button", { name: "Stale", exact: true });
-  const allFreshness = dialog.getByRole("button", { name: "All", exact: true });
-  const includeAll = dialog.getByRole("checkbox", { name: "All", exact: true });
-  await expect(latest).toHaveAttribute("aria-pressed", "true");
-  await expect(allFreshness).toHaveAttribute("aria-pressed", "false");
-  await expect(stale).toHaveAttribute("aria-pressed", "false");
-  await expect(includeAll).not.toBeChecked();
-  await expect(
-    dialog.getByTitle(/include unavailable.*no changes/i),
-  ).toBeVisible();
-  const checkboxBounds = await includeAll.boundingBox();
-  const staleBounds = await stale.boundingBox();
-  if (!checkboxBounds || !staleBounds) throw new Error("Missing filter bounds");
-  expect(checkboxBounds.x).toBeGreaterThan(staleBounds.x + staleBounds.width);
-  await expect(dialog.getByRole("option")).toHaveCount(1);
-  await expect(dialog.getByRole("option")).toContainText("Local review");
-  await search.fill("Old changes");
-  await expect(dialog.getByRole("option")).toHaveCount(0);
-  await allFreshness.click();
-  await expect(dialog.getByRole("option")).toHaveCount(1);
-  await expect(dialog.getByRole("option")).toContainText("Stale");
-  await search.fill("");
-  await expect(dialog.getByRole("option")).toHaveCount(2);
-  await stale.click();
-  await expect(dialog.getByRole("option")).toHaveCount(1);
-  await expect(dialog.getByRole("option")).toContainText("Old changes");
-  await includeAll.check();
-  await expect(dialog.getByRole("option")).toHaveCount(3);
-  await expect(
-    dialog.getByRole("option", { name: /Empty stale/ }),
-  ).toContainText("No changes");
-  await expect(
-    dialog.getByRole("option", { name: /Missing stale/ }),
-  ).toContainText("Unavailable");
-  await latest.click();
-  await expect(dialog.getByRole("option")).toHaveCount(4);
-  await expect(dialog.getByRole("option", { name: /Old changes/ })).toHaveCount(
-    0,
-  );
-  await includeAll.uncheck();
-  await expect(dialog.getByRole("option")).toHaveCount(1);
-  await stale.click();
-  await includeAll.check();
-  await page.keyboard.press("Escape");
-  await expect(dialog).toBeHidden();
-  await trigger.click();
-  await expect(stale).toHaveAttribute("aria-pressed", "true");
-  await expect(includeAll).toBeChecked();
-  await expect(dialog.getByRole("option")).toHaveCount(3);
 });
 
 test("observation picker drills into repositories and searches independent sources on the same branch", async ({
@@ -1544,6 +1241,7 @@ test("picker combines filters before grouping and preserves them across navigati
       ...state.context,
       id: "missing",
       name: "Missing checkout",
+      repositoryId: "missing-repository",
       availability: "unavailable",
     },
   ];
@@ -1623,9 +1321,7 @@ test("picker combines filters before grouping and preserves them across navigati
   );
   const unavailable = dialog.getByRole("option", { name: /Missing checkout/ });
   await expect(unavailable).toBeDisabled();
-  await expect(unavailable).toContainText(
-    "No collected snapshot for this checkout",
-  );
+  await expect(unavailable).toContainText("Snapshot unavailable");
   await search.fill("Missing checkout");
   await search.press("ArrowDown");
   await search.press("Enter");

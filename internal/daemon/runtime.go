@@ -18,15 +18,11 @@ import (
 type Settings = controlapi.Settings
 type Status = controlapi.Status
 
-type Explicit struct{ Host, Port, State, WebDir, RetentionDays bool }
-
 type Descriptor struct {
 	Endpoint string `json:"endpoint"`
 	Token    string `json:"token"`
 	Status   Status `json:"status"`
 }
-
-func DefaultSettings() Settings { return Settings{Host: "127.0.0.1", Port: -1, RetentionDays: 7} }
 
 func normalizeSettings(settings Settings) Settings {
 	if settings.RetentionDays == 0 {

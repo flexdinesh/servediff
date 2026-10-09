@@ -90,8 +90,8 @@ The default listener binds to `127.0.0.1` on an available port from 7981–7990.
 `--port 0` chooses an OS-assigned port. A non-loopback listener exposes local
 reviews to reachable clients. The browser opens a loopback URL for wildcard binds.
 
-Legacy `review`, `serve`, and `service` commands remain compatibility
-paths during migration. Use `servediff --help` for usage.
+Use `servediff --help` for usage. Legacy `review`, `serve`, `service` and
+`capture` commands are removed. Development fixtures use `servediff dev --fixture`.
 
 ## Agent hooks and remote ingestion
 
@@ -107,7 +107,7 @@ Configure a remote server and token first. Plugins are remote-only.
 The plugin returns after scheduling; a detached Go worker collects the checkout
 and all registered worktrees using the same branch comparison as manual review.
 Non-Git directories are ignored. Child repositories and branches without live
-checkouts are excluded; use `review --branch` for explicit object-only recovery.
+checkouts are excluded; use `sync --branch` for explicit object-only recovery.
 Persistent Git identities survive checkout moves and branch renames.
 Initially clean automatic captures are skipped. Dirty-to-clean transitions and
 new session associations are submitted. Unchanged uploads are skipped, overlapping requests
@@ -123,7 +123,7 @@ Inspect collection/delivery activity and retry waiting payloads:
 servediff collector status
 servediff collector retry
 tail -n 50 ~/.local/state/servediff/hooks/hooks.log
-servediff review --branch feature --base main --no-browser
+servediff sync --branch feature --base main --no-browser
 ```
 
 Manually schedule the same detached collection used by harness plugins:
@@ -238,9 +238,8 @@ triggers or `servediff collector retry`. Their pending-data retention remains
 seven days independently of server retention. Manual commands always submit and
 report failures directly.
 
-Collectors advertise ingestion protocol 2 for comparison and session metadata;
-upgrade collector and server together. Servers still accept protocol 1 payloads
-and retries from older collectors.
+Collectors and servers require ingestion protocol 3; upgrade them together.
+Public v1 routes and synchronous ingestion are removed.
 
 `/api/v2/contexts` lists stored observations with `q`, `repository`, `branch`,
 `worktree`, `hostname`, `sourceId`, `runId`, `harness`, `sessionId` and `sessionName`
@@ -257,9 +256,9 @@ WebMCP while the page is open; see [docs/webmcp.md](docs/webmcp.md).
 
 Local data lives in `$XDG_STATE_HOME/servediff/state.db`, or
 `~/.local/state/servediff/state.db`. `--state memory` disables persistence.
-Migrations preserve historical reviews and retained captures. Legacy worktree
-contexts cannot load Git through the server; submit a new observation with
-`servediff review`. Unsupported databases are rejected without deleting data.
+Schema 9 intentionally resets older versioned databases on first open. Current
+state persists across restarts; newer or unrecognized databases are refused.
+Legacy commands and pending producer payloads are retired.
 Stop older processes before upgrading. Local service lifecycle uses a private
 authenticated loopback control listener; its token does not authenticate the
 local public API.

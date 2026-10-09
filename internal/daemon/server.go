@@ -26,18 +26,7 @@ import (
 	"github.com/flexdinesh/servediff/internal/webui"
 )
 
-// InitialInput is acquired by a foreground CLI, never by the daemon's stdin.
-type InitialInput struct {
-	IngestionDisabled bool
-	Ingestion         *ingestion.Request
-	Kind              string
-	Path              string
-	Raw               []byte
-	SubmittedFrom     string
-	CaptureID         string
-}
-
-func Run(ctx context.Context, settings Settings, runtimeDir string, initial *InitialInput, ready func(Status, *contextservice.Submission)) error {
+func Run(ctx context.Context, settings Settings, runtimeDir string, initial *ingestion.Request, ready func(Status, *contextservice.Submission)) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	instanceID := rand.Text()
@@ -62,7 +51,7 @@ func Run(ctx context.Context, settings Settings, runtimeDir string, initial *Ini
 	return runServer(ctx, cancel, settings, "", instanceID, initial, ready, log.New(os.Stderr, "servediff: ", log.LstdFlags))
 }
 
-func runServer(ctx context.Context, cancel context.CancelFunc, settings Settings, runtimeDir, instanceID string, initial *InitialInput, ready func(Status, *contextservice.Submission), logger *log.Logger) error {
+func runServer(ctx context.Context, cancel context.CancelFunc, settings Settings, runtimeDir, instanceID string, initial *ingestion.Request, ready func(Status, *contextservice.Submission), logger *log.Logger) error {
 	settings = normalizeSettings(settings)
 	if settings.RetentionDays < 1 || settings.RetentionDays > 106751 {
 		return errors.New("retention-days must be between 1 and 106751")
@@ -99,7 +88,7 @@ func runServer(ctx context.Context, cancel context.CancelFunc, settings Settings
 	var submitted *contextservice.Submission
 	defaultContextID := ""
 	if initial != nil {
-		value, err := initialSubmission(ctx, service, *initial)
+		value, err := service.Ingest(ctx, *initial)
 		if err != nil {
 			return err
 		}
@@ -145,13 +134,10 @@ func runServer(ctx context.Context, cancel context.CancelFunc, settings Settings
 	statusFunc := func() (Status, error) {
 		value := status
 		var err error
-		value.Worktrees, value.Captures, err = service.Count(ctx)
+		value.Observations, err = service.Count(ctx)
 		return value, err
 	}
 	configuration := serverapp.Options{}
-	if initial != nil {
-		configuration.IngestionDisabled = initial.IngestionDisabled
-	}
 	mux := serverapp.Handler(ctx, service, store, assets, defaultContextID, configuration)
 	webServer := &http.Server{Handler: publicRequests(mux, settings), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second, ErrorLog: logger}
 	endpoints := []serverapp.Endpoint{{Server: webServer, Listener: listener}}
@@ -162,8 +148,8 @@ func runServer(ctx context.Context, cancel context.CancelFunc, settings Settings
 		}
 		defer controlListener.Close()
 		token := rand.Text() + rand.Text()
-		controlHandler := controlapi.New(token, service, statusFunc, cancel)
-		if configuration.IngestionDisabled {
+		controlHandler := controlapi.New(token, statusFunc, cancel)
+		{
 			underlying := controlHandler
 			controlHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/control/v1/status" && r.URL.Path != "/control/v1/shutdown" {
@@ -186,22 +172,6 @@ func runServer(ctx context.Context, cancel context.CancelFunc, settings Settings
 			ready(status, submitted)
 		}
 	})
-}
-
-func initialSubmission(ctx context.Context, service *contextservice.Service, input InitialInput) (contextservice.Submission, error) {
-	if input.Ingestion != nil {
-		return service.Ingest(ctx, *input.Ingestion)
-	}
-	switch input.Kind {
-	case "worktree":
-		return service.Register(ctx, rand.Text(), input.Path)
-	case "capture":
-		return service.Capture(ctx, rand.Text(), string(input.Raw), input.SubmittedFrom)
-	case "reopen":
-		return service.OpenCapture(ctx, input.CaptureID)
-	default:
-		return contextservice.Submission{}, errors.New("unknown diff input")
-	}
 }
 
 func listenWeb(settings Settings) (net.Listener, error) {

@@ -1,0 +1,591 @@
+[
+  {
+    "name": "anchored",
+    "comment": {
+      "id": "comment",
+      "diffId": "diff",
+      "versionId": "v1",
+      "path": "file.txt",
+      "scope": "all",
+      "fingerprint": "hash",
+      "side": "additions",
+      "start": 1,
+      "end": 1,
+      "code": "+ changed",
+      "body": "Check <this> & that",
+      "status": "open",
+      "createdAt": 1
+    },
+    "repository": {
+      "id": "diff",
+      "versionId": "v1",
+      "locationId": null,
+      "repositoryId": null,
+      "source": "stdin",
+      "root": "",
+      "name": "Piped",
+      "branch": "",
+      "head": null,
+      "mode": "all",
+      "files": [
+        {
+          "id": "file",
+          "path": "file.txt",
+          "oldPath": null,
+          "status": "M",
+          "indexStatus": "",
+          "worktreeStatus": "",
+          "additions": 1,
+          "deletions": 1,
+          "binary": false,
+          "fingerprint": "hash"
+        }
+      ],
+      "revision": "r1"
+    },
+    "valid": true,
+    "applicability": "anchored",
+    "export": "<code-review-comments version=\"2\">\n  <instructions>Address every anchored open review comment. Inspect the current working tree before editing because code and line numbers describe the reviewed snapshot. Preserve unrelated changes. Resolved and stale comments are context only; do not act on them. If an anchored open comment cannot be applied, report it using its comment ID.</instructions>\n  <review origin=\"unknown\">\n    <file path=\"file.txt\">\n      <comment id=\"C1\" selection=\"single-line\" line=\"1\" end-line=\"1\" side=\"additions\" scope=\"all\" status=\"open\" applicability=\"anchored\">\n        <code>+ changed</code>\n        <body>Check &lt;this&gt; &amp; that</body>\n      </comment>\n    </file>\n  </review>\n</code-review-comments>"
+  },
+  {
+    "name": "unknown snapshot",
+    "comment": {
+      "id": "comment",
+      "diffId": "diff",
+      "versionId": "v1",
+      "path": "file.txt",
+      "scope": "all",
+      "fingerprint": "hash",
+      "side": "additions",
+      "start": 1,
+      "end": 1,
+      "code": "+ changed",
+      "body": "Check <this> & that",
+      "status": "open",
+      "createdAt": 1
+    },
+    "repository": null,
+    "valid": true,
+    "applicability": "unknown"
+  },
+  {
+    "name": "unknown identity",
+    "comment": {
+      "id": "comment",
+      "diffId": "",
+      "versionId": "v1",
+      "path": "file.txt",
+      "scope": "all",
+      "fingerprint": "hash",
+      "side": "additions",
+      "start": 1,
+      "end": 1,
+      "code": "+ changed",
+      "body": "Check <this> & that",
+      "status": "open",
+      "createdAt": 1
+    },
+    "repository": {
+      "id": "diff",
+      "versionId": "v1",
+      "locationId": null,
+      "repositoryId": null,
+      "source": "stdin",
+      "root": "",
+      "name": "Piped",
+      "branch": "",
+      "head": null,
+      "mode": "all",
+      "files": [
+        {
+          "id": "file",
+          "path": "file.txt",
+          "oldPath": null,
+          "status": "M",
+          "indexStatus": "",
+          "worktreeStatus": "",
+          "additions": 1,
+          "deletions": 1,
+          "binary": false,
+          "fingerprint": "hash"
+        }
+      ],
+      "revision": "r1"
+    },
+    "valid": true,
+    "applicability": "unknown"
+  },
+  {
+    "name": "other diff",
+    "comment": {
+      "id": "comment",
+      "diffId": "other",
+      "versionId": "v1",
+      "path": "file.txt",
+      "scope": "all",
+      "fingerprint": "hash",
+      "side": "additions",
+      "start": 1,
+      "end": 1,
+      "code": "+ changed",
+      "body": "Check <this> & that",
+      "status": "open",
+      "createdAt": 1
+    },
+    "repository": {
+      "id": "diff",
+      "versionId": "v1",
+      "locationId": null,
+      "repositoryId": null,
+      "source": "stdin",
+      "root": "",
+      "name": "Piped",
+      "branch": "",
+      "head": null,
+      "mode": "all",
+      "files": [
+        {
+          "id": "file",
+          "path": "file.txt",
+          "oldPath": null,
+          "status": "M",
+          "indexStatus": "",
+          "worktreeStatus": "",
+          "additions": 1,
+          "deletions": 1,
+          "binary": false,
+          "fingerprint": "hash"
+        }
+      ],
+      "revision": "r1"
+    },
+    "valid": true,
+    "applicability": "other-scope"
+  },
+  {
+    "name": "other scope",
+    "comment": {
+      "id": "comment",
+      "diffId": "diff",
+      "versionId": "v1",
+      "path": "file.txt",
+      "scope": "staged",
+      "fingerprint": "hash",
+      "side": "additions",
+      "start": 1,
+      "end": 1,
+      "code": "+ changed",
+      "body": "Check <this> & that",
+      "status": "open",
+      "createdAt": 1
+    },
+    "repository": {
+      "id": "diff",
+      "versionId": "v1",
+      "locationId": null,
+      "repositoryId": null,
+      "source": "stdin",
+      "root": "",
+      "name": "Piped",
+      "branch": "",
+      "head": null,
+      "mode": "all",
+      "files": [
+        {
+          "id": "file",
+          "path": "file.txt",
+          "oldPath": null,
+          "status": "M",
+          "indexStatus": "",
+          "worktreeStatus": "",
+          "additions": 1,
+          "deletions": 1,
+          "binary": false,
+          "fingerprint": "hash"
+        }
+      ],
+      "revision": "r1"
+    },
+    "valid": true,
+    "applicability": "other-scope"
+  },
+  {
+    "name": "stale fingerprint",
+    "comment": {
+      "id": "comment",
+      "diffId": "diff",
+      "versionId": "v1",
+      "path": "file.txt",
+      "scope": "all",
+      "fingerprint": "old",
+      "side": "additions",
+      "start": 1,
+      "end": 1,
+      "code": "+ changed",
+      "body": "Check <this> & that",
+      "status": "open",
+      "createdAt": 1
+    },
+    "repository": {
+      "id": "diff",
+      "versionId": "v1",
+      "locationId": null,
+      "repositoryId": null,
+      "source": "stdin",
+      "root": "",
+      "name": "Piped",
+      "branch": "",
+      "head": null,
+      "mode": "all",
+      "files": [
+        {
+          "id": "file",
+          "path": "file.txt",
+          "oldPath": null,
+          "status": "M",
+          "indexStatus": "",
+          "worktreeStatus": "",
+          "additions": 1,
+          "deletions": 1,
+          "binary": false,
+          "fingerprint": "hash"
+        }
+      ],
+      "revision": "r1"
+    },
+    "valid": true,
+    "applicability": "stale"
+  },
+  {
+    "name": "file target",
+    "comment": {
+      "id": "comment",
+      "diffId": "diff",
+      "versionId": "v1",
+      "path": "file.txt",
+      "scope": "all",
+      "fingerprint": "hash",
+      "side": "additions",
+      "start": 0,
+      "end": 0,
+      "code": "",
+      "body": "Check <this> & that",
+      "status": "open",
+      "createdAt": 1,
+      "target": "file"
+    },
+    "repository": {
+      "id": "diff",
+      "versionId": "v1",
+      "locationId": null,
+      "repositoryId": null,
+      "source": "stdin",
+      "root": "",
+      "name": "Piped",
+      "branch": "",
+      "head": null,
+      "mode": "all",
+      "files": [
+        {
+          "id": "file",
+          "path": "file.txt",
+          "oldPath": null,
+          "status": "M",
+          "indexStatus": "",
+          "worktreeStatus": "",
+          "additions": 1,
+          "deletions": 1,
+          "binary": false,
+          "fingerprint": "hash"
+        }
+      ],
+      "revision": "r1"
+    },
+    "valid": true,
+    "applicability": "anchored"
+  },
+  {
+    "name": "bad file selection",
+    "comment": {
+      "id": "comment",
+      "diffId": "diff",
+      "versionId": "v1",
+      "path": "file.txt",
+      "scope": "all",
+      "fingerprint": "hash",
+      "side": "additions",
+      "start": 1,
+      "end": 1,
+      "code": "+ changed",
+      "body": "Check <this> & that",
+      "status": "open",
+      "createdAt": 1,
+      "target": "file"
+    },
+    "repository": {
+      "id": "diff",
+      "versionId": "v1",
+      "locationId": null,
+      "repositoryId": null,
+      "source": "stdin",
+      "root": "",
+      "name": "Piped",
+      "branch": "",
+      "head": null,
+      "mode": "all",
+      "files": [
+        {
+          "id": "file",
+          "path": "file.txt",
+          "oldPath": null,
+          "status": "M",
+          "indexStatus": "",
+          "worktreeStatus": "",
+          "additions": 1,
+          "deletions": 1,
+          "binary": false,
+          "fingerprint": "hash"
+        }
+      ],
+      "revision": "r1"
+    },
+    "valid": false,
+    "applicability": "anchored"
+  },
+  {
+    "name": "blank body",
+    "comment": {
+      "id": "comment",
+      "diffId": "diff",
+      "versionId": "v1",
+      "path": "file.txt",
+      "scope": "all",
+      "fingerprint": "hash",
+      "side": "additions",
+      "start": 1,
+      "end": 1,
+      "code": "+ changed",
+      "body": "  ",
+      "status": "open",
+      "createdAt": 1
+    },
+    "repository": {
+      "id": "diff",
+      "versionId": "v1",
+      "locationId": null,
+      "repositoryId": null,
+      "source": "stdin",
+      "root": "",
+      "name": "Piped",
+      "branch": "",
+      "head": null,
+      "mode": "all",
+      "files": [
+        {
+          "id": "file",
+          "path": "file.txt",
+          "oldPath": null,
+          "status": "M",
+          "indexStatus": "",
+          "worktreeStatus": "",
+          "additions": 1,
+          "deletions": 1,
+          "binary": false,
+          "fingerprint": "hash"
+        }
+      ],
+      "revision": "r1"
+    },
+    "valid": false,
+    "applicability": "anchored"
+  },
+  {
+    "name": "range too large",
+    "comment": {
+      "id": "comment",
+      "diffId": "diff",
+      "versionId": "v1",
+      "path": "file.txt",
+      "scope": "all",
+      "fingerprint": "hash",
+      "side": "additions",
+      "start": 1,
+      "end": 201,
+      "code": "+ changed",
+      "body": "Check <this> & that",
+      "status": "open",
+      "createdAt": 1
+    },
+    "repository": {
+      "id": "diff",
+      "versionId": "v1",
+      "locationId": null,
+      "repositoryId": null,
+      "source": "stdin",
+      "root": "",
+      "name": "Piped",
+      "branch": "",
+      "head": null,
+      "mode": "all",
+      "files": [
+        {
+          "id": "file",
+          "path": "file.txt",
+          "oldPath": null,
+          "status": "M",
+          "indexStatus": "",
+          "worktreeStatus": "",
+          "additions": 1,
+          "deletions": 1,
+          "binary": false,
+          "fingerprint": "hash"
+        }
+      ],
+      "revision": "r1"
+    },
+    "valid": false,
+    "applicability": "anchored"
+  },
+  {
+    "name": "max range",
+    "comment": {
+      "id": "comment",
+      "diffId": "diff",
+      "versionId": "v1",
+      "path": "file.txt",
+      "scope": "all",
+      "fingerprint": "hash",
+      "side": "additions",
+      "start": 1,
+      "end": 200,
+      "code": "+ changed",
+      "body": "Check <this> & that",
+      "status": "open",
+      "createdAt": 1
+    },
+    "repository": {
+      "id": "diff",
+      "versionId": "v1",
+      "locationId": null,
+      "repositoryId": null,
+      "source": "stdin",
+      "root": "",
+      "name": "Piped",
+      "branch": "",
+      "head": null,
+      "mode": "all",
+      "files": [
+        {
+          "id": "file",
+          "path": "file.txt",
+          "oldPath": null,
+          "status": "M",
+          "indexStatus": "",
+          "worktreeStatus": "",
+          "additions": 1,
+          "deletions": 1,
+          "binary": false,
+          "fingerprint": "hash"
+        }
+      ],
+      "revision": "r1"
+    },
+    "valid": true,
+    "applicability": "anchored"
+  },
+  {
+    "name": "resolved",
+    "comment": {
+      "id": "comment",
+      "diffId": "diff",
+      "versionId": "v1",
+      "path": "file.txt",
+      "scope": "all",
+      "fingerprint": "hash",
+      "side": "additions",
+      "start": 1,
+      "end": 1,
+      "code": "+ changed",
+      "body": "Check <this> & that",
+      "status": "resolved",
+      "createdAt": 1
+    },
+    "repository": {
+      "id": "diff",
+      "versionId": "v1",
+      "locationId": null,
+      "repositoryId": null,
+      "source": "stdin",
+      "root": "",
+      "name": "Piped",
+      "branch": "",
+      "head": null,
+      "mode": "all",
+      "files": [
+        {
+          "id": "file",
+          "path": "file.txt",
+          "oldPath": null,
+          "status": "M",
+          "indexStatus": "",
+          "worktreeStatus": "",
+          "additions": 1,
+          "deletions": 1,
+          "binary": false,
+          "fingerprint": "hash"
+        }
+      ],
+      "revision": "r1"
+    },
+    "valid": true,
+    "applicability": "anchored"
+  },
+  {
+    "name": "missing scope",
+    "comment": {
+      "id": "comment",
+      "diffId": "diff",
+      "versionId": "v1",
+      "path": "file.txt",
+      "scope": "",
+      "fingerprint": "hash",
+      "side": "additions",
+      "start": 1,
+      "end": 1,
+      "code": "+ changed",
+      "body": "Check <this> & that",
+      "status": "open",
+      "createdAt": 1
+    },
+    "repository": {
+      "id": "diff",
+      "versionId": "v1",
+      "locationId": null,
+      "repositoryId": null,
+      "source": "stdin",
+      "root": "",
+      "name": "Piped",
+      "branch": "",
+      "head": null,
+      "mode": "all",
+      "files": [
+        {
+          "id": "file",
+          "path": "file.txt",
+          "oldPath": null,
+          "status": "M",
+          "indexStatus": "",
+          "worktreeStatus": "",
+          "additions": 1,
+          "deletions": 1,
+          "binary": false,
+          "fingerprint": "hash"
+        }
+      ],
+      "revision": "r1"
+    },
+    "valid": false,
+    "applicability": "other-scope",
+    "export": ""
+  }
+]

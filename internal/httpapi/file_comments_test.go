@@ -40,14 +40,14 @@ rename to new.ts
 	service := reviewservice.New(active, store)
 	server := httptest.NewServer(New(active, store, service, fstest.MapFS{"index.html": {Data: []byte("web")}}))
 	defer server.Close()
-	snapshot := decode[review.RepositoryDiff](t, request(t, server.Client(), http.MethodGet, server.URL+"/api/v1/diffs/current?scope=all", nil))
+	snapshot := decode[review.RepositoryDiff](t, request(t, server.Client(), http.MethodGet, server.URL+"/api/review/diffs/current?scope=all", nil))
 	if len(snapshot.Files) != 3 {
 		t.Fatalf("expected empty, binary, and renamed files, got %#v", snapshot.Files)
 	}
 	for _, file := range snapshot.Files {
 		t.Run(file.Path, func(t *testing.T) {
-			body := createCommentRequest{DiffID: snapshot.ID, VersionID: snapshot.VersionID, FileID: file.ID, Scope: review.DiffAll, FileVersion: file.Fingerprint, Target: "file", Side: "additions", Body: "Review entire " + file.Path}
-			response := request(t, server.Client(), http.MethodPost, server.URL+"/api/v1/comments", body)
+			body := reviewservice.CreateCommentInput{DiffID: snapshot.ID, VersionID: snapshot.VersionID, FileID: file.ID, Scope: review.DiffAll, FileVersion: file.Fingerprint, Target: "file", Side: "additions", Body: "Review entire " + file.Path}
+			response := request(t, server.Client(), http.MethodPost, server.URL+"/api/review/comments", body)
 			if response.StatusCode != http.StatusCreated {
 				detail, _ := io.ReadAll(response.Body)
 				response.Body.Close()
@@ -66,7 +66,7 @@ rename to new.ts
 			for _, target := range []string{"", "lines", "unknown"} {
 				invalid := body
 				invalid.Target = target
-				response := request(t, server.Client(), http.MethodPost, server.URL+"/api/v1/comments", invalid)
+				response := request(t, server.Client(), http.MethodPost, server.URL+"/api/review/comments", invalid)
 				response.Body.Close()
 				if response.StatusCode != http.StatusBadRequest {
 					t.Fatalf("zero-line target %q status: %d", target, response.StatusCode)
@@ -81,7 +81,7 @@ rename to new.ts
 			} {
 				invalid := body
 				invalid.Side, invalid.Start, invalid.End = selection.side, selection.start, selection.end
-				response := request(t, server.Client(), http.MethodPost, server.URL+"/api/v1/comments", invalid)
+				response := request(t, server.Client(), http.MethodPost, server.URL+"/api/review/comments", invalid)
 				response.Body.Close()
 				if response.StatusCode != http.StatusBadRequest {
 					t.Fatalf("file target accepted line context: %d", response.StatusCode)
@@ -93,7 +93,7 @@ rename to new.ts
 			} {
 				invalid := body
 				invalid.FileVersion, invalid.VersionID = identity.fileVersion, identity.versionID
-				response := request(t, server.Client(), http.MethodPost, server.URL+"/api/v1/comments", invalid)
+				response := request(t, server.Client(), http.MethodPost, server.URL+"/api/review/comments", invalid)
 				response.Body.Close()
 				if response.StatusCode != http.StatusConflict {
 					t.Fatalf("file target bypassed snapshot validation: %d", response.StatusCode)
@@ -110,7 +110,7 @@ rename to new.ts
 			t.Fatalf("agent file comment: %#v", comment)
 		}
 	}
-	exportResponse := request(t, server.Client(), http.MethodGet, server.URL+"/api/v1/comments/export", nil)
+	exportResponse := request(t, server.Client(), http.MethodGet, server.URL+"/api/review/comments/export", nil)
 	exported, _ := io.ReadAll(exportResponse.Body)
 	exportResponse.Body.Close()
 	if strings.Count(string(exported), `selection="file"`) != 3 || strings.Contains(string(exported), "<code>") || strings.Contains(string(exported), ` line=`) {

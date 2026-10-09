@@ -5,34 +5,9 @@ import type {
 } from "@pierre/diffs";
 import type { DiffMode, RepositoryDiff } from "./index.ts";
 
-export interface ReviewComment {
-  id: string;
-  diffId: string;
-  versionId: string;
-  path: string;
-  scope: DiffMode;
-  fingerprint: string;
-  target?: "file" | "lines";
-  side: AnnotationSide;
-  start: number;
-  end: number;
-  code: string;
-  body: string;
-  status: "open" | "resolved";
-  createdAt: number;
-  origin?: ReviewOrigin;
-}
-
-export interface ReviewOrigin {
-  diffId: string;
-  versionId: string;
-  source: "local" | "stdin";
-  repository: string;
-  branch: string;
-  head: string | null;
-  revision: string;
-  file: { status: string; oldPath: string | null };
-}
+import type { ApiReviewComment, ApiReviewMark } from "@servediff/api";
+export type ReviewComment = ApiReviewComment;
+export type ReviewOrigin = NonNullable<ReviewComment["origin"]>;
 
 export interface ReviewRound {
   key: string;
@@ -107,13 +82,7 @@ export function commentContext(
   return { side, start, end, code: code.join("\n") };
 }
 
-export interface ReviewMark {
-  diffId: string;
-  versionId: string;
-  fileId: string;
-  fileVersion: string;
-  scope: DiffMode;
-}
+export type ReviewMark = ApiReviewMark;
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -345,7 +314,7 @@ export function commentApplicability(
   comment: ReviewComment,
   repository: RepositoryDiff | null,
 ): CommentApplicability {
-  if (!repository) return "unknown";
+  if (!repository || !comment.diffId || !repository.id) return "unknown";
   if (comment.diffId !== repository.id) return "other-scope";
   if (comment.scope !== repository.mode) return "other-scope";
   return repository.files.some(

@@ -1,16 +1,11 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"os"
-	"strconv"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/contextservice"
-	"github.com/flexdinesh/servediff/internal/controlapi"
 	buildversion "github.com/flexdinesh/servediff/internal/version"
 )
 
@@ -94,34 +89,8 @@ func writeStartup(writer io.Writer, input loadedInput, urls ...string) {
 	guidance := "ctrl-c to stop."
 	if input.remote {
 		guidance = "snapshot submitted to remote server."
-	} else if input.submitted {
-		guidance = "servediff service stop to stop the daemon."
 	}
 	fmt.Fprintf(writer, "  %s\n", color.paint(color.dim, guidance))
-}
-
-func writeSubmission(writer io.Writer, submission contextservice.Submission, elapsed time.Duration, url, mcpURL string, additionalURLs ...string) {
-	input := submissionInput(submission, elapsed)
-	input.contextID, input.mcpURL, input.submitted = submission.Context.ID, mcpURL, true
-	writeStartup(writer, input, append([]string{url}, additionalURLs...)...)
-}
-
-func writeServiceStatus(writer io.Writer, status controlapi.Status, asJSON bool) {
-	if asJSON {
-		_ = json.NewEncoder(writer).Encode(status)
-		return
-	}
-	fmt.Fprintf(writer, "  servediff service %s\n", status.State)
-	if status.State != "running" {
-		return
-	}
-	fmt.Fprintf(writer, "  url:                %s\n", status.URL)
-	fmt.Fprintf(writer, "  listen:             %s\n", net.JoinHostPort(status.Settings.Host, strconv.Itoa(status.Settings.Port)))
-	fmt.Fprintf(writer, "  version:            %s\n", status.Version)
-	fmt.Fprintf(writer, "  protocol:           %d\n", status.ProtocolVersion)
-	fmt.Fprintf(writer, "  PID:                %d\n", status.PID)
-	fmt.Fprintf(writer, "  state:              %s\n", status.Settings.State)
-	fmt.Fprintf(writer, "  contexts:           %d legacy worktrees, %d snapshots\n", status.Worktrees, status.Captures)
 }
 
 func plural(count int, singular, plural string) string {

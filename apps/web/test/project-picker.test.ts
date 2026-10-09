@@ -20,7 +20,8 @@ import {
 
 const main: ApiContext = {
   id: "main",
-  kind: "worktree",
+  kind: "observation",
+  source: "local",
   name: "servediff",
   branch: "main",
   worktreeName: null,
@@ -152,7 +153,7 @@ test("freshness and inclusion filters combine before search and repository group
 });
 
 test("lists individual checkouts by recency without repository grouping", () => {
-  const recentClone = { ...clone, lastSubmittedAt: 0, lastChangedAt: 3 };
+  const recentClone = { ...clone, lastSubmittedAt: 3, lastChangedAt: 3 };
   assert.deepEqual(
     pickerResults([worktree, recentClone, main], "", allFilters).map(
       (context) => context.id,
@@ -196,7 +197,7 @@ test("search lists newest changes before stronger matches", () => {
     ),
     ["picker", "clone"],
   );
-  const tied = { ...exact, lastChangedAt: worktree.lastChangedAt };
+  const tied = { ...exact, lastSubmittedAt: worktree.lastSubmittedAt };
   assert.equal(
     pickerResults([worktree, tied], "picker", allFilters)[0]?.id,
     tied.id,
@@ -207,7 +208,8 @@ test("captures stay selectable", () => {
   const capture: ApiContext = {
     ...main,
     id: "capture",
-    kind: "capture",
+    kind: "observation",
+    source: "stdin",
     name: "Captured patch",
     root: null,
     repositoryId: null,
@@ -227,8 +229,8 @@ test("captures stay selectable", () => {
 
 test("changed checkouts precede newer empty projects, including search results", () => {
   const changed = { ...worktree, changedFileCount: 2 };
-  const newerEmpty = { ...main, lastChangedAt: 10 };
-  const newerChanged = { ...clone, changedFileCount: 1, lastChangedAt: 4 };
+  const newerEmpty = { ...main, lastSubmittedAt: 10 };
+  const newerChanged = { ...clone, changedFileCount: 1, lastSubmittedAt: 4 };
   for (const query of ["", "servediff"]) {
     assert.deepEqual(
       pickerResults([newerEmpty, changed, newerChanged], query, allFilters).map(
@@ -453,7 +455,7 @@ test("freshly reviewed observations sort by latest review without changing colle
   assert.equal(repeatedReview.observation?.collectedAt, 1000);
 });
 
-test("Piped groups legacy captures and stdin observations independently of repositories and filters", () => {
+test("Piped groups stdin observations independently of repositories and filters", () => {
   const piped: ApiContext = {
     ...observation("piped-old", "host", "run"),
     source: "stdin",
@@ -464,7 +466,8 @@ test("Piped groups legacy captures and stdin observations independently of repos
   const capture: ApiContext = {
     ...main,
     id: "piped-new",
-    kind: "capture",
+    kind: "observation",
+    source: "stdin",
     createdAt: 2000,
     changedFileCount: 0,
   };
@@ -515,7 +518,7 @@ test("Piped timestamp labels use capture time and distinguish today, yesterday, 
   const now = new Date(2026, 9, 5, 20, 30);
   const context: ApiContext = {
     ...main,
-    kind: "capture",
+    kind: "observation",
     createdAt: new Date(2026, 9, 5, 20, 17).getTime(),
   };
   assert.ok(contextTimestampLabel(context, now).startsWith("Today, "));
