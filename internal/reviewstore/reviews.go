@@ -11,47 +11,9 @@ import (
 	"github.com/flexdinesh/servediff/internal/reviewdata"
 )
 
-func (store *Store) PinVersion(snapshot review.RepositoryDiff, previews map[string]review.FilePatch) error {
-	if snapshot.ID == "" || snapshot.VersionID == "" {
-		return errors.New("diff identity is missing")
-	}
-	manifest, err := json.Marshal(snapshot)
-	if err != nil {
-		return err
-	}
-	transaction, err := store.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer transaction.Rollback()
-	if _, err := transaction.Exec(`INSERT INTO diff_versions(id, diff_id, revision, manifest, created_at) VALUES(?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`, snapshot.VersionID, snapshot.ID, snapshot.Revision, string(manifest), time.Now().UnixMilli()); err != nil {
-		return err
-	}
-	for _, file := range snapshot.Files {
-		preview, ok := previews[file.ID]
-		if !ok {
-			continue
-		}
-		encoded, err := json.Marshal(preview)
-		if err != nil {
-			return err
-		}
-		if _, err := transaction.Exec(`INSERT INTO diff_files(version_id, file_id, path, fingerprint, patch) VALUES(?, ?, ?, ?, ?) ON CONFLICT(version_id, file_id) DO NOTHING`, snapshot.VersionID, file.ID, file.Path, file.Fingerprint, string(encoded)); err != nil {
-			return err
-		}
-	}
-	return transaction.Commit()
-}
-
-func (store *Store) VersionComplete(versionID string, fileCount int) (bool, error) {
-	var count, exists int
-	err := store.db.QueryRow(`SELECT (SELECT COUNT(*) FROM diff_files WHERE version_id=?), (SELECT COUNT(*) FROM diff_versions WHERE id=?)`, versionID, versionID).Scan(&count, &exists)
-	return exists == 1 && count == fileCount, err
-}
-
 func (store *Store) reviewFor(transaction *sql.Tx, contextID string, mode review.DiffMode) (string, string, error) {
 	var diffID, reviewID string
-	err := transaction.QueryRow(`SELECT d.id, r.id FROM diffs d JOIN reviews r ON r.diff_id=d.id WHERE (d.location_id=? OR d.id=? OR d.id IN (SELECT diff_id FROM observation_scopes WHERE context_id=?)) AND d.mode=? AND (d.expires_at IS NULL OR d.expires_at>?)`, contextID, contextID, contextID, mode, time.Now().UnixMilli()).Scan(&diffID, &reviewID)
+	err := transaction.QueryRow(`SELECT d.id, r.id FROM diffs d JOIN reviews r ON r.diff_id=d.id WHERE (d.id IN (SELECT diff_id FROM observation_scopes WHERE context_id=?)) AND d.mode=? AND (d.expires_at IS NULL OR d.expires_at>?)`, contextID, mode, time.Now().UnixMilli()).Scan(&diffID, &reviewID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", "", ErrNotFound
 	}
@@ -73,7 +35,7 @@ func versionFor(transaction *sql.Tx, diffID, versionID string) error {
 }
 
 func (store *Store) Comments(contextID string) ([]review.ReviewComment, error) {
-	rows, err := store.db.Query(`SELECT c.data FROM comments c JOIN reviews r ON r.id=c.review_id JOIN diffs d ON d.id=r.diff_id WHERE (d.location_id=? OR d.id=? OR d.id IN (SELECT diff_id FROM observation_scopes WHERE context_id=?)) AND (d.expires_at IS NULL OR d.expires_at>?) ORDER BY c.created_at, c.id`, contextID, contextID, contextID, time.Now().UnixMilli())
+	rows, err := store.db.Query(`SELECT c.data FROM comments c JOIN reviews r ON r.id=c.review_id JOIN diffs d ON d.id=r.diff_id WHERE (d.id IN (SELECT diff_id FROM observation_scopes WHERE context_id=?)) AND (d.expires_at IS NULL OR d.expires_at>?) ORDER BY c.created_at, c.id`, contextID, time.Now().UnixMilli())
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +131,7 @@ func (store *Store) DeleteComments(contextID string, selected map[string]bool) (
 		if !include {
 			continue
 		}
-		result, err := transaction.Exec(`DELETE FROM comments WHERE id=? AND review_id IN (SELECT r.id FROM reviews r JOIN diffs d ON d.id=r.diff_id WHERE d.location_id=? OR d.id=? OR d.id IN (SELECT diff_id FROM observation_scopes WHERE context_id=?))`, id, contextID, contextID, contextID)
+		result, err := transaction.Exec(`DELETE FROM comments WHERE id=? AND review_id IN (SELECT r.id FROM reviews r JOIN diffs d ON d.id=r.diff_id WHERE d.id IN (SELECT diff_id FROM observation_scopes WHERE context_id=?))`, id, contextID)
 		if err != nil {
 			return 0, err
 		}
@@ -188,7 +150,7 @@ func (store *Store) DeleteComment(contextID, commentID string) (bool, error) {
 }
 
 func (store *Store) Marks(contextID string, scope review.DiffMode) ([]review.ReviewMark, error) {
-	rows, err := store.db.Query(`SELECT m.data FROM marks m JOIN reviews r ON r.id=m.review_id JOIN diffs d ON d.id=r.diff_id WHERE (d.location_id=? OR d.id=? OR d.id IN (SELECT diff_id FROM observation_scopes WHERE context_id=?)) AND d.mode=? AND (d.expires_at IS NULL OR d.expires_at>?) ORDER BY m.file_id`, contextID, contextID, contextID, scope, time.Now().UnixMilli())
+	rows, err := store.db.Query(`SELECT m.data FROM marks m JOIN reviews r ON r.id=m.review_id JOIN diffs d ON d.id=r.diff_id WHERE (d.id IN (SELECT diff_id FROM observation_scopes WHERE context_id=?)) AND d.mode=? AND (d.expires_at IS NULL OR d.expires_at>?) ORDER BY m.file_id`, contextID, scope, time.Now().UnixMilli())
 	if err != nil {
 		return nil, err
 	}
@@ -241,29 +203,13 @@ func (store *Store) PutMark(contextID string, mark review.ReviewMark) error {
 }
 
 func (store *Store) DeleteMark(contextID string, scope review.DiffMode, fileID string) error {
-	_, err := store.db.Exec(`DELETE FROM marks WHERE file_id=? AND review_id IN (SELECT r.id FROM reviews r JOIN diffs d ON d.id=r.diff_id WHERE (d.location_id=? OR d.id=? OR d.id IN (SELECT diff_id FROM observation_scopes WHERE context_id=?)) AND d.mode=?)`, fileID, contextID, contextID, contextID, scope)
+	_, err := store.db.Exec(`DELETE FROM marks WHERE file_id=? AND review_id IN (SELECT r.id FROM reviews r JOIN diffs d ON d.id=r.diff_id WHERE (d.id IN (SELECT diff_id FROM observation_scopes WHERE context_id=?)) AND d.mode=?)`, fileID, contextID, scope)
 	return err
 }
 
 func (store *Store) ClearMarks(contextID string, scope review.DiffMode) error {
-	_, err := store.db.Exec(`DELETE FROM marks WHERE review_id IN (SELECT r.id FROM reviews r JOIN diffs d ON d.id=r.diff_id WHERE (d.location_id=? OR d.id=? OR d.id IN (SELECT diff_id FROM observation_scopes WHERE context_id=?)) AND d.mode=?)`, contextID, contextID, contextID, scope)
+	_, err := store.db.Exec(`DELETE FROM marks WHERE review_id IN (SELECT r.id FROM reviews r JOIN diffs d ON d.id=r.diff_id WHERE (d.id IN (SELECT diff_id FROM observation_scopes WHERE context_id=?)) AND d.mode=?)`, contextID, scope)
 	return err
-}
-
-func (store *Store) StoredPatch(versionID, fileID, fileVersion string) (review.FilePatch, error) {
-	var raw string
-	err := store.db.QueryRow(`SELECT f.patch FROM diff_files f JOIN diff_versions v ON v.id=f.version_id JOIN diffs d ON d.id=v.diff_id WHERE f.version_id=? AND f.file_id=? AND f.fingerprint=? AND (d.expires_at IS NULL OR d.expires_at>?)`, versionID, fileID, fileVersion, time.Now().UnixMilli()).Scan(&raw)
-	if errors.Is(err, sql.ErrNoRows) {
-		return review.FilePatch{}, ErrNotFound
-	}
-	if err != nil {
-		return review.FilePatch{}, err
-	}
-	var patch review.FilePatch
-	if err := json.Unmarshal([]byte(raw), &patch); err != nil {
-		return review.FilePatch{}, err
-	}
-	return patch, nil
 }
 
 func (store *Store) StoredVersion(ownerID, diffID, versionID string, now time.Time) (review.RepositoryDiff, error) {

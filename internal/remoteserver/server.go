@@ -15,9 +15,9 @@ import (
 	"time"
 
 	"github.com/flexdinesh/servediff/internal/contextservice"
-	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/ingestionqueue"
+	"github.com/flexdinesh/servediff/internal/review"
 	"github.com/flexdinesh/servediff/internal/reviewstore"
 	"github.com/flexdinesh/servediff/internal/serverapp"
 	"github.com/flexdinesh/servediff/internal/webui"
@@ -82,7 +82,7 @@ func compose(ctx context.Context, store *reviewstore.Store, assets fs.FS) (http.
 		return ingestionqueue.Run(ctx, queue, func(ctx context.Context, owner string, input ingestion.Request) (string, error) {
 			service, ok := byOwner[owner]
 			if !ok {
-				return "", diffsource.Error(403, "Account unavailable")
+				return "", review.Error(403, "Account unavailable")
 			}
 			result, err := service.Ingest(ctx, input)
 			return result.Context.ID, err

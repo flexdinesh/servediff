@@ -13,7 +13,8 @@ The browser does not need to remain open while an MCP client works.
 ## Connect
 
 Start `servediff` with a path or piped patch and use the printed MCP URL to
-search stored reviews. `servediff review` prints a scoped MCP URL.
+search stored reviews. Remote snapshots are available through the server’s `/mcp` catalog or a scoped
+`/mcp/contexts/{id}` URL.
 For example:
 
 ```text

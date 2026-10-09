@@ -3,7 +3,6 @@ package contextservice
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -55,137 +54,6 @@ func testRepo(t *testing.T) string {
 	return path
 }
 
-func TestCaptureCatalogAndImmutableIdentity(t *testing.T) {
-	service := testService(t)
-	ctx := context.Background()
-	first, err := service.Capture(ctx, "one", testPatch, "/repo")
-	if err != nil {
-		t.Fatal(err)
-	}
-	retry, err := service.Capture(ctx, "one", testPatch, "/repo")
-	if err != nil || retry.Context.ID != first.Context.ID || retry.Snapshot.VersionID != first.Snapshot.VersionID {
-		t.Fatalf("retry: %#v, %v", retry, err)
-	}
-	second, err := service.Capture(ctx, "two", testPatch, "/repo")
-	if err != nil || second.Context.ID == first.Context.ID {
-		t.Fatalf("independent capture: %#v, %v", second, err)
-	}
-	item := first.Context
-	if item.Kind != "capture" || item.Root != nil || item.LocationID != nil || item.ExpiresAt == nil || item.SubmittedFrom == nil ||
-		item.Capabilities.Diff.Refresh.Enabled() || item.Capabilities.Diff.Scopes.Allows(review.DiffStaged) {
-		t.Fatalf("capture metadata: %#v", item)
-	}
-	opened, err := service.OpenCapture(ctx, item.ID)
-	if err != nil || opened.Snapshot.ID != first.Snapshot.ID || opened.Snapshot.VersionID != first.Snapshot.VersionID {
-		t.Fatalf("open capture: %#v, %v", opened, err)
-	}
-	_, err = service.Capture(ctx, "one", testPatch+"\n", "/repo")
-	assertStatus(t, err, 409)
-	page, err := service.List(ctx, 1, "")
-	if err != nil || len(page.Contexts) != 1 || page.NextCursor == nil {
-		t.Fatalf("first page: %#v, %v", page, err)
-	}
-	next, err := service.List(ctx, 1, *page.NextCursor)
-	if err != nil || len(next.Contexts) != 1 || next.NextCursor != nil || next.Contexts[0].ID == page.Contexts[0].ID {
-		t.Fatalf("second page: %#v, %v", next, err)
-	}
-	worktrees, captures, err := service.Count(ctx)
-	if err != nil || worktrees != 0 || captures != 2 {
-		t.Fatalf("counts %d %d, %v", worktrees, captures, err)
-	}
-}
-
-func TestInvalidCaptureDoesNotRegister(t *testing.T) {
-	service := testService(t)
-	ctx := context.Background()
-	_, err := service.Capture(ctx, "invalid", "not a Git patch", "")
-	assertStatus(t, err, 400)
-	page, err := service.List(ctx, 0, "")
-	if err != nil || len(page.Contexts) != 0 {
-		t.Fatalf("invalid capture persisted: %#v, %v", page, err)
-	}
-	_, err = service.Capture(ctx, "", "", "")
-	assertStatus(t, err, 400)
-	_, err = service.List(ctx, 501, "")
-	assertStatus(t, err, 400)
-	_, err = service.List(ctx, 100, "invalid")
-	assertStatus(t, err, 400)
-}
-
-func TestCatalogOwnershipAndCancelledSubmission(t *testing.T) {
-	service := testService(t)
-	ctx := context.Background()
-	created, err := service.Capture(ctx, "request", testPatch, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	otherUser, err := service.store.(*reviewstore.Store).User("other-user", "other-user")
-	if err != nil {
-		t.Fatal(err)
-	}
-	other := New(service.store, otherUser)
-	_, err = other.Get(ctx, created.Context.ID)
-	assertStatus(t, err, 404)
-	_, err = other.Resolve(ctx, created.Context.ID)
-	assertStatus(t, err, 404)
-	cancelled, cancel := context.WithCancel(ctx)
-	cancel()
-	_, err = service.Capture(cancelled, "cancelled", testPatch, "")
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("cancelled request accepted: %v", err)
-	}
-	_, captures, err := service.Count(ctx)
-	if err != nil || captures != 1 {
-		t.Fatalf("cancelled capture persisted: %d, %v", captures, err)
-	}
-}
-
-func TestCaptureCacheReusesParseAndEvictionPreservesVersion(t *testing.T) {
-	service := testService(t)
-	ctx := context.Background()
-	submitted, err := service.Capture(ctx, "first", testPatch, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	first, err := service.Resolve(ctx, submitted.Context.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for range 8 {
-		resolved, err := service.Resolve(ctx, submitted.Context.ID)
-		if err != nil || resolved.Source != first.Source {
-			t.Fatalf("immutable capture reparsed: %v", err)
-		}
-	}
-	// Exhaust the source-count budget, then reconstruct the evicted capture.
-	for index := range maxCachedSources {
-		if _, err := service.Capture(ctx, fmt.Sprintf("other-%d", index), testPatch, ""); err != nil {
-			t.Fatal(err)
-		}
-	}
-	service.mu.Lock()
-	retainedCount := len(service.sources)
-	retainedBytes := service.sourceBytes
-	service.mu.Unlock()
-	if retainedCount > maxCachedSources || retainedBytes > maxSourceBytes {
-		t.Fatalf("retained budget exceeded: %d entries, %d bytes", retainedCount, retainedBytes)
-	}
-	reopened, err := service.OpenCapture(ctx, submitted.Context.ID)
-	if err != nil || reopened.Snapshot.ID != submitted.Snapshot.ID || reopened.Snapshot.VersionID != submitted.Snapshot.VersionID {
-		t.Fatalf("eviction changed immutable version: %#v, %v", reopened, err)
-	}
-}
-
-func TestPathRegistrationRemoved(t *testing.T) {
-	service := testService(t)
-	_, err := service.Register(t.Context(), "request", "/does-not-exist")
-	assertStatus(t, err, 410)
-	page, err := service.List(t.Context(), 100, "")
-	if err != nil || len(page.Contexts) != 0 {
-		t.Fatalf("removed registration persisted: %#v, %v", page, err)
-	}
-}
-
 func TestObservationStoredOnlyAfterCheckoutChangesAndRemoval(t *testing.T) {
 	service := testService(t)
 	root := testRepo(t)
@@ -215,7 +83,7 @@ func TestObservationStoredOnlyAfterCheckoutChangesAndRemoval(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !active.Stored || active.Capabilities.Diff.Refresh.Enabled() {
+		if active.Capabilities.Diff.Refresh.Enabled() {
 			t.Fatalf("stored session: %#v", active)
 		}
 		snapshot, err := active.Source.Snapshot(t.Context(), review.DiffAll)
@@ -245,26 +113,6 @@ func TestObservationStoredOnlyAfterCheckoutChangesAndRemoval(t *testing.T) {
 	collected.Metadata.Agent = "conflict"
 	_, err = service.Ingest(t.Context(), collected)
 	assertStatus(t, err, 409)
-}
-
-func TestLegacyWorktreeDoesNotReadFilesystem(t *testing.T) {
-	service := testService(t)
-	root := testRepo(t)
-	binding, err := service.store.(*reviewstore.Store).RegisterGit(service.user.ID, root, filepath.Join(root, ".git"), filepath.Join(root, ".git"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", t.TempDir())
-	item, err := service.Get(t.Context(), binding.ContextID)
-	if err != nil || item.Availability != "unavailable" || item.Capabilities.Diff.Refresh.Enabled() {
-		t.Fatalf("legacy catalog: %#v, %v", item, err)
-	}
-	active, err := service.Resolve(t.Context(), binding.ContextID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = active.Source.Snapshot(t.Context(), review.DiffAll)
-	assertStatus(t, err, 503)
 }
 
 func TestClosedServiceRejectsStoredSourceResolution(t *testing.T) {

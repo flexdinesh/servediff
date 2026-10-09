@@ -1,5 +1,7 @@
 package main
 
+import "github.com/mattn/go-isatty"
+
 import (
 	"bufio"
 	"context"
@@ -14,19 +16,18 @@ import (
 
 	"github.com/flexdinesh/servediff/internal/contextservice"
 	"github.com/flexdinesh/servediff/internal/daemon"
-	"github.com/mattn/go-isatty"
 )
 
 func runLocal(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr io.Writer) error {
-	values, err := parseOptionsMode(arguments, stderr, false, true)
+	values, err := parseOptionsMode(arguments, stderr, true)
 	if errors.Is(err, errHelp) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	if values.serverSet || values.tokenSet || values.branch != "" || values.fixture != "" || values.capture != "" || values.print || values.retry {
-		return errors.New("local mode accepts a checkout path or piped diff; use sync for remote collection or serve for fixtures")
+	if values.serverSet || values.tokenSet || values.branch != "" || values.fixture != "" || values.print || values.retry {
+		return errors.New("local mode accepts a checkout path or piped diff; use sync for remote collection or dev --fixture for fixtures")
 	}
 	input, err := acquireLocalInput(values, stdin)
 	if err != nil {
@@ -35,7 +36,7 @@ func runLocal(ctx context.Context, arguments []string, stdin *os.File, stdout, s
 	if input.Kind == "capture" && values.base != "" {
 		return errors.New("base is only supported for a checkout path")
 	}
-	settings, _, err := resolvedServerSettings(values)
+	settings, err := resolvedServerSettings(values)
 	if err != nil {
 		return err
 	}
@@ -44,12 +45,12 @@ func runLocal(ctx context.Context, arguments []string, stdin *os.File, stdout, s
 	if err != nil {
 		return err
 	}
-	input.Ingestion = &request
+
 	label := "Piped diff"
 	if input.Kind == "worktree" {
 		input.Path, label = request.Metadata.Root, request.Metadata.Root
 	}
-	return daemon.RunForeground(ctx, settings, input, func(status daemon.Status) (bool, error) {
+	return daemon.RunForeground(ctx, settings, request, func(status daemon.Status) (bool, error) {
 		if values.replace {
 			return true, nil
 		}
@@ -90,21 +91,21 @@ func runLocal(ctx context.Context, arguments []string, stdin *os.File, stdout, s
 	})
 }
 
-func acquireLocalInput(values options, stdin *os.File) (daemon.InitialInput, error) {
+func acquireLocalInput(values options, stdin *os.File) (initialInput, error) {
 	piped := false
 	if stdin != nil {
 		var err error
 		piped, err = redirected(stdin)
 		if err != nil {
-			return daemon.InitialInput{}, err
+			return initialInput{}, err
 		}
 	}
 	if piped && values.repositorySet && values.directory != "-" {
-		return daemon.InitialInput{}, errors.New("checkout path cannot be combined with piped stdin")
+		return initialInput{}, errors.New("checkout path cannot be combined with piped stdin")
 	}
 	if piped || values.directory == "-" {
 		return acquireInput(values, stdin)
 	}
 	path, err := filepath.Abs(values.directory)
-	return daemon.InitialInput{Kind: "worktree", Path: path}, err
+	return initialInput{Kind: "worktree", Path: path}, err
 }

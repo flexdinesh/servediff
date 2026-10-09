@@ -19,7 +19,7 @@ export const defaultPickerFilters: PickerFilters = {
 export const pipedGroupId = "piped";
 
 export function contextIsPiped(context: ApiContext) {
-  return context.source === "stdin" || context.kind === "capture";
+  return context.source === "stdin";
 }
 
 export function contextTimestamp(context: ApiContext) {
@@ -134,9 +134,7 @@ function matchScore(value: string, word: string): number {
 
 function pickerRecency(context: ApiContext) {
   if (contextIsPiped(context)) return contextTimestamp(context);
-  return context.kind === "observation"
-    ? context.lastSubmittedAt
-    : context.lastChangedAt;
+  return context.lastSubmittedAt;
 }
 
 export function pickerResults(
@@ -255,7 +253,7 @@ export function contextDiagnostics(context: ApiContext) {
   const observation = context.observation;
   return [
     `${context.name} · ${contextDetail(context)}`,
-    context.kind !== "capture" ? contextCheckoutLabel(context) : "",
+    contextCheckoutLabel(context),
     context.root ?? context.submittedFrom ?? "Piped",
     observationSummary(context),
     observation ? `Source: ${observation.sourceId}` : "",
@@ -286,10 +284,8 @@ export function pickerEntryAvailable(entry: PickerEntry) {
     : entry.context.availability === "available";
 }
 
-export function contextUnavailableReason(context: ApiContext) {
-  return context.kind === "worktree"
-    ? "No collected snapshot for this checkout"
-    : "Snapshot unavailable";
+export function contextUnavailableReason() {
+  return "Snapshot unavailable";
 }
 
 export function pickerEntries(
@@ -316,7 +312,7 @@ export function pickerEntries(
   const piped = results.filter(contextIsPiped);
   for (const context of results) {
     if (contextIsPiped(context)) continue;
-    if (context.kind !== "observation" || !context.repositoryId) {
+    if (!context.repositoryId) {
       entries.push({ id: context.id, kind: "context", context });
       continue;
     }

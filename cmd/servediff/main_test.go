@@ -2,10 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -14,31 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/contextservice"
-	"github.com/flexdinesh/servediff/internal/controlapi"
-	"github.com/flexdinesh/servediff/internal/daemon"
 	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/review"
 )
-
-func TestSubmissionFailurePreservesUnknownCommitAndCancellation(t *testing.T) {
-	transportError := errors.New("acknowledgement lost")
-	cause := fmt.Errorf("%w; recovery failed: %w", transportError, context.Canceled)
-	status := controlapi.Status{Settings: controlapi.Settings{State: "/review/custom.db"}}
-	for _, kind := range []string{"worktree", "capture", "reopen"} {
-		failure := submissionFailure(daemon.InitialInput{Kind: kind}, status, "retry-id", true, cause)
-		if !errors.Is(failure, transportError) || !errors.Is(failure, context.Canceled) {
-			t.Fatalf("%s lost failure causes: %v", kind, failure)
-		}
-		unknown := strings.Contains(failure.Error(), "may have been saved")
-		if unknown != (kind != "reopen") {
-			t.Fatalf("%s misreported commit outcome: %v", kind, failure)
-		}
-		if unknown && (!strings.Contains(failure.Error(), status.Settings.State) || !strings.Contains(failure.Error(), "retry-id")) {
-			t.Fatalf("missing recovery provenance: %v", failure)
-		}
-	}
-}
 
 func TestNormalizeArgumentsAllowsFlagsAfterPath(t *testing.T) {
 	actual := normalizeArguments([]string{".", "--port", "4000", "--no-browser"})
@@ -49,7 +23,7 @@ func TestNormalizeArgumentsAllowsFlagsAfterPath(t *testing.T) {
 }
 
 func TestOptionsDefaultToLocalhostAndAutomaticPort(t *testing.T) {
-	values, err := parseOptionsMode([]string{".", "--host", "192.0.2.1", "--port", "8123"}, io.Discard, false, true)
+	values, err := parseOptionsMode([]string{".", "--host", "192.0.2.1", "--port", "8123"}, io.Discard, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +92,7 @@ func TestOptionsTrackExplicitDefaults(t *testing.T) {
 	if omitted.hostSet || omitted.portSet || omitted.stateSet || omitted.webDirSet {
 		t.Fatalf("omitted settings marked explicit: %#v", omitted)
 	}
-	explicit, err := parseOptionsMode([]string{".", "--host=127.0.0.1", "-p", "0", "--state=", "--web-dir="}, io.Discard, false, true)
+	explicit, err := parseOptionsMode([]string{".", "--host=127.0.0.1", "-p", "0", "--state=", "--web-dir="}, io.Discard, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,16 +148,8 @@ func TestAcquireInputBoundsFixtureAndStdin(t *testing.T) {
 
 func TestAcquireInputPriority(t *testing.T) {
 	stdin := testInputFile(t, []byte("stdin patch"))
-	input, err := acquireInput(options{capture: "saved-capture"}, stdin)
-	if err != nil || input.Kind != "reopen" || input.CaptureID != "saved-capture" {
-		t.Fatalf("capture reopening: %#v %v", input, err)
-	}
-	position, err := stdin.Seek(0, io.SeekCurrent)
-	if err != nil || position != 0 {
-		t.Fatalf("reopening consumed stdin: position=%d err=%v", position, err)
-	}
 	fixture := testInputFile(t, []byte("fixture patch"))
-	input, err = acquireInput(options{fixture: fixture.Name(), directory: ".", repositorySet: true}, stdin)
+	input, err := acquireInput(options{fixture: fixture.Name(), directory: ".", repositorySet: true}, stdin)
 	if err != nil || string(input.Raw) != "fixture patch" || input.Kind != "capture" {
 		t.Fatalf("fixture priority: %#v %v", input, err)
 	}
@@ -218,32 +184,6 @@ func TestAcquireRepositoryInputDefaultsToCurrentDirectory(t *testing.T) {
 	}
 }
 
-func TestCaptureOptionsRejectConflictingInput(t *testing.T) {
-	for _, arguments := range [][]string{
-		{"--capture", "saved", "."},
-		{"--capture", "saved", "--fixture", "patch.diff"},
-	} {
-		if _, err := parseOptions(arguments, io.Discard); err == nil {
-			t.Fatalf("conflicting capture arguments accepted: %v", arguments)
-		}
-	}
-}
-
-func TestSubmissionOutputExplainsDaemonLifetime(t *testing.T) {
-	var output bytes.Buffer
-	writeSubmission(&output, contextservice.Submission{Context: contextservice.Context{ID: "capture-1", Kind: "capture"}}, time.Millisecond,
-		"http://127.0.0.1:7981/contexts/capture-1", "http://127.0.0.1:7981/mcp/contexts/capture-1")
-	value := output.String()
-	for _, expected := range []string{"context ID:         capture-1", "capture ID:         capture-1", "/contexts/capture-1", "/mcp/contexts/capture-1", "servediff service stop"} {
-		if !strings.Contains(value, expected) {
-			t.Fatalf("missing %q in %q", expected, value)
-		}
-	}
-	if strings.Contains(value, "ctrl-c") {
-		t.Fatal("submission output incorrectly suggests foreground server lifetime")
-	}
-}
-
 func TestStartupPrintsEveryReviewURL(t *testing.T) {
 	var output bytes.Buffer
 	urls := []string{
@@ -251,57 +191,10 @@ func TestStartupPrintsEveryReviewURL(t *testing.T) {
 		"http://192.168.1.20:7981/contexts/observation",
 		"http://10.0.0.5:7981/contexts/observation",
 	}
-	writeStartup(&output, loadedInput{mode: "git", submitted: true}, urls...)
+	writeStartup(&output, loadedInput{mode: "git"}, urls...)
 	for _, url := range urls {
 		if !strings.Contains(output.String(), "  url:                "+url+"\n") {
 			t.Fatalf("missing review URL %q: %s", url, output.String())
 		}
-	}
-}
-
-func TestStoppedServiceStatusDoesNotStartService(t *testing.T) {
-	t.Setenv("SERVEDIFF_RUNTIME_DIR", t.TempDir())
-	var output bytes.Buffer
-	if err := run(t.Context(), []string{"service", "status", "--json"}, nil, &output, io.Discard); !errors.Is(err, errServiceStopped) {
-		t.Fatalf("stopped status: %v", err)
-	}
-	var status controlapi.Status
-	if err := json.Unmarshal(output.Bytes(), &status); err != nil {
-		t.Fatal(err)
-	}
-	if status.State != "stopped" || status.PID != 0 {
-		t.Fatalf("status started a service: %#v", status)
-	}
-}
-
-func TestServiceOutputUsesBoundURL(t *testing.T) {
-	for _, test := range []struct {
-		host       string
-		url        string
-		browserURL string
-		listener   string
-	}{
-		{"127.0.0.1", "http://127.0.0.1:4000", "http://127.0.0.1:4000", "127.0.0.1:4000"},
-		{"0.0.0.0", "http://0.0.0.0:4000", "http://127.0.0.1:4000", "0.0.0.0:4000"},
-		{"192.0.2.1", "http://192.0.2.1:4000", "http://192.0.2.1:4000", "192.0.2.1:4000"},
-		{"localhost", "http://localhost:4000", "http://localhost:4000", "localhost:4000"},
-		{"::", "http://[::]:4000", "http://[::1]:4000", "[::]:4000"},
-		{"::1", "http://[::1]:4000", "http://[::1]:4000", "[::1]:4000"},
-	} {
-		t.Run(test.host, func(t *testing.T) {
-			var output bytes.Buffer
-			writeServiceStatus(&output, controlapi.Status{
-				State: "running", URL: test.url, BrowserURL: test.browserURL,
-				Settings: controlapi.Settings{Host: test.host, Port: 4000},
-			}, false)
-			for _, expected := range []string{
-				"  url:                " + test.url + "\n",
-				"  listen:             " + test.listener + "\n",
-			} {
-				if !strings.Contains(output.String(), expected) {
-					t.Fatalf("missing %q in %q", expected, output.String())
-				}
-			}
-		})
 	}
 }

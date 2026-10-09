@@ -40,18 +40,12 @@ type Resolution struct {
 }
 
 type Service struct {
-	session        session.Session
-	store          CommentStore
-	mutations      MutationStore
-	strictContext  bool
-	snapshotLoader SnapshotLoader
+	session session.Session
+	store   MutationStore
 }
 
-func New(active session.Session, store CommentStore) *Service {
+func New(active session.Session, store MutationStore) *Service {
 	service := &Service{session: active, store: store}
-	if mutations, ok := store.(MutationStore); ok {
-		service.mutations = mutations
-	}
 	return service
 }
 
@@ -81,11 +75,10 @@ func (service *Service) ListComments(ctx context.Context, includeResolved bool) 
 		if _, exists := repositories[scope]; exists {
 			continue
 		}
-		repository, err := service.session.Source.Snapshot(ctx, scope)
+		repository, err := service.Snapshot(ctx, scope)
 		if err != nil {
 			return nil, err
 		}
-		repository.ID = service.session.DiffIDs[scope]
 		repositories[scope] = repository
 	}
 

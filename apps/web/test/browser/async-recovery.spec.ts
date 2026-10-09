@@ -12,9 +12,13 @@ declare global {
 
 async function fixture(baseURL: string | undefined) {
   if (!baseURL) throw new Error("Missing test URL");
-  const { data } = await createApiClient({ baseUrl: baseURL }).GET(
-    "/api/v1/diffs/current",
-    { params: { query: { scope: "all" } } },
+  const client = createApiClient({ baseUrl: baseURL });
+  const catalog = await client.GET("/api/v2/contexts");
+  const contextId = catalog.data?.contexts[0]?.id;
+  if (!contextId) throw new Error("Missing fixture context");
+  const { data } = await client.GET(
+    "/api/v2/contexts/{contextId}/diffs/current",
+    { params: { path: { contextId }, query: { scope: "all" } } },
   );
   if (!data) throw new Error("Missing fixture diff");
   return data;
@@ -503,9 +507,10 @@ test("reviewed-file failure remains visible with comments disabled and retries",
   baseURL,
 }) => {
   if (!baseURL) throw new Error("Missing test URL");
-  const { data: session } = await createApiClient({ baseUrl: baseURL }).GET(
-    "/api/v1/session",
+  const catalog = await createApiClient({ baseUrl: baseURL }).GET(
+    "/api/v2/contexts",
   );
+  const session = catalog.data?.contexts[0];
   if (!session) throw new Error("Missing fixture session");
   await page.route("**/api/v2/contexts/*", (route) =>
     route.fulfill({

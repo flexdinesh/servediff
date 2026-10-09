@@ -1,14 +1,9 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,12 +11,11 @@ import (
 	"testing"
 
 	"github.com/flexdinesh/servediff/internal/contextservice"
-	"github.com/flexdinesh/servediff/internal/daemon"
 	"github.com/flexdinesh/servediff/internal/hooks"
 	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/reviewstore"
-	"github.com/flexdinesh/servediff/internal/serverapp"
-	"github.com/flexdinesh/servediff/internal/webui"
+	"github.com/flexdinesh/servediff/internal/submission"
+	"github.com/flexdinesh/servediff/internal/testsupport"
 )
 
 func producerGit(t *testing.T, root string, args ...string) {
@@ -56,53 +50,6 @@ func TestCollectorDestinationConfigAndExplicitLocalOverride(t *testing.T) {
 		if err != nil || values.server != scenario.server || values.token != scenario.token {
 			t.Fatalf("resolved: %#v %v", values, err)
 		}
-	}
-}
-
-func TestReviewCollectsAllWorktreesAndPrintsOrigin(t *testing.T) {
-	root := cliRepository(t)
-	linked := filepath.Join(t.TempDir(), "linked")
-	producerGit(t, root, "worktree", "add", "-b", "other", linked)
-	if err := os.WriteFile(filepath.Join(linked, "file.txt"), []byte("other edit\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("SERVEDIFF_CONFIG_PATH", filepath.Join(t.TempDir(), "config.json"))
-	var received []ingestion.Request
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/v2/health" {
-			_ = json.NewEncoder(w).Encode(ingestion.Health{StateID: "database", ProtocolVersion: ingestion.ProtocolVersion})
-			return
-		}
-		if r.Header.Get("X-Servediff-State") != "database" {
-			t.Error("submission not pinned")
-		}
-		var request ingestion.Request
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Error(err)
-			return
-		}
-		received = append(received, request)
-		id := "linked"
-		if request.Metadata.Root == root {
-			id = "origin"
-		}
-		_ = json.NewEncoder(w).Encode(ingestion.Receipt{ContextID: id, ReviewURL: "/contexts/" + id, MCPURL: "/mcp/contexts/" + id, Snapshot: request.Scopes[0].Snapshot})
-	}))
-	defer server.Close()
-	var output bytes.Buffer
-	if err := run(t.Context(), []string{"review", "--path", root, "--server", server.URL, "--source-id", "machine", "--no-browser"}, nil, &output, io.Discard); err != nil {
-		t.Fatal(err)
-	}
-	if len(received) != 2 || received[0].Metadata.Root != root || received[1].Metadata.Root != linked {
-		t.Fatalf("sources: %#v", received)
-	}
-	for _, request := range received {
-		if request.Metadata.TriggerRoot != root {
-			t.Fatalf("origin provenance: %#v", request.Metadata)
-		}
-	}
-	if !strings.Contains(output.String(), "/contexts/origin") || strings.Contains(output.String(), "/contexts/linked") {
-		t.Fatalf("output: %s", output.String())
 	}
 }
 
@@ -143,7 +90,7 @@ func TestHookInitialCleanSessionsAndMissingAcknowledgement(t *testing.T) {
 	}
 	service := contextservice.NewWithContext(t.Context(), store, user)
 	defer service.Close()
-	server := httptest.NewServer(serverapp.Handler(t.Context(), service, store, webui.Assets(), ""))
+	server := testsupport.Server(t, service, store)
 	defer server.Close()
 	t.Setenv("SERVEDIFF_SERVER_URL", server.URL)
 	directory := t.TempDir()
@@ -214,7 +161,7 @@ func TestHookInitialCleanSessionsAndMissingAcknowledgement(t *testing.T) {
 func TestRemoteFailureNeverStartsLocalService(t *testing.T) {
 	runtime := t.TempDir()
 	t.Setenv("SERVEDIFF_RUNTIME_DIR", runtime)
-	target, err := resolveDestination(context.Background(), options{server: "http://127.0.0.1:1"}, daemon.Settings{}, daemon.Explicit{}, nil)
+	target, err := submission.Resolve(context.Background(), "http://127.0.0.1:1", "token")
 	if err == nil || target != nil {
 		t.Fatalf("remote accepted: %#v %v", target, err)
 	}
@@ -230,57 +177,11 @@ func TestUnavailableWorktreeNeverProducesFalseEmptyCapture(t *testing.T) {
 	if err := os.RemoveAll(linked); err != nil {
 		t.Fatal(err)
 	}
-	requests, err := collectSubmissions(t.Context(), "review", options{directory: root, sourceID: "machine", trigger: "manual"}, nil)
+	requests, err := collectSubmissions(t.Context(), options{directory: root, sourceID: "machine", trigger: "manual"})
 	if err == nil || !strings.Contains(err.Error(), "unavailable") {
 		t.Fatalf("missing worktree not reported: %v", err)
 	}
 	if len(requests) != 1 || requests[0].Metadata.Root != root || len(requests[0].Scopes[0].Snapshot.Files) == 0 {
 		t.Fatalf("false empty capture: %#v", requests)
-	}
-}
-
-func TestConfiguredTokenRedactedInRejectedDelivery(t *testing.T) {
-	token := "persisted-private-token"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusForbidden)
-		_ = json.NewEncoder(w).Encode(ingestion.Problem{Status: http.StatusForbidden, Detail: "Rejected " + token})
-	}))
-	defer server.Close()
-	target := destination{endpoint: server.URL, token: token, remote: ingestion.NewClient(server.URL, token)}
-	_, err := target.deliver(t.Context(), ingestion.Request{})
-	var problem *ingestion.Problem
-	if err == nil || strings.Contains(err.Error(), token) || !errors.As(err, &problem) {
-		t.Fatalf("credential rejection: %v", err)
-	}
-}
-
-func TestUncertainSubmissionRemainsExplicitWhenRecoveryFails(t *testing.T) {
-	cause := fmt.Errorf("recovery failed: %w", errors.Join(io.EOF, daemon.ErrStateChanged))
-	failure := deliveryFailure("submission-id", true, cause)
-	if !strings.Contains(failure.Error(), "submission-id may have been saved") || !errors.Is(failure, daemon.ErrStateChanged) || !errors.Is(failure, io.EOF) {
-		t.Fatalf("lost acknowledgement: %v", failure)
-	}
-	certain := deliveryFailure("submission-id", false, daemon.ErrSettingsChanged)
-	if strings.Contains(certain.Error(), "may have been saved") || !errors.Is(certain, daemon.ErrSettingsChanged) {
-		t.Fatalf("certain rejection: %v", certain)
-	}
-}
-
-func TestSubmittedURLsUseLocalListenerAndKeepRemoteOrigin(t *testing.T) {
-	receipt := ingestion.Receipt{ContextID: "review-id", ReviewURL: "https://remote.example.test/contexts/review-id"}
-	for _, host := range []string{"127.0.0.1", "0.0.0.0", "::", "::1"} {
-		status := daemon.Status{Settings: daemon.Settings{Host: host, Port: 7981}}
-		urls := submissionURLs(receipt, &status)
-		expected := "http://localhost:7981/contexts/review-id"
-		if strings.Contains(host, ":") {
-			expected = "http://[::1]:7981/contexts/review-id"
-		}
-		if len(urls) == 0 || urls[0] != expected {
-			t.Fatalf("listener %s: %v", host, urls)
-		}
-	}
-	remote := submissionURLs(receipt, nil)
-	if len(remote) != 1 || remote[0] != receipt.ReviewURL {
-		t.Fatalf("remote URL changed: %v", remote)
 	}
 }

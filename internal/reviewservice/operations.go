@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/review"
 	"github.com/flexdinesh/servediff/internal/reviewdata"
 	"github.com/flexdinesh/servediff/internal/session"
@@ -24,36 +23,14 @@ type MutationStore interface {
 	DeleteMark(string, review.DiffMode, string) error
 	PutMark(string, review.ReviewMark) error
 	StoredVersion(string, string, string, time.Time) (review.RepositoryDiff, error)
-	VersionComplete(string, int) (bool, error)
-	PinVersion(review.RepositoryDiff, map[string]review.FilePatch) error
 }
 
-type SnapshotLoader func(context.Context, review.DiffMode, bool) (review.RepositoryDiff, error)
-
-// WithOperations uses the transport's snapshot cache while keeping review rules in the application.
-func (service *Service) WithOperations(store MutationStore, strict bool, loader SnapshotLoader) *Service {
-	copy := *service
-	copy.mutations, copy.strictContext, copy.snapshotLoader = store, strict, loader
-	return &copy
-}
-
-func (service *Service) snapshot(ctx context.Context, mode review.DiffMode, fresh bool) (review.RepositoryDiff, error) {
+// Snapshot reads and capability checks belong to the application, shared by transports.
+func (service *Service) Snapshot(ctx context.Context, mode review.DiffMode) (review.RepositoryDiff, error) {
 	if !service.session.Capabilities.Diff.Scopes.Allows(mode) {
 		return review.RepositoryDiff{}, session.NotEnabled(session.DiffScopes)
 	}
-	if service.snapshotLoader != nil {
-		return service.snapshotLoader(ctx, mode, fresh)
-	}
-	snapshot, err := service.session.Source.Snapshot(ctx, mode)
-	snapshot.ID = service.session.DiffIDs[mode]
-	snapshot.LocationID, snapshot.RepositoryID = service.session.LocationID, service.session.RepositoryID
-	if service.session.VersionID != "" {
-		snapshot.VersionID = service.session.VersionID
-	}
-	if snapshot.VersionID == "" {
-		snapshot.VersionID = reviewdata.VersionID(snapshot.ID, snapshot.Revision)
-	}
-	return snapshot, err
+	return service.session.Source.Snapshot(ctx, mode)
 }
 
 func (service *Service) ownsDiff(id string) bool {
@@ -95,25 +72,25 @@ func (service *Service) DeleteComment(id string) (bool, error) {
 	if err := service.requireComments(); err != nil {
 		return false, err
 	}
-	return service.mutations.DeleteComment(service.session.ContextID, id)
+	return service.store.DeleteComment(service.session.ContextID, id)
 }
 func (service *Service) Marks(mode review.DiffMode) ([]review.ReviewMark, error) {
 	if !service.session.Capabilities.Diff.Scopes.Allows(mode) {
 		return nil, session.NotEnabled(session.DiffScopes)
 	}
-	return service.mutations.Marks(service.session.ContextID, mode)
+	return service.store.Marks(service.session.ContextID, mode)
 }
 func (service *Service) ClearMarks(mode review.DiffMode) error {
 	if !service.session.Capabilities.Diff.Scopes.Allows(mode) {
 		return session.NotEnabled(session.DiffScopes)
 	}
-	return service.mutations.ClearMarks(service.session.ContextID, mode)
+	return service.store.ClearMarks(service.session.ContextID, mode)
 }
 func (service *Service) DeleteMark(mode review.DiffMode, id string) error {
 	if !service.session.Capabilities.Diff.Scopes.Allows(mode) {
 		return session.NotEnabled(session.DiffScopes)
 	}
-	return service.mutations.DeleteMark(service.session.ContextID, mode, id)
+	return service.store.DeleteMark(service.session.ContextID, mode, id)
 }
 func contentContext(contents string, start, end int) (string, bool) {
 	if start > end {
@@ -142,56 +119,24 @@ func repositoryFor(comment review.ReviewComment, repositories []review.Repositor
 	return nil
 }
 
-func (service *Service) CurrentFile(ctx context.Context, mode review.DiffMode, diffID, versionID, fileID, fileVersion string, fresh bool) (review.RepositoryDiff, review.ChangedFile, error) {
-	snapshot, err := service.snapshot(ctx, mode, fresh)
+func (service *Service) CurrentFile(ctx context.Context, mode review.DiffMode, diffID, versionID, fileID, fileVersion string) (review.RepositoryDiff, review.ChangedFile, error) {
+	snapshot, err := service.Snapshot(ctx, mode)
 	if err != nil {
 		return review.RepositoryDiff{}, review.ChangedFile{}, err
 	}
 	if snapshot.ID != diffID || snapshot.VersionID != versionID {
-		return review.RepositoryDiff{}, review.ChangedFile{}, diffsource.Error(409, "Diff changed. Refresh to load the latest version.")
+		return review.RepositoryDiff{}, review.ChangedFile{}, review.Error(409, "Diff changed. Refresh to load the latest version.")
 	}
 	for _, file := range snapshot.Files {
 		if file.ID != fileID {
 			continue
 		}
 		if file.Fingerprint != fileVersion {
-			return review.RepositoryDiff{}, review.ChangedFile{}, diffsource.Error(409, "File changed. Refresh to load the latest version.")
+			return review.RepositoryDiff{}, review.ChangedFile{}, review.Error(409, "File changed. Refresh to load the latest version.")
 		}
 		return snapshot, file, nil
 	}
-	return review.RepositoryDiff{}, review.ChangedFile{}, diffsource.Error(404, "File is not in the current diff")
-}
-
-func (service *Service) pinSnapshot(ctx context.Context, snapshot review.RepositoryDiff) error {
-	complete, err := service.mutations.VersionComplete(snapshot.VersionID, len(snapshot.Files))
-	if err != nil {
-		return err
-	}
-	if complete {
-		return nil
-	}
-	previews := make(map[string]review.FilePatch, len(snapshot.Files))
-	for _, file := range snapshot.Files {
-		preview, err := service.session.Source.Patch(ctx, snapshot.Mode, file, snapshot.Head)
-		if err != nil {
-			return err
-		}
-		if service.session.Capabilities.Files.Contents.Enabled() && !file.Binary && file.Status != "U" && preview.Contents == nil {
-			contents, contentError := service.session.Source.Contents(ctx, snapshot.Mode, file, snapshot.Head)
-			if contentError == nil {
-				preview.Contents = &contents
-			}
-		}
-		previews[file.ID] = preview
-	}
-	current, err := service.session.Source.Snapshot(ctx, snapshot.Mode)
-	if err != nil {
-		return err
-	}
-	if current.Revision != snapshot.Revision {
-		return diffsource.Error(409, "Diff changed while saving the review. Refresh to try again.")
-	}
-	return service.mutations.PinVersion(snapshot, previews)
+	return review.RepositoryDiff{}, review.ChangedFile{}, review.Error(404, "File is not in the current diff")
 }
 
 func (service *Service) repositories(ctx context.Context, comments []review.ReviewComment) ([]review.RepositoryDiff, error) {
@@ -208,7 +153,7 @@ func (service *Service) repositories(ctx context.Context, comments []review.Revi
 		if !include {
 			continue
 		}
-		snapshot, err := service.snapshot(ctx, mode, false)
+		snapshot, err := service.Snapshot(ctx, mode)
 		if err != nil {
 			return nil, err
 		}
@@ -222,12 +167,12 @@ func (service *Service) validateReference(ctx context.Context, diffID, versionID
 		return nil
 	}
 	if !service.ownsDiff(diffID) {
-		return diffsource.Error(404, "Comment diff not found")
+		return review.Error(404, "Comment diff not found")
 	}
 	if versionID == "" {
 		return nil
 	}
-	_, err := service.mutations.StoredVersion(service.session.User.ID, diffID, versionID, time.Now())
+	_, err := service.store.StoredVersion(service.session.User.ID, diffID, versionID, time.Now())
 	if err == nil {
 		return nil
 	}
@@ -238,12 +183,12 @@ func (service *Service) validateReference(ctx context.Context, diffID, versionID
 		if id != diffID {
 			continue
 		}
-		current, err := service.snapshot(ctx, mode, false)
+		current, err := service.Snapshot(ctx, mode)
 		if err == nil && current.VersionID == versionID {
-			return service.pinSnapshot(ctx, current)
+			return nil
 		}
 	}
-	return diffsource.Error(404, "Comment version not found")
+	return review.Error(404, "Comment version not found")
 }
 
 type CreateCommentInput struct {
@@ -268,12 +213,12 @@ func (service *Service) CreateComment(ctx context.Context, body CreateCommentInp
 		validSelection = body.Side == "additions" && body.Start == 0 && body.End == 0
 	}
 	if _, err := review.ParseDiffMode(string(body.Scope)); err != nil || !validSelection || strings.TrimSpace(body.Body) == "" {
-		return review.ReviewComment{}, diffsource.Error(400, "Invalid comment")
+		return review.ReviewComment{}, review.Error(400, "Invalid comment")
 	}
 	if !service.session.Capabilities.Diff.Scopes.Allows(body.Scope) {
 		return review.ReviewComment{}, session.NotEnabled(session.DiffScopes)
 	}
-	snapshot, file, err := service.CurrentFile(ctx, body.Scope, body.DiffID, body.VersionID, body.FileID, body.FileVersion, true)
+	snapshot, file, err := service.CurrentFile(ctx, body.Scope, body.DiffID, body.VersionID, body.FileID, body.FileVersion)
 	if err != nil {
 		return review.ReviewComment{}, err
 	}
@@ -284,7 +229,7 @@ func (service *Service) CreateComment(ctx context.Context, body CreateCommentInp
 			return review.ReviewComment{}, err
 		}
 		var ok bool
-		code, ok = diffsource.PatchContext(preview.Patch, body.Side, body.Start, body.End)
+		code, ok = review.PatchContext(preview.Patch, body.Side, body.Start, body.End)
 		if !ok && preview.Contents != nil {
 			contents := preview.Contents.After
 			if body.Side == "deletions" {
@@ -293,7 +238,7 @@ func (service *Service) CreateComment(ctx context.Context, body CreateCommentInp
 			code, ok = contentContext(contents, body.Start, body.End)
 		}
 		if !ok {
-			return review.ReviewComment{}, diffsource.Error(400, "Select up to 200 visible lines on one side")
+			return review.ReviewComment{}, review.Error(400, "Select up to 200 visible lines on one side")
 		}
 	}
 	start, end := body.Start, body.End
@@ -302,9 +247,6 @@ func (service *Service) CreateComment(ctx context.Context, body CreateCommentInp
 	}
 	id, err := randomID()
 	if err != nil {
-		return review.ReviewComment{}, err
-	}
-	if err := service.pinSnapshot(ctx, snapshot); err != nil {
 		return review.ReviewComment{}, err
 	}
 	comment := review.ReviewComment{
@@ -323,7 +265,7 @@ func (service *Service) UpdateComment(commentID string, body UpdateCommentInput)
 		return review.ReviewComment{}, err
 	}
 	if body.Body == nil && body.Status == nil || body.Body != nil && strings.TrimSpace(*body.Body) == "" || body.Status != nil && *body.Status != "open" && *body.Status != "resolved" {
-		return review.ReviewComment{}, diffsource.Error(400, "Invalid comment update")
+		return review.ReviewComment{}, review.Error(400, "Invalid comment update")
 	}
 	comments, err := service.store.Comments(service.session.ContextID)
 	if err != nil {
@@ -344,7 +286,7 @@ func (service *Service) UpdateComment(commentID string, body UpdateCommentInput)
 		}
 		return comment, nil
 	}
-	return review.ReviewComment{}, diffsource.Error(404, "Comment not found")
+	return review.ReviewComment{}, review.Error(404, "Comment not found")
 }
 
 func (service *Service) DeleteComments(ctx context.Context, selection string) (DeletedComments, error) {
@@ -352,7 +294,7 @@ func (service *Service) DeleteComments(ctx context.Context, selection string) (D
 		return DeletedComments{}, err
 	}
 	if selection != "all" && selection != "open" && selection != "resolved" && selection != "stale" {
-		return DeletedComments{}, diffsource.Error(400, "Invalid comment status")
+		return DeletedComments{}, review.Error(400, "Invalid comment status")
 	}
 	comments, err := service.store.Comments(service.session.ContextID)
 	if err != nil {
@@ -369,7 +311,7 @@ func (service *Service) DeleteComments(ctx context.Context, selection string) (D
 			selected[comment.ID] = true
 		}
 	}
-	deleted, err := service.mutations.DeleteComments(service.session.ContextID, selected)
+	deleted, err := service.store.DeleteComments(service.session.ContextID, selected)
 	if err != nil {
 		return DeletedComments{}, err
 	}
@@ -383,23 +325,21 @@ func (service *Service) ImportComments(ctx context.Context, input []review.Revie
 	}
 	for _, comment := range input {
 		if !comment.Valid() {
-			return nil, diffsource.Error(400, "Invalid comment import")
+			return nil, review.Error(400, "Invalid comment import")
 		}
-		if service.strictContext {
-			if comment.DiffID != "" && comment.DiffID != service.session.DiffIDs[comment.Scope] {
-				return nil, diffsource.Error(404, "Comment diff not found")
-			}
-			if err := service.validateReference(ctx, comment.DiffID, comment.VersionID); err != nil {
+		if comment.DiffID != service.session.DiffIDs[comment.Scope] {
+			return nil, review.Error(404, "Comment diff not found")
+		}
+		if err := service.validateReference(ctx, comment.DiffID, comment.VersionID); err != nil {
+			return nil, err
+		}
+		if comment.Origin != nil {
+			if err := service.validateReference(ctx, comment.Origin.DiffID, comment.Origin.VersionID); err != nil {
 				return nil, err
-			}
-			if comment.Origin != nil {
-				if err := service.validateReference(ctx, comment.Origin.DiffID, comment.Origin.VersionID); err != nil {
-					return nil, err
-				}
 			}
 		}
 	}
-	comments, err := service.mutations.ImportComments(service.session.ContextID, input)
+	comments, err := service.store.ImportComments(service.session.ContextID, input)
 	if err != nil {
 		return nil, err
 	}
@@ -417,9 +357,9 @@ func (service *Service) ExportComments(ctx context.Context, input ExportComments
 		var err error
 		mode, err = review.ParseDiffMode(requestedScope)
 		if err != nil {
-			return "", diffsource.Error(400, "Invalid diff scope")
+			return "", review.Error(400, "Invalid diff scope")
 		}
-		snapshot, err := service.snapshot(ctx, mode, false)
+		snapshot, err := service.Snapshot(ctx, mode)
 		if err != nil {
 			return "", err
 		}
@@ -458,28 +398,25 @@ func (service *Service) PutMark(ctx context.Context, mode review.DiffMode, fileI
 	if !service.session.Capabilities.Diff.Scopes.Allows(mode) {
 		return review.ReviewMark{}, session.NotEnabled(session.DiffScopes)
 	}
-	snapshot, err := service.snapshot(ctx, mode, true)
+	snapshot, err := service.Snapshot(ctx, mode)
 	if err != nil {
 		return review.ReviewMark{}, err
 	}
 	if snapshot.VersionID != versionID {
-		return review.ReviewMark{}, diffsource.Error(409, "Diff changed. Refresh to try again.")
+		return review.ReviewMark{}, review.Error(409, "Diff changed. Refresh to try again.")
 	}
 	for _, file := range snapshot.Files {
 		if file.ID != fileID {
 			continue
 		}
 		if file.Fingerprint != fileVersion {
-			return review.ReviewMark{}, diffsource.Error(409, "File changed. Refresh to try again.")
-		}
-		if err := service.pinSnapshot(ctx, snapshot); err != nil {
-			return review.ReviewMark{}, err
+			return review.ReviewMark{}, review.Error(409, "File changed. Refresh to try again.")
 		}
 		mark := review.ReviewMark{DiffID: snapshot.ID, VersionID: snapshot.VersionID, FileID: fileID, FileVersion: fileVersion, Scope: mode}
-		if err := service.mutations.PutMark(service.session.ContextID, mark); err != nil {
+		if err := service.store.PutMark(service.session.ContextID, mark); err != nil {
 			return review.ReviewMark{}, err
 		}
 		return mark, nil
 	}
-	return review.ReviewMark{}, diffsource.Error(404, "File is not in the current diff")
+	return review.ReviewMark{}, review.Error(404, "File is not in the current diff")
 }

@@ -4,58 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strconv"
-	"strings"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/contextservice"
 	"github.com/flexdinesh/servediff/internal/controlapi"
-	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/processlock"
 )
 
 var ErrUnavailable = errors.New("service unavailable; ownership held but control endpoint is unreachable")
-var ErrIncompatible = errors.New("incompatible service protocol; run servediff service restart")
-var ErrStateChanged = errors.New("service database identity changed; submission not replayed")
-var ErrSettingsChanged = errors.New("service settings changed; submission not replayed")
-var ErrMemoryRestarted = errors.New("memory service restarted; submission not replayed")
-
-// Connection binds accepted settings and authenticated status to one endpoint.
-// Its credentials remain private and submitting never rediscovers a daemon.
-type Connection struct {
-	status  Status
-	control *controlapi.Client
-}
-
-func (connection *Connection) Status() Status { return connection.status }
-
-func (connection *Connection) Register(ctx context.Context, id, path string) (contextservice.Submission, error) {
-	return connection.control.Register(ctx, id, path)
-}
-
-func (connection *Connection) Capture(ctx context.Context, id string, raw []byte, from string) (contextservice.Submission, error) {
-	return connection.control.Capture(ctx, id, raw, from)
-}
-
-func (connection *Connection) OpenCapture(ctx context.Context, id string) (contextservice.Submission, error) {
-	return connection.control.OpenCapture(ctx, id)
-}
-
-func boundConnection(descriptor Descriptor, status Status) (*Connection, error) {
-	if status.ProtocolVersion != controlapi.ProtocolVersion || status.StateID == "" {
-		return nil, ErrIncompatible
-	}
-	status.Settings = normalizeSettings(status.Settings)
-	return &Connection{status: status, control: controlapi.NewClient(descriptor.Endpoint, descriptor.Token)}, nil
-}
 
 type Client struct {
 	RuntimeDirectory string
-	Executable       string
 }
 
 func NewClient() (*Client, error) {
@@ -63,11 +21,7 @@ func NewClient() (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	executable, err := os.Executable()
-	if err != nil {
-		return nil, err
-	}
-	return &Client{RuntimeDirectory: dir, Executable: executable}, nil
+	return &Client{RuntimeDirectory: dir}, nil
 }
 
 func (client *Client) probe(ctx context.Context) (Descriptor, Status, error) {
@@ -119,122 +73,6 @@ func (client *Client) Status(ctx context.Context) (Status, error) {
 	return status, err
 }
 
-func (client *Client) Ensure(ctx context.Context, requested Settings, explicit Explicit) (Status, error) {
-	connection, err := client.EnsureConnection(ctx, requested, explicit)
-	if err != nil {
-		if errors.Is(err, ErrUnavailable) {
-			return Status{State: "unavailable"}, err
-		}
-		return Status{}, err
-	}
-	return connection.Status(), nil
-}
-
-func (client *Client) EnsureConnection(ctx context.Context, requested Settings, explicit Explicit) (*Connection, error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	d, status, err := client.probe(ctx)
-	if err != nil {
-		if errors.Is(err, ErrUnavailable) {
-			return client.startConnection(ctx, requested, explicit)
-		}
-		return nil, err
-	}
-	if status.State == "running" {
-		if err := checkSettings(status, requested, explicit); err != nil {
-			return nil, err
-		}
-		return boundConnection(d, status)
-	}
-	if status.State != "stopped" {
-		return nil, errors.New("service stopping; retry after shutdown")
-	}
-	return client.startConnection(ctx, requested, explicit)
-}
-
-func (client *Client) Start(ctx context.Context, requested Settings, explicit Explicit) (Status, error) {
-	connection, err := client.startConnection(ctx, requested, explicit)
-	if err != nil {
-		return Status{}, err
-	}
-	return connection.Status(), nil
-}
-
-func (client *Client) startConnection(ctx context.Context, requested Settings, explicit Explicit) (*Connection, error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	lock, err := client.lifecycleLock(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer lock.Close()
-	d, status, err := client.probe(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if status.State == "running" {
-		if err := checkSettings(status, requested, explicit); err != nil {
-			return nil, err
-		}
-		return boundConnection(d, status)
-	}
-	if status.State != "stopped" {
-		return nil, errors.New("service stopping; retry after shutdown")
-	}
-	return client.spawnConnection(ctx, requested)
-}
-
-// RecoverConnection may restore the accepted persistent service, but never
-// redirects an uncertain submission into different state or settings.
-func (client *Client) RecoverConnection(ctx context.Context, previous *Connection) (*Connection, error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	lock, err := client.lifecycleLock(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer lock.Close()
-	for {
-		d, status, err := client.probe(ctx)
-		if err != nil && !errors.Is(err, ErrUnavailable) {
-			return nil, err
-		}
-		if err == nil && status.State == "running" {
-			connection, err := boundConnection(d, status)
-			if err != nil {
-				return nil, err
-			}
-			return verifyRecovery(previous, connection)
-		}
-		if err == nil && status.State == "stopped" {
-			if previous.status.Settings.State == "memory" {
-				return nil, ErrMemoryRestarted
-			}
-			connection, err := client.spawnConnection(ctx, previous.status.Settings)
-			if err != nil {
-				return nil, err
-			}
-			return verifyRecovery(previous, connection)
-		}
-		if err := pause(ctx); err != nil {
-			return nil, fmt.Errorf("service recovery timed out: %w", err)
-		}
-	}
-}
-
-func verifyRecovery(previous, current *Connection) (*Connection, error) {
-	if normalizeSettings(previous.status.Settings) != normalizeSettings(current.status.Settings) {
-		return nil, ErrSettingsChanged
-	}
-	if previous.status.Settings.State == "memory" && previous.status.InstanceID != current.status.InstanceID {
-		return nil, ErrMemoryRestarted
-	}
-	if previous.status.StateID != current.status.StateID {
-		return nil, ErrStateChanged
-	}
-	return current, nil
-}
-
 func (client *Client) Stop(ctx context.Context) error {
 	lock, err := client.lifecycleLock(ctx)
 	if err != nil {
@@ -242,69 +80,6 @@ func (client *Client) Stop(ctx context.Context) error {
 	}
 	defer lock.Close()
 	return client.stop(ctx)
-}
-
-func (client *Client) Restart(ctx context.Context, requested Settings, explicit Explicit) (Status, error) {
-	lock, err := client.lifecycleLock(ctx)
-	if err != nil {
-		return Status{}, err
-	}
-	defer lock.Close()
-	_, status, err := client.probe(ctx)
-	if err != nil {
-		return status, err
-	}
-	settings := requested
-	if status.State == "running" {
-		settings = status.Settings
-		if explicit.Host {
-			settings.Host = requested.Host
-		}
-		if explicit.Port {
-			settings.Port = requested.Port
-		}
-		if explicit.State {
-			settings.State = requested.State
-		}
-		if explicit.WebDir {
-			settings.WebDir = requested.WebDir
-		}
-		if explicit.RetentionDays {
-			settings.RetentionDays = requested.RetentionDays
-		}
-	}
-	if err := client.stop(ctx); err != nil {
-		return Status{}, err
-	}
-	return client.spawn(ctx, settings)
-}
-
-func checkSettings(status Status, requested Settings, explicit Explicit) error {
-	if status.ProtocolVersion != controlapi.ProtocolVersion {
-		return ErrIncompatible
-	}
-	current := normalizeSettings(status.Settings)
-	requested = normalizeSettings(requested)
-	var flags []string
-	if explicit.Host && requested.Host != current.Host {
-		flags = append(flags, "--host "+requested.Host)
-	}
-	if explicit.Port && requested.Port > 0 && requested.Port != current.Port {
-		flags = append(flags, "--port "+strconv.Itoa(requested.Port))
-	}
-	if explicit.State && requested.State != current.State {
-		flags = append(flags, "--state "+requested.State)
-	}
-	if explicit.WebDir && requested.WebDir != current.WebDir {
-		flags = append(flags, "--web-dir "+requested.WebDir)
-	}
-	if explicit.RetentionDays && requested.RetentionDays != current.RetentionDays {
-		flags = append(flags, "--retention-days "+strconv.Itoa(requested.RetentionDays))
-	}
-	if len(flags) != 0 {
-		return fmt.Errorf("service running at %s with different settings; run: servediff service restart %s", status.URL, strings.Join(flags, " "))
-	}
-	return nil
 }
 
 func (client *Client) lifecycleLock(ctx context.Context) (*processlock.Lock, error) {
@@ -360,90 +135,4 @@ func (client *Client) stop(ctx context.Context) error {
 			return fmt.Errorf("service shutdown timed out: %w", err)
 		}
 	}
-}
-
-func (client *Client) spawn(ctx context.Context, settings Settings) (Status, error) {
-	connection, err := client.spawnConnection(ctx, settings)
-	if err != nil {
-		return Status{}, err
-	}
-	return connection.Status(), nil
-}
-
-func (client *Client) spawnConnection(ctx context.Context, settings Settings) (*Connection, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	if settings.Host == "" {
-		settings.Host = "127.0.0.1"
-	}
-	settings = normalizeSettings(settings)
-	startupCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	args := []string{"__daemon", "--host", settings.Host, "--port", strconv.Itoa(settings.Port), "--state", settings.State, "--runtime-dir", client.RuntimeDirectory, "--retention-days", strconv.Itoa(settings.RetentionDays)}
-	if settings.WebDir != "" {
-		args = append(args, "--web-dir", settings.WebDir)
-	}
-	command := exec.Command(client.Executable, args...)
-	detach(command)
-	null, err := os.Open(os.DevNull)
-	if err != nil {
-		return nil, err
-	}
-	defer null.Close()
-	if err := rotateLog(client.RuntimeDirectory); err != nil {
-		return nil, err
-	}
-	log, err := os.OpenFile(LogPath(client.RuntimeDirectory), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
-	if err != nil {
-		return nil, err
-	}
-	defer log.Close()
-	command.Stdin, command.Stdout, command.Stderr = null, log, log
-	if err := startupCtx.Err(); err != nil {
-		return nil, err
-	}
-	if err := command.Start(); err != nil {
-		return nil, err
-	}
-	exited := make(chan error, 1)
-	go func() { exited <- command.Wait() }()
-	for {
-		select {
-		case err := <-exited:
-			return nil, fmt.Errorf("service failed to start (%v): %s", err, logTail(client.RuntimeDirectory))
-		default:
-		}
-		d, status, err := client.probe(startupCtx)
-		if err == nil && status.State == "running" {
-			if err := checkSettings(status, settings, Explicit{Host: true, Port: true, State: settings.State != "", WebDir: true, RetentionDays: true}); err != nil {
-				return nil, err
-			}
-			return boundConnection(d, status)
-		}
-		if err := pause(startupCtx); err != nil {
-			return nil, fmt.Errorf("service startup timed out: %w; %s", err, logTail(client.RuntimeDirectory))
-		}
-	}
-}
-
-func logTail(dir string) string {
-	file, err := os.Open(filepath.Join(dir, "daemon.log"))
-	if err != nil {
-		return "see daemon log"
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return "see daemon log"
-	}
-	if info.Size() > 4096 {
-		_, _ = file.Seek(-4096, io.SeekEnd)
-	}
-	data, _ := io.ReadAll(file)
-	return strings.TrimSpace(string(data))
-}
-
-func (connection *Connection) Ingest(ctx context.Context, input ingestion.Request) (contextservice.Submission, error) {
-	return connection.control.Ingest(ctx, input)
 }

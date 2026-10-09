@@ -18,36 +18,23 @@ func TestServerConfigPrecedenceAndSnapshotIsolation(t *testing.T) {
 	t.Setenv("SERVEDIFF_PORT", "5123")
 	t.Setenv("SERVEDIFF_STATE", "memory")
 	t.Setenv("SERVEDIFF_WEB_DIR", "env-assets")
-	values, err := parseOptionsMode([]string{"--config-file", path}, io.Discard, false, true)
+	values, err := parseOptionsMode([]string{"--config-file", path}, io.Discard, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	settings, _, err := resolvedServerSettings(values)
+	settings, err := resolvedServerSettings(values)
 	if err != nil || settings.Host != "::1" || settings.Port != 5123 || settings.State != "memory" || filepath.Base(settings.WebDir) != "env-assets" {
 		t.Fatalf("environment resolution: %#v %v", settings, err)
 	}
-	values.config = `{"host":"192.0.2.1","port":6123,"state":"inline.db","webDir":"inline-assets"}`
-	settings, _, err = resolvedServerSettings(values)
-	if err != nil || settings.Host != "192.0.2.1" || settings.Port != 6123 || filepath.Base(settings.State) != "inline.db" || filepath.Base(settings.WebDir) != "inline-assets" {
-		t.Fatalf("inline resolution: %#v %v", settings, err)
-	}
-	values, err = parseOptionsMode([]string{"--config-file", path, "--config", `{"host":"192.0.2.1","port":6123,"state":"inline.db","webDir":"inline-assets"}`, "--host", "127.0.0.1", "--port", "7123", "--state", "flags.db", "--web-dir", "flags-assets"}, io.Discard, false, true)
+	values, err = parseOptionsMode([]string{"--config-file", path, "--host", "127.0.0.1", "--port", "7123", "--state", "flags.db", "--web-dir", "flags-assets"}, io.Discard, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	settings, explicit, err := resolvedServerSettings(values)
-	if err != nil || settings.Host != "127.0.0.1" || settings.Port != 7123 || filepath.Base(settings.State) != "flags.db" || filepath.Base(settings.WebDir) != "flags-assets" || !explicit.Host || !explicit.Port || !explicit.State || !explicit.WebDir {
-		t.Fatalf("flag resolution: %#v %#v %v", settings, explicit, err)
+	settings, err = resolvedServerSettings(values)
+	if err != nil || settings.Host != "127.0.0.1" || settings.Port != 7123 || filepath.Base(settings.State) != "flags.db" || filepath.Base(settings.WebDir) != "flags-assets" {
+		t.Fatalf("flag resolution: %#v %v", settings, err)
 	}
-	// An automatic-port parent snapshot must retain -1 and empty webDir despite env.
-	values, err = parseOptionsMode([]string{"--host", "127.0.0.1", "--port", "-1", "--state", "snapshot.db", "--runtime-dir", t.TempDir()}, io.Discard, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	settings, _, err = serverSettings(values)
-	if err != nil || settings.Host != "127.0.0.1" || settings.Port != -1 || filepath.Base(settings.State) != "snapshot.db" || settings.WebDir != "" {
-		t.Fatalf("daemon snapshot changed: %#v %v", settings, err)
-	}
+
 }
 
 func TestConfigCommandExplicitFileAndEnvironmentIsolation(t *testing.T) {

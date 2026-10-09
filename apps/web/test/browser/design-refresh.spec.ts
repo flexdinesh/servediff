@@ -5,7 +5,25 @@ test.beforeEach(async ({ request }) => resetFixtureState(request));
 
 async function seedReviewComments(page: Page) {
   await page.evaluate(async () => {
-    const response = await fetch("/api/v1/diffs/current?scope=all");
+    const catalog: unknown = await (await fetch("/api/v2/contexts")).json();
+    if (
+      typeof catalog !== "object" ||
+      catalog === null ||
+      !("contexts" in catalog) ||
+      !Array.isArray(catalog.contexts)
+    )
+      throw new Error("Missing catalog");
+    const context: unknown = catalog.contexts[0];
+    if (
+      typeof context !== "object" ||
+      context === null ||
+      !("id" in context) ||
+      typeof context.id !== "string"
+    )
+      throw new Error("Missing context");
+    const contextId = context.id;
+    const base = "/api/v2/contexts/" + encodeURIComponent(contextId);
+    const response = await fetch(base + "/diffs/current?scope=all");
     const data: unknown = await response.json();
     if (typeof data !== "object" || data === null)
       throw new Error("Bad fixture");
@@ -30,7 +48,7 @@ async function seedReviewComments(page: Page) {
         : undefined;
     if (typeof fingerprint !== "string")
       throw new Error("Missing fixture fingerprint");
-    const imported = await fetch("/api/v1/comments/import", {
+    const imported = await fetch(base + "/comments/import", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

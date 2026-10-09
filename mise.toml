@@ -59,7 +59,7 @@ run = "pnpm --recursive --filter '@servediff/plugin-*' --if-present build"
 [tasks."dev:server"]
 description = "Start a standalone Go fixture server"
 depends = ["web:build"]
-run = "go run ./cmd/servediff serve --fixture test/fixtures/sample.diff --state memory --web-dir apps/web/dist"
+run = "go run ./cmd/servediff dev --fixture test/fixtures/sample.diff --state memory --web-dir apps/web/dist"
 
 [tasks."test:go"]
 description = "Run Go tests"
@@ -131,9 +131,24 @@ run = [
   { task = "test:go" },
 ]
 
+[tasks."test:contracts"]
+description = "Run architecture, boundary, shared-rule and real HTTP contracts locally"
+depends = ["build"]
+run = [
+  "go run ./tools/check-boundaries",
+  "go test ./internal/review ./internal/session ./internal/contextservice ./internal/reviewservice ./internal/reviewstore ./internal/controlapi ./internal/ingestion ./internal/ingestionqueue ./internal/submission ./internal/serverapp ./internal/remoteserver ./test/conformance",
+  "node --test test/contracts/*.test.ts",
+  "pnpm test:conformance",
+]
+
 [tasks."check:push"]
 description = "Full pre-push checks, race tests, and generated-file consistency"
-run = [{ task = "check" }, { task = "test:race" }, { task = "check:generated" }]
+run = [
+  { task = "check" },
+  { task = "test:contracts" },
+  { task = "test:race" },
+  { task = "check:generated" },
+]
 
 [tasks."release:publish"]
 description = "Publish the tagged GitHub release with GoReleaser"

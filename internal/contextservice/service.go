@@ -3,18 +3,11 @@ package contextservice
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"path/filepath"
-	"strings"
-	"sync"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/review"
 	"github.com/flexdinesh/servediff/internal/reviewdata"
@@ -55,43 +48,21 @@ type Submission struct {
 }
 
 type Service struct {
-	events      events
-	store       Store
-	user        reviewdata.User
-	mu          sync.Mutex
-	sources     map[string]*cachedSource
-	loading     map[string]*sourceLoad
-	generation  map[string]uint64
-	sourceBytes int
-	parseSlots  chan struct{}
-	background  context.Context
-	cancel      context.CancelFunc
-	loaders     sync.WaitGroup
-	closing     bool
+	events     events
+	store      Store
+	user       reviewdata.User
+	background context.Context
+	cancel     context.CancelFunc
 }
 
 func New(store Store, user reviewdata.User) *Service {
 	return NewWithContext(context.Background(), store, user)
 }
-
 func NewWithContext(ctx context.Context, store Store, user reviewdata.User) *Service {
 	background, cancel := context.WithCancel(ctx)
-	return &Service{store: store, user: user,
-		sources: make(map[string]*cachedSource), loading: make(map[string]*sourceLoad),
-		generation: make(map[string]uint64), parseSlots: make(chan struct{}, 2),
-		background: background, cancel: cancel}
+	return &Service{store: store, user: user, background: background, cancel: cancel}
 }
-
-// Close stops shared source work before the database owner is released.
-func (service *Service) Close() error {
-	service.mu.Lock()
-	service.closing = true
-	service.cancel()
-	service.mu.Unlock()
-	service.loaders.Wait()
-	return nil
-}
-
+func (service *Service) Close() error   { service.cancel(); return nil }
 func (service *Service) UserID() string { return service.user.ID }
 
 func (service *Service) Delete(ctx context.Context, id string) error {
@@ -101,80 +72,8 @@ func (service *Service) Delete(ctx context.Context, id string) error {
 	if err := service.store.DeleteContext(service.user.ID, id); err != nil {
 		return requestError(err)
 	}
-	service.invalidateSource(id)
 	service.events.publish(id)
 	return nil
-}
-
-func (service *Service) Register(ctx context.Context, requestID, path string) (Submission, error) {
-	if err := validateRequest(ctx, requestID); err != nil {
-		return Submission{}, err
-	}
-	return Submission{}, diffsource.Error(410, "Path registration removed; collect and ingest using servediff review")
-}
-
-func (service *Service) Capture(ctx context.Context, requestID, raw, submittedFrom string) (Submission, error) {
-	if err := validateRequest(ctx, requestID); err != nil {
-		return Submission{}, err
-	}
-	if len(raw) > diffsource.MaxInputBytes {
-		return Submission{}, diffsource.Error(413, "Piped diff exceeds the 16 MiB input limit")
-	}
-	if submittedFrom != "" {
-		absolute, err := filepath.Abs(submittedFrom)
-		if err != nil {
-			return Submission{}, diffsource.Error(400, "Invalid submission directory")
-		}
-		submittedFrom = absolute
-	}
-	select {
-	case service.parseSlots <- struct{}{}:
-	default:
-		return Submission{}, diffsource.Error(503, "Capture parsing is busy; retry shortly")
-	}
-	source, err := diffsource.OpenPatch(raw)
-	<-service.parseSlots
-	if err != nil {
-		return Submission{}, err
-	}
-	snapshot, err := source.Snapshot(ctx, review.DiffAll)
-	if err != nil {
-		return Submission{}, err
-	}
-	if err := ctx.Err(); err != nil {
-		return Submission{}, err
-	}
-	binding, err := service.store.CaptureSubmission(service.user.ID, requestID, payloadHash("capture", raw, submittedFrom), raw, submittedFrom, snapshot)
-	if err != nil {
-		return Submission{}, requestError(err)
-	}
-	service.invalidateSource(binding.ContextID)
-	service.cacheSource(binding.ContextID, newCaptureCache(source, raw, snapshot), 0)
-	item, err := service.Get(ctx, binding.ContextID)
-	if err != nil {
-		return Submission{}, err
-	}
-	return Submission{Context: item, Snapshot: bindSnapshot(snapshot, binding)}, nil
-}
-
-func (service *Service) OpenCapture(ctx context.Context, id string) (Submission, error) {
-	item, err := service.Get(ctx, id)
-	if err != nil {
-		return Submission{}, err
-	}
-	if item.Kind != "capture" && item.Kind != "observation" {
-		return Submission{}, diffsource.Error(404, "Capture not found")
-	}
-	resolved, err := service.Resolve(ctx, id)
-	if err != nil {
-		return Submission{}, err
-	}
-	snapshot, err := resolved.Source.Snapshot(ctx, review.DiffAll)
-	if err != nil {
-		return Submission{}, err
-	}
-	binding := reviewdata.Binding{ContextID: resolved.ContextID, LocationID: resolved.LocationID, RepositoryID: resolved.RepositoryID, DiffIDs: resolved.DiffIDs, VersionID: resolved.VersionID}
-	return Submission{Context: item, Snapshot: bindSnapshot(snapshot, binding)}, nil
 }
 
 func (service *Service) Resolve(ctx context.Context, id string) (session.Session, error) {
@@ -193,32 +92,20 @@ func (service *Service) Resolve(ctx context.Context, id string) (session.Session
 	if err != nil {
 		return session.Session{}, requestError(err)
 	}
-	var source diffsource.Source
-	if item.Kind == "observation" {
-		if item.Metadata == nil {
-			return session.Session{}, diffsource.Error(500, "Observation metadata missing")
-		}
-		snapshot, readErr := service.store.ObservationSnapshot(service.user.ID, id, review.DiffAll)
-		if readErr != nil {
-			return session.Session{}, requestError(readErr)
-		}
-		source = &storedSource{store: service.store, ownerID: service.user.ID, id: id, metadata: *item.Metadata, binding: binding, kind: snapshot.Source}
-	} else if item.Kind == "worktree" {
-		source = &unavailableSource{root: valueOrEmpty(item.Root)}
-	} else {
-		source, err = service.sourceFor(ctx, item)
+	if item.Metadata == nil {
+		return session.Session{}, review.Error(500, "Observation metadata missing")
 	}
+	snapshot, err := service.store.ObservationSnapshot(service.user.ID, id, review.DiffAll)
 	if err != nil {
-		return session.Session{}, err
+		return session.Session{}, requestError(err)
 	}
+	source := &storedSource{store: service.store, ownerID: service.user.ID, id: id, metadata: *item.Metadata, binding: binding, kind: snapshot.Source}
 	resolved := session.Resolve(source, session.Policies{})
-	resolved.Stored = item.Kind == "observation"
 	resolved.User = session.User{ID: service.user.ID, Name: service.user.Name}
 	resolved.ContextID = binding.ContextID
 	resolved.LocationID = binding.LocationID
 	resolved.RepositoryID = binding.RepositoryID
 	resolved.DiffIDs = binding.DiffIDs
-	resolved.VersionID = binding.VersionID
 	return resolved, nil
 }
 
@@ -250,13 +137,13 @@ func (service *Service) ListFiltered(ctx context.Context, limit int, cursor stri
 		limit = 100
 	}
 	if limit < 1 || limit > 500 {
-		return Page{}, diffsource.Error(400, "Limit must be between 1 and 500")
+		return Page{}, review.Error(400, "Limit must be between 1 and 500")
 	}
 	var before cursorValue
 	if cursor != "" {
 		raw, err := base64.RawURLEncoding.DecodeString(cursor)
 		if err != nil || json.Unmarshal(raw, &before) != nil || before.ID == "" || before.Time < 0 {
-			return Page{}, diffsource.Error(400, "Invalid context cursor")
+			return Page{}, review.Error(400, "Invalid context cursor")
 		}
 	}
 	var items []reviewdata.ContextInfo
@@ -290,11 +177,11 @@ func (service *Service) ListFiltered(ctx context.Context, limit int, cursor stri
 	return page, nil
 }
 
-func (service *Service) Count(ctx context.Context) (int, int, error) {
+func (service *Service) Count(ctx context.Context) (int, error) {
 	if err := ctx.Err(); err != nil {
-		return 0, 0, err
+		return 0, err
 	}
-	return service.store.ContextCounts(service.user.ID, time.Now())
+	return service.store.ContextCount(service.user.ID, time.Now())
 }
 
 func (service *Service) present(item reviewdata.ContextInfo) (Context, error) {
@@ -314,7 +201,7 @@ func (service *Service) present(item reviewdata.ContextInfo) (Context, error) {
 		if err != nil {
 			return Context{}, requestError(err)
 		}
-		name := diffsource.RemoteRepositoryName(m.RemoteURL, m.RepositoryName)
+		name := review.RemoteRepositoryName(m.RemoteURL, m.RepositoryName)
 		if name == "" {
 			name = "Piped"
 		}
@@ -325,93 +212,20 @@ func (service *Service) present(item reviewdata.ContextInfo) (Context, error) {
 		}
 		return value, nil
 	}
-	var branch, worktreeName *string
-	lastChangedAt := item.LastSubmittedAt
-	changedFileCount := item.ChangedFileCount
-	availability := "available"
-	name, source := "Piped", "stdin"
-	if item.Kind == "worktree" {
-		source = "local"
-		lastChangedAt = 0
-		changedFileCount = nil
-		availability = "unavailable"
-		if item.Root != nil {
-			name = filepath.Base(*item.Root)
-		}
-	}
-	return Context{ID: item.ID, Kind: item.Kind, Source: source, Name: name, Branch: branch, WorktreeName: worktreeName, Root: item.Root, LocationID: item.LocationID,
-		RepositoryID: item.RepositoryID, CreatedAt: item.CreatedAt, LastSubmittedAt: item.LastSubmittedAt, LastChangedAt: lastChangedAt, ChangedFileCount: changedFileCount,
-		ExpiresAt: item.ExpiresAt, SubmittedFrom: item.SubmittedFrom, Capabilities: capabilities(item.Kind), Availability: availability}, nil
-}
-
-func capabilities(kind string) session.Capabilities {
-	support := diffsource.Support{Scopes: []review.DiffMode{review.DiffAll}}
-	if kind == "worktree" {
-		support = worktreeSupport()
-	}
-	return session.ResolveCapabilities(support, session.Policies{})
-}
-
-func bindSnapshot(snapshot review.RepositoryDiff, binding reviewdata.Binding) review.RepositoryDiff {
-	snapshot.ID = binding.DiffIDs[snapshot.Mode]
-	snapshot.LocationID = binding.LocationID
-	snapshot.RepositoryID = binding.RepositoryID
-	if binding.VersionID != "" {
-		snapshot.VersionID = binding.VersionID
-	}
-	if snapshot.VersionID == "" {
-		snapshot.VersionID = reviewdata.VersionID(snapshot.ID, snapshot.Revision)
-	}
-	return snapshot
-}
-
-func validateRequest(ctx context.Context, id string) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if strings.TrimSpace(id) == "" || len(id) > 128 {
-		return diffsource.Error(400, "Submission ID required; maximum 128 bytes")
-	}
-	return nil
-}
-
-func payloadHash(parts ...string) string {
-	hash := sha256.New()
-	for _, part := range parts {
-		_, _ = fmt.Fprintf(hash, "%d:", len(part))
-		_, _ = hash.Write([]byte(part))
-	}
-	return hex.EncodeToString(hash.Sum(nil))
+	return Context{}, review.Error(500, "Observation metadata missing")
 }
 
 func requestError(err error) error {
 	switch {
 	case errors.Is(err, reviewdata.ErrNotFound):
-		return diffsource.Error(404, "Context not found")
+		return review.Error(404, "Context not found")
 	case errors.Is(err, reviewdata.ErrExpired):
-		return diffsource.Error(410, "Capture expired")
+		return review.Error(410, "Capture expired")
 	case errors.Is(err, reviewdata.ErrSubmissionConflict):
-		return diffsource.Error(409, "Submission ID reused with different input")
+		return review.Error(409, "Submission ID reused with different input")
 	default:
 		return err
 	}
 }
 
 // Unavailable worktrees retain their review bindings and stored versions.
-type unavailableSource struct{ root string }
-
-func (source *unavailableSource) Root() string { return source.root }
-func (source *unavailableSource) Kind() string { return "local" }
-func worktreeSupport() diffsource.Support {
-	return diffsource.Support{Scopes: []review.DiffMode{review.DiffAll, review.DiffStaged, review.DiffUnstaged}, Refresh: false, StagingMetadata: true, FileContents: false}
-}
-func (source *unavailableSource) Support() diffsource.Support { return worktreeSupport() }
-func (source *unavailableSource) Snapshot(context.Context, review.DiffMode) (review.RepositoryDiff, error) {
-	return review.RepositoryDiff{}, diffsource.Error(503, "source_unavailable: registered worktree cannot be opened")
-}
-func (source *unavailableSource) Patch(context.Context, review.DiffMode, review.ChangedFile, *string) (review.FilePatch, error) {
-	return review.FilePatch{}, diffsource.Error(503, "source_unavailable: registered worktree cannot be opened")
-}
-func (source *unavailableSource) Contents(context.Context, review.DiffMode, review.ChangedFile, *string) (review.FileContents, error) {
-	return review.FileContents{}, diffsource.Error(503, "source_unavailable: registered worktree cannot be opened")
-}

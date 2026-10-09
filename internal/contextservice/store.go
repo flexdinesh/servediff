@@ -18,8 +18,6 @@ type Store interface {
 	Context(string, string, time.Time) (reviewdata.ContextInfo, error)
 	ContextBinding(string, string, time.Time) (reviewdata.Binding, error)
 	Contexts(string, int, int64, string, time.Time) ([]reviewdata.ContextInfo, error)
-	ContextCounts(string, time.Time) (int, int, error)
+	ContextCount(string, time.Time) (int, error)
 	DeleteContext(string, string) error
-	CaptureSubmission(string, string, string, string, string, review.RepositoryDiff) (reviewdata.Binding, error)
-	ReopenCapture(string, string, time.Time) (string, reviewdata.Binding, error)
 }

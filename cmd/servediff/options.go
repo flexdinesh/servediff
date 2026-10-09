@@ -25,13 +25,10 @@ type options struct {
 	directory        string
 	repositorySet    bool
 	fixture          string
-	capture          string
 	state            string
 	stateSet         bool
 	webDir           string
 	webDirSet        bool
-	runtimeDir       string
-	json             bool
 	noBrowser        bool
 	version          bool
 	server           string
@@ -46,7 +43,6 @@ type options struct {
 	runID            string
 	sourceID         string
 	pathSet          bool
-	config           string
 	configFile       string
 	base             string
 	branch           string
@@ -56,12 +52,12 @@ func parseOptions(arguments []string, stderr io.Writer) (options, error) {
 	return parseOptionsMode(arguments, stderr, false)
 }
 
-func parseOptionsMode(arguments []string, stderr io.Writer, internal bool, foreground ...bool) (options, error) {
+func parseOptionsMode(arguments []string, stderr io.Writer, allowHost bool) (options, error) {
 	flags := flag.NewFlagSet("servediff", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	values := options{host: "127.0.0.1", directory: ".", trigger: "manual"}
 	flags.StringVar(&values.directory, "path", ".", "checkout path to collect")
-	flags.StringVar(&values.server, "server", values.server, "ingestion server URL; defaults to local service")
+	flags.StringVar(&values.server, "server", values.server, "ingestion server URL; required for sync")
 	flags.StringVar(&values.token, "token", values.token, "ingestion token; prefer SERVEDIFF_TOKEN")
 	flags.StringVar(&values.trigger, "trigger", values.trigger, "collection trigger: manual or agent-hook")
 	flags.StringVar(&values.agent, "harness", "", "harness name recorded with the observation")
@@ -71,21 +67,15 @@ func parseOptionsMode(arguments []string, stderr io.Writer, internal bool, foreg
 	flags.StringVar(&values.sourceID, "source-id", "", "source identity; defaults to persistent local identity")
 	flags.StringVar(&values.base, "base", "", "comparison baseline: auto (default), HEAD, or Git ref")
 	flags.StringVar(&values.branch, "branch", "", "recover committed branch from Git objects; defaults base to auto")
-	if internal || (len(foreground) > 0 && foreground[0]) {
-		flags.StringVar(&values.host, "host", values.host, "IP address to bind (foreground/internal only)")
+	if allowHost {
+		flags.StringVar(&values.host, "host", values.host, "IP address to bind")
 	}
-	flags.StringVar(&values.config, "config", "", "JSON settings override for service start/restart")
 	flags.StringVar(&values.configFile, "config-file", "", "machine JSON config path; defaults to SERVEDIFF_CONFIG_PATH")
 	flags.IntVar(&values.port, "port", 0, "HTTP port; defaults to the first available port from 7981 to 7990")
 	flags.IntVar(&values.port, "p", 0, "HTTP port; defaults to the first available port from 7981 to 7990")
 	flags.StringVar(&values.fixture, "fixture", "", "read a Git patch fixture")
-	flags.StringVar(&values.capture, "capture", "", "reopen a retained capture by ID")
 	flags.StringVar(&values.state, "state", "", "state database path; memory disables persistence")
 	flags.StringVar(&values.webDir, "web-dir", "", "serve web assets from a directory")
-	if internal {
-		flags.StringVar(&values.runtimeDir, "runtime-dir", "", "internal daemon runtime directory")
-	}
-	flags.BoolVar(&values.json, "json", false, "print service status as JSON")
 	flags.BoolVar(&values.replace, "replace", false, "replace an existing foreground local instance")
 	flags.BoolVar(&values.print, "print", false, "print only the configured server URL after sync")
 	flags.BoolVar(&values.debug, "debug", false, "show sync progress on stderr")
@@ -97,10 +87,6 @@ func parseOptionsMode(arguments []string, stderr io.Writer, internal bool, foreg
 		fmt.Fprintln(stderr, "         git diff | servediff [options]")
 		fmt.Fprintln(stderr, "         servediff sync [--path DIRECTORY] [--print] [--debug] [--retry]")
 		fmt.Fprintln(stderr, "         servediff config {set|get|remove} KEY [VALUE]")
-		fmt.Fprintln(stderr, "         servediff review [--path DIRECTORY] [options]")
-		fmt.Fprintln(stderr, "         servediff service {start|stop|restart|status} [options]")
-		fmt.Fprintln(stderr, "         servediff service config {set KEY VALUE|get KEY|remove KEY}")
-		fmt.Fprintln(stderr, "         servediff serve [directory | - | --fixture FILE] [options]")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(normalizeArguments(arguments)); err != nil {
@@ -109,11 +95,7 @@ func parseOptionsMode(arguments []string, stderr io.Writer, internal bool, foreg
 		}
 		return options{}, err
 	}
-	minimumPort := 0
-	if internal {
-		minimumPort = -1
-	}
-	if values.port < minimumPort || values.port > 65535 {
+	if values.port < 0 || values.port > 65535 {
 		return options{}, errors.New("port must be between 0 and 65535")
 	}
 	host := net.ParseIP(values.host)
@@ -148,9 +130,6 @@ func parseOptionsMode(arguments []string, stderr io.Writer, internal bool, foreg
 		}
 		values.directory, values.repositorySet = flags.Arg(0), true
 	}
-	if values.capture != "" && (values.repositorySet || values.fixture != "") {
-		return options{}, errors.New("capture cannot be combined with a directory or fixture")
-	}
 	flags.Visit(func(value *flag.Flag) {
 		if value.Name == "host" {
 			values.hostSet = true
@@ -171,8 +150,8 @@ func parseOptionsMode(arguments []string, stderr io.Writer, internal bool, foreg
 func normalizeArguments(arguments []string) []string {
 	valueOptions := map[string]bool{
 		"-p": true, "--port": true, "--host": true, "--fixture": true,
-		"--config": true, "--config-file": true, "--path": true, "--server": true, "--token": true, "--trigger": true, "--harness": true, "--run-id": true, "--source-id": true,
-		"--state": true, "--web-dir": true, "--capture": true, "--runtime-dir": true,
+		"--config-file": true, "--path": true, "--server": true, "--token": true, "--trigger": true, "--harness": true, "--run-id": true, "--source-id": true,
+		"--state": true, "--web-dir": true,
 		"--base": true, "--branch": true, "--session-name": true, "--retention-days": true,
 	}
 	options, positionals := make([]string, 0, len(arguments)), make([]string, 0, 1)

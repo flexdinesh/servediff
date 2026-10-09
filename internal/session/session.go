@@ -3,7 +3,6 @@ package session
 import (
 	"crypto/rand"
 
-	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/review"
 )
 
@@ -78,15 +77,13 @@ type Policies struct {
 }
 
 type Session struct {
-	Stored       bool
 	ID           string
 	User         User
 	ContextID    string
 	LocationID   *string
 	RepositoryID *string
 	DiffIDs      map[review.DiffMode]string
-	VersionID    string
-	Source       diffsource.Source
+	Source       review.Source
 	Capabilities Capabilities
 }
 
@@ -103,13 +100,13 @@ func (err *CapabilityError) Error() string {
 	return "Capability " + err.Capability + " is not enabled for this session"
 }
 
-func Resolve(source diffsource.Source, policies Policies) Session {
+func Resolve(source review.Source, policies Policies) Session {
 	return Session{ID: rand.Text(), Source: source, Capabilities: ResolveCapabilities(source.Support(), policies)}
 }
 
 // ResolveCapabilities is shared by catalog metadata and resolved review sessions.
 // Capabilities describe source support and policy, never the deployment mode.
-func ResolveCapabilities(support diffsource.Support, policies Policies) Capabilities {
+func ResolveCapabilities(support review.Support, policies Policies) Capabilities {
 	capabilities := Capabilities{}
 	capabilities.Diff.Scopes = ScopesCapability{
 		State:  supported(len(support.Scopes) > 0),

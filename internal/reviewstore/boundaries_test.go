@@ -1,7 +1,6 @@
 package reviewstore
 
 import (
-	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -184,7 +183,7 @@ func TestRetentionConfigurationPreservesExistingExpiryAndReplay(t *testing.T) {
 	}
 	user := testUser(t, store, "retention")
 	request := observationRequest("source", "original")
-	request.ProtocolVersion = 1
+	request.ProtocolVersion = ingestion.ProtocolVersion
 	request.ContentHash = strings.Repeat("a", 64)
 	binding, err := store.Ingest(user.ID, request)
 	if err != nil {
@@ -222,82 +221,8 @@ func TestRetentionConfigurationPreservesExistingExpiryAndReplay(t *testing.T) {
 	if err := store.db.QueryRow(`SELECT COUNT(*) FROM observation_scopes s JOIN diffs d ON d.id=s.diff_id WHERE s.context_id=? AND d.expires_at=?`, binding.ContextID, *refreshed.ExpiresAt).Scan(&count); err != nil || count != 3 {
 		t.Fatalf("scope expiry: %d %v", count, err)
 	}
-	capture, err := store.Capture(user.ID, "patch", review.RepositoryDiff{Mode: review.DiffAll, Revision: "capture"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	context, err := store.Context(user.ID, capture.ContextID, time.Now())
-	if err != nil || *context.ExpiresAt-context.CreatedAt != duration.Milliseconds() {
-		t.Fatalf("capture expiry: %#v %v", context, err)
-	}
-	live, err := store.RegisterGit(user.ID, "/repo", "/repo/.git", "checkout")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var difference int64
-	if err := store.db.QueryRow(`SELECT expires_at-created_at FROM diffs WHERE id=?`, live.DiffIDs[review.DiffAll]).Scan(&difference); err != nil || difference != duration.Milliseconds() {
-		t.Fatalf("live expiry: %d %v", difference, err)
-	}
 	if _, err := OpenWithRetention(":memory:", 0); err == nil {
 		t.Fatal("nonpositive retention accepted")
-	}
-}
-
-func TestSchemaSixMigrationPreservesReplaySessionAndDeletedHead(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "state.db")
-	store, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	user := testUser(t, store, "migration")
-	request := observationRequest("source", "original")
-	request.ContentHash = strings.Repeat("a", 64)
-	request.Metadata.Agent, request.Metadata.RunID = "codex", "legacy-session"
-	binding, err := store.Ingest(user.ID, request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	newer := request
-	newer.SubmissionID = "deleted-head"
-	newer.ContentHash = strings.Repeat("b", 64)
-	newer.Metadata.CollectedAt++
-	latest, err := store.Ingest(user.ID, newer)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.DeleteContext(user.ID, latest.ContextID); err != nil {
-		t.Fatal(err)
-	}
-	for _, statement := range []string{
-		`DROP TABLE observation_sessions`, `DROP TABLE agent_sessions`,
-		`ALTER TABLE observation_stream_heads RENAME TO new_heads`,
-		`CREATE TABLE observation_stream_heads (owner_id TEXT NOT NULL,source_id TEXT NOT NULL,repository_key TEXT NOT NULL,checkout_key TEXT NOT NULL,branch TEXT NOT NULL,context_id TEXT NOT NULL,collected_at INTEGER NOT NULL,PRIMARY KEY(owner_id,source_id,repository_key,checkout_key,branch))`,
-		`INSERT INTO observation_stream_heads SELECT owner_id,source_id,repository_key,checkout_key,branch,context_id,collected_at FROM new_heads`,
-		`DROP TABLE new_heads`, `PRAGMA user_version=6`,
-	} {
-		if _, err := store.db.Exec(statement); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := store.Close(); err != nil {
-		t.Fatal(err)
-	}
-	store, err = Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
-	replay, err := store.Ingest(user.ID, request)
-	if err != nil || replay.ContextID != binding.ContextID {
-		t.Fatalf("migration replay: %#v %v", replay, err)
-	}
-	context, err := store.Context(user.ID, binding.ContextID, time.Now())
-	if err != nil || !context.Stale || len(context.Sessions) != 1 || context.Sessions[0].ID != "legacy-session" {
-		t.Fatalf("migration provenance/head: %#v %v", context, err)
-	}
-	request.Metadata.Agent = "changed"
-	if _, err := store.Ingest(user.ID, request); !errors.Is(err, ErrSubmissionConflict) {
-		t.Fatalf("migration lost payload hash: %v", err)
 	}
 }
 

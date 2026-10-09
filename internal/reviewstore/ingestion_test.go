@@ -34,7 +34,7 @@ func TestObservationRetryAndIndependentSources(t *testing.T) {
 		t.Fatal(err)
 	}
 	retry, err := store.Ingest(user.ID, request)
-	if err != nil || retry.ContextID != first.ContextID || len(retry.DiffIDs) != 3 || retry.VersionID != "" {
+	if err != nil || retry.ContextID != first.ContextID || len(retry.DiffIDs) != 3 {
 		t.Fatalf("retry: %#v, %v", retry, err)
 	}
 	request.Metadata.Branch = "other"
@@ -415,39 +415,6 @@ func TestObservationReviewScopesAndMetadataSearch(t *testing.T) {
 	}
 }
 
-func TestSchemaThreeMigrationPreservesCaptures(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "state.db")
-	store, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	user := testUser(t, store, "schema3")
-	old, err := store.Capture(user.ID, "old patch", review.RepositoryDiff{Mode: review.DiffAll, Revision: "old", Files: []review.ChangedFile{}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, statement := range []string{"DROP TABLE observation_scopes", "DROP TABLE observations", "DROP TABLE observation_repositories", "PRAGMA user_version = 3"} {
-		if _, err := store.db.Exec(statement); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := store.Close(); err != nil {
-		t.Fatal(err)
-	}
-	store, err = Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
-	raw, reopened, err := store.ReopenCapture(user.ID, old.ContextID, time.Now())
-	if err != nil || raw != "old patch" || reopened.VersionID != old.VersionID {
-		t.Fatalf("legacy capture: %#v, %v", reopened, err)
-	}
-	if _, err := store.Ingest(user.ID, observationRequest("source", "request")); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestObservationDedupePreservesReviewAndRefreshesOnlyFreshSubmissions(t *testing.T) {
 	store := openTestStore(t)
 	user := testUser(t, store, "dedupe")
@@ -495,7 +462,7 @@ func TestObservationDedupePreservesReviewAndRefreshesOnlyFreshSubmissions(t *tes
 		t.Fatalf("dedupe: %#v %v", reused, err)
 	}
 	item, err = store.Context(user.ID, first.ContextID, time.Now())
-	if err != nil || item.ExpiresAt == nil || *item.ExpiresAt-item.LastSubmittedAt != CaptureLifetime.Milliseconds() || *item.ExpiresAt <= oldExpiry {
+	if err != nil || item.ExpiresAt == nil || *item.ExpiresAt-item.LastSubmittedAt != DefaultRetention.Milliseconds() || *item.ExpiresAt <= oldExpiry {
 		t.Fatalf("fresh TTL: %#v %v", item, err)
 	}
 	var scopes int
@@ -693,127 +660,5 @@ func TestObservationExpiryHidesReadsAndPrunesEveryScope(t *testing.T) {
 		if count != expected {
 			t.Fatalf("orphaned %s: %d want %d", table, count, expected)
 		}
-	}
-}
-
-func TestSchemaFourMigrationPreservesObservationHistoryAndRetry(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "state.db")
-	store, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	user := testUser(t, store, "migration")
-	request := observationRequest("source", "original")
-	first, err := store.Ingest(user.ID, request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	request.SubmissionID = "duplicate"
-	request.Metadata.CollectedAt++
-	second, err := store.Ingest(user.ID, request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first.ContextID == second.ContextID {
-		t.Fatal("legacy changed observations unexpectedly deduped")
-	}
-	if err := store.PutComment(first.ContextID, review.ReviewComment{ID: "first-comment", Scope: review.DiffAll, Path: "file.txt", Body: "retain", CreatedAt: 1}); err != nil {
-		t.Fatal(err)
-	}
-	lastSubmitted := time.Now().Add(-time.Hour).UnixMilli()
-	if _, err := store.db.Exec(`UPDATE contexts SET last_submitted_at=?`, lastSubmitted); err != nil {
-		t.Fatal(err)
-	}
-	for _, query := range []string{"DROP TABLE observation_stream_heads", "DROP TABLE observation_identities", "DROP TABLE observation_submissions", "UPDATE diffs SET expires_at=NULL", "PRAGMA user_version=4"} {
-		if _, err := store.db.Exec(query); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := store.Close(); err != nil {
-		t.Fatal(err)
-	}
-	store, err = Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
-	for _, binding := range []Binding{first, second} {
-		item, err := store.Context(user.ID, binding.ContextID, time.Now())
-		if err != nil || item.Stale != (binding.ContextID == first.ContextID) || item.ExpiresAt == nil || *item.ExpiresAt != lastSubmitted+CaptureLifetime.Milliseconds() {
-			t.Fatalf("migration TTL: %#v %v", item, err)
-		}
-		var scopes int
-		if err := store.db.QueryRow(`SELECT COUNT(*) FROM observation_scopes s JOIN diffs d ON d.id=s.diff_id WHERE s.context_id=? AND d.expires_at=?`, binding.ContextID, *item.ExpiresAt).Scan(&scopes); err != nil || scopes != 3 {
-			t.Fatalf("migration scopes: %d %v", scopes, err)
-		}
-	}
-	comments, err := store.Comments(first.ContextID)
-	if err != nil || len(comments) != 1 {
-		t.Fatalf("migration review: %#v %v", comments, err)
-	}
-	request.SubmissionID = "original"
-	request.Metadata.CollectedAt--
-	retry, err := store.Ingest(user.ID, request)
-	if err != nil || retry.ContextID != first.ContextID {
-		t.Fatalf("migration replay: %#v %v", retry, err)
-	}
-}
-
-func TestSchemaFiveMigrationBackfillsLatestDeduplicatedCollection(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "state.db")
-	store, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	user := testUser(t, store, "schema5-freshness")
-	requests := make([]ingestion.Request, 0, 5)
-	contexts := make(map[string]string)
-	for _, step := range []struct {
-		id, content string
-		collectedAt int64
-	}{{"a-first", "a", 100}, {"b-first", "b", 200}, {"a-fresh", "a", 300}, {"b-equal", "b", 300}, {"a-late", "a", 250}} {
-		request := observationRequest("source", step.id)
-		request.ContentHash = strings.Repeat(step.content, 64)
-		request.Metadata.CollectedAt = step.collectedAt
-		binding, err := store.Ingest(user.ID, request)
-		if err != nil {
-			t.Fatal(err)
-		}
-		contexts[step.content] = binding.ContextID
-		requests = append(requests, request)
-	}
-	before, err := store.Context(user.ID, contexts["b"], time.Now())
-	if err != nil || before.ExpiresAt == nil {
-		t.Fatalf("original retention: %#v, %v", before, err)
-	}
-	for _, query := range []string{"DROP TABLE observation_stream_heads", "PRAGMA user_version=5"} {
-		if _, err := store.db.Exec(query); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := store.Close(); err != nil {
-		t.Fatal(err)
-	}
-	reopened, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	store = reopened
-	for content, id := range contexts {
-		item, err := store.Context(user.ID, id, time.Now())
-		if err != nil || item.Stale != (content == "a") || item.ExpiresAt == nil || (content == "b" && *item.ExpiresAt != *before.ExpiresAt) {
-			t.Fatalf("migrated freshness or retention for %s: %#v, %v", content, item, err)
-		}
-	}
-	// Backfill uses fresh aliases, not immutable initial observation metadata;
-	// replaying an earlier equal-time alias cannot replace the winner.
-	retry, err := store.Ingest(user.ID, requests[2])
-	if err != nil || retry.ContextID != contexts["a"] {
-		t.Fatalf("migrated retry: %#v, %v", retry, err)
-	}
-	item, err := store.Context(user.ID, contexts["a"], time.Now())
-	if err != nil || !item.Stale {
-		t.Fatalf("retry replaced migrated head: %#v, %v", item, err)
 	}
 }

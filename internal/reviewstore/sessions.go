@@ -2,7 +2,6 @@ package reviewstore
 
 import (
 	"database/sql"
-	"encoding/json"
 
 	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/reviewdata"
@@ -21,41 +20,6 @@ func initializeSessions(tx *sql.Tx) error {
 		`CREATE INDEX IF NOT EXISTS observation_submissions_run ON observation_submissions(owner_id,json_extract(metadata,'$.runId'),context_id)`,
 	} {
 		if _, err := tx.Exec(statement); err != nil {
-			return err
-		}
-	}
-	// Backfill only missing associations. Existing mutable names must survive restarts.
-	rows, err := tx.Query(`SELECT p.owner_id,p.context_id,p.metadata FROM observation_submissions p WHERE COALESCE(json_extract(p.metadata,'$.agentSession.id'),json_extract(p.metadata,'$.runId'),'')<>'' AND NOT EXISTS (SELECT 1 FROM observation_sessions a WHERE a.context_id=p.context_id AND a.source_id=p.source_id AND a.harness=COALESCE(json_extract(p.metadata,'$.agentSession.harness'),json_extract(p.metadata,'$.agent')) AND a.session_id=COALESCE(json_extract(p.metadata,'$.agentSession.id'),json_extract(p.metadata,'$.runId'))) ORDER BY json_extract(p.metadata,'$.collectedAt'),p.rowid`)
-	if err != nil {
-		return err
-	}
-	type entry struct {
-		owner, context string
-		metadata       ingestion.Metadata
-	}
-	entries := []entry{}
-	for rows.Next() {
-		var item entry
-		var raw string
-		if err := rows.Scan(&item.owner, &item.context, &raw); err != nil {
-			rows.Close()
-			return err
-		}
-		if err := json.Unmarshal([]byte(raw), &item.metadata); err != nil {
-			rows.Close()
-			return err
-		}
-		entries = append(entries, item)
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return err
-	}
-	if err := rows.Close(); err != nil {
-		return err
-	}
-	for _, item := range entries {
-		if err := putSessionAssociation(tx, item.owner, item.context, item.metadata); err != nil {
 			return err
 		}
 	}

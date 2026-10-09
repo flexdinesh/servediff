@@ -1,130 +1,96 @@
 # Architecture
 
-servediff composes one Go application core into foreground local and distributed
-remote runtimes. React/Vite assets are embedded; Node is a build dependency.
+ServeDiff has one stored-data application with two compositions. This is the
+canonical record of package boundaries and architectural decisions.
+[System semantics](system.md) covers identities and durability;
+[development](development.md) covers commands and checks.
 
-## Composition
+## Modes are compositions
 
-- `servediff [PATH]`: collect only that checkout once and ingest directly.
-  The foreground process owns shared persistent SQLite state, UI, REST and MCP.
-  Ctrl-C stops collection and serving; observations and review state persist.
-- `servediff sync`: finite collector including registered worktrees; authenticated
-  HTTP admission, durable job polling, and process exit after committed results.
-- `servediff-server`: foreground container process with authenticated HTTP,
-  durable queue, worker, UI, REST and MCP. No Git or checkout mount.
+| Concern    | Local `servediff [PATH]`                        | Remote `servediff-server`                |
+| ---------- | ----------------------------------------------- | ---------------------------------------- |
+| Collection | Selected checkout or stdin, once                | Separate finite sync or hook producer    |
+| Admission  | Direct application call before serving          | Authenticated durable queue and worker   |
+| Lifetime   | Foreground; authenticated singleton replacement | Foreground; graceful worker shutdown     |
+| Storage    | One owner of persistent SQLite                  | One owner of persistent SQLite           |
+| Queries    | Stored observations via REST/MCP                | Same application services via REST/MCP   |
+| Access     | Public listener; private lifecycle credential   | Account credentials wrap the application |
 
-`serverapp.Run` shares HTTP/task cancellation, graceful shutdown and pruning.
-Local composition adds authenticated singleton discovery/replacement.
-Remote composition adds credential resolution and an ingestion worker.
-REST and MCP call the same query/review services, never each other over HTTP.
+Source support and review policy resolve snapshot capabilities. A mode never
+invents contents, scopes or refresh support. Queue presence at the composition
+root enables remote admission; no queue means no admission routes.
+Stored observations cannot refresh from Git.
 
-The local lifecycle lock serializes replacement/startup until the new descriptor
-is published. Database ownership is released only after serving and background
-work stop. Replacement never trusts a PID alone. Legacy daemon commands retain
-their old explicit compatibility behavior; new local collection does not submit
-through their HTTP ingestion adapter.
+Private local control supports authenticated status/shutdown only. Replacement
+uses lifecycle locking, a validated descriptor and graceful shutdown; a PID
+alone is never authority. `servediff dev --fixture FILE` is isolated from
+personal lifecycle discovery.
 
-## Modules and contracts
+## Modules own behavior
 
-- `collector`, `diffsource`: Git discovery, stable enrollment, parsing, bounded
-  previews and content identity. Finite producers reuse CollectChanged for suppression.
-- `ingestion`: versioned request/job/receipt contracts, validation, pure content
-  identity and comparison policy, and HTTP clients.
-- `contextservice.Store`: atomic observation publication and stored catalog reads.
-- `reviewservice.CommentStore`, `MutationStore`: shared review state operations.
-- `httpapi.Store`: review persistence capabilities required by REST.
-- `reviewdata`: storage-independent IDs, results and errors.
-- `reviewstore`: SQLite adapter and schema migration; no Git query dependency.
-- `ingestionqueue.Queue`: durable acceptance/status, claims, renewable leases,
-  completion, delayed retry and terminal failure.
-- `submission`: private immutable manual-upload recovery; `hooks` adds finite,
-  coalesced harness scheduling and existing session-aware suppression.
-- `serverapp`, `httpapi`, `mcpapi`: shared transport composition.
-- `daemon`: existing lifecycle primitives plus foreground replacement.
-- `remoteserver`: remote authentication and composition root.
-- `config`: shared home-directory settings, independent of lifecycle protocol.
+- `review`: data, source contract and pure comment/patch rules.
+- `collector`, `diffsource`: Git, discovery, parsing and finite collection.
+- `ingestion`: versioned request/job contracts, validation and HTTP client.
+- `contextservice`: owner-scoped publication, resolution and catalog.
+- `reviewservice`: shared snapshot reads, comments, marks and capability checks.
+- `reviewdata`: storage-independent identities, results and errors.
+- `reviewstore`: SQLite transactions, stored reads, retention and queue adapter.
+- `ingestionqueue`: admission/lease contract and worker failure policy.
+- `submission`: immutable recovery, destination identity and delivery, shared by
+  manual sync and hooks. No dependency on hook scheduling.
+- `hooks`: finite scheduling, coalescing and session-aware suppression.
+- `httpapi`, `mcpapi`: transport parsing, projection and error mapping.
+- `serverapp`: transport/task composition; `daemon`: local lifecycle;
+  `remoteserver`: remote authentication and worker composition.
 
-Storage interfaces describe complete application operations, not independently
-committed CRUD steps. The SQLite queue shares its owning store. A future external
-broker adapter must persist payload/status and scheduling intent atomically,
-then publish from an outbox. Broker messages should carry references rather than
-64 MiB captures. A new storage adapter must pass the same behavioral tests.
+Interfaces live beside consumers and require the needed operation. Optional
+interface assertions must not change application behavior. Storage contracts
+describe atomic application operations, not independently committed CRUD steps.
 
-## Invariants
+## Principles and limits
 
-An observation is an immutable captured review context. Fresh submissions may
-deduplicate within the same owner/source/repository/checkout/branch/HEAD/comparison
-and full-content identity. Unknown content identities remain independent.
-Captured metadata, scope manifests, previews, comments and reviewed marks survive
-deduplication; new session associations remain searchable.
+1. Share semantics, not coincidental syntax. DRY gives identity, authorization,
+   replay and review rules one owner. Local direct ingestion and remote queue
+   admission have different failure contracts and remain distinct.
+2. Separate collection from queries. Reads survive checkout removal without Git.
+   Failed collection never becomes a successful empty observation.
+3. Compose policy at entry points. Keep mode branches out of domain operations;
+   prefer small explicit policies over a generic feature framework.
+4. Immutable content, mutable review state. Fresh matching submissions can reuse
+   review state and extend retention. Exact retries cannot change retention or
+   resurrect deleted content. Identity commits with the observation.
+5. Authorize before resource access. Owner/context/scope checks apply equally to
+   REST, MCP, historical versions, mutations and job polling.
+6. Acceptance is not completion. Remote 202 means durable admission; succeeded
+   means committed publication. Retries preserve payload and submission ID.
+7. Cancellation and ownership are contracts. Stop workers and serving before
+   releasing database ownership. Uncertain delivery stays pinned to its target.
+8. Generate wire types; share examples for cross-language rules. TypeScript
+   aliases OpenAPI types. Real HTTP responses need runtime schema checks.
+9. Prefer boundary tests; keep valuable unit tests. Parsing, hashing, leases,
+   retry policy and UI recovery have independent failure modes. Delete obsolete
+   behavior tests and implementation-shape assertions, not useful small tests.
+10. Add complexity for an observed requirement. No REST cache for cheap immutable
+    database reads, background review daemon, or speculative infrastructure.
 
-Transport retries retain submission ID and exact payload; changed replays
-conflict. Retries never extend retention. Fresh matching submissions can extend
-expiry. Existing migration and branch-adoption semantics remain intact.
+## Contracts and evolution
 
-Queue acceptance records a durable sequence. Stream heads compare collection
-time, then acceptance sequence; worker completion order cannot regress freshness.
-Heads outlive pruning. Queue replay records survive deletion/expiry, preventing
-delayed delivery from resurrecting observations. Compact job/replay records are
-retained; completed/failed payload bodies are removed. Legacy direct deletion
-continues allowing an explicit new submission after deleting its retry mapping.
+`mise run test:contracts` runs production dependency checks, storage/lifecycle/
+queue/transport boundaries, shared Go/TypeScript comment examples and real HTTP
+schema validation. Run locally or wherever useful; pre-push invokes it.
+CI configuration does not enforce this suite.
 
-Queries read stored data only. Failure during collection never becomes an empty
-observation. Empty successful captures record dirty-to-clean transitions.
+New adapters must preserve ownership, atomic publication, retention, replay,
+lease fencing and commit-before-ack recovery. External brokers require atomic
+scheduling intent (an outbox). Multiple server processes need a storage backend
+designed for that concurrency; SQLite retains one owning process.
 
-## Queue and recovery
+Only public v2 routes and ingestion protocol 3 remain. Retired: `review`,
+`service`, `serve`, `capture`, background daemon startup, public v1,
+synchronous ingestion and legacy capture/worktree storage.
 
-Remote `POST /api/v2/ingestion-jobs` returns 202 plus a Location. Status is
-authenticated and owner-scoped. Success means committed publication; acceptance
-alone does not. The synchronous v2 ingestion endpoint remains compatible.
-
-The built-in queue caps active work at 1,024 jobs and 256 MiB, with 30-second
-renewable leases, one worker, two-minute processing deadlines and five processing
-attempts. Transient failures retry with bounded exponential delay; permanent
-errors terminate. Expired leases recover after restart. Commit-before-ack crashes
-replay the original ingestion transaction without creating another review.
-
-Manual sync persists captures before health/network calls and pins attempted
-uploads to destination identity. `sync --retry` needs no surviving checkout.
-Hooks retain their existing private pending payloads and finite retry scheduling.
-Plugins require remote configuration and never start a local server.
-
-## Compatibility and validation
-
-The positional local command, sync, and top-level config are the primary UX.
-Legacy commands remain migration compatibility paths. Schema 8 migrates existing
-captures/reviews in place; stop old processes before upgrading. Generated OpenAPI
-types and embedded web assets are committed.
-
-Validation covers legacy identities/retention, queue acceptance order, restart
-after commit, lease fencing, terminal failure, owner isolation, full CLI sync
-recovery, fixed local snapshots and singleton replacement.
-
-## Mode contracts and capabilities
-
-| Boundary                    | Foreground local                                             | Remote server and producers                                             |
-| --------------------------- | ------------------------------------------------------------ | ----------------------------------------------------------------------- |
-| Collection                  | Selected checkout once; omitted path means current directory | Sync/plugins collect all registered worktrees per invocation/event      |
-| Observation schema          | `ingestion.Request`                                          | Same `ingestion.Request`; hooks add optional harness/session provenance |
-| Ingestion                   | Direct `contextservice.Ingest` call                          | Authenticated HTTP admission; worker calls the same service             |
-| HTTP ingestion capabilities | Disabled                                                     | Direct and queued admission enabled                                     |
-| Checkout observation        | No watcher                                                   | No watcher; plugins trigger finite collection on agent events           |
-| Snapshot capabilities       | Stored scopes, previews and comments; no Git refresh         | Identical for identical captured source support                         |
-| Browser selection           | Open the submitted snapshot URL                              | Catalog updates on ingestion events; selected snapshot remains pinned   |
-
-Mode differences belong to producer/runtime composition, not the observation
-schema, storage model or review components. `serverapp.Options.Capabilities`
-resolves transport admission once and drives both routes and health advertising.
-`session.ResolveCapabilities` resolves source support and policy for both catalog
-metadata and review sessions. The web UI reads these shared capabilities.
-
-Captured metadata retains repository/checkout identity, root, worktree name and
-linked-worktree status, branch/HEAD and comparison baseline in both modes.
-The triggering directory remains separate from each discovered checkout root.
-Harness/session metadata adds provenance without changing content identity.
-Queries read stored snapshots; a catalog notification never initiates collection.
-
-The shared core already supplies collection, validation, atomic ingestion,
-storage, REST/MCP and review contracts. This change removes watching/following and
-duplicate capability resolution; it needs no mode-specific payload, schema
-migration, parallel service implementation or generic feature-toggle framework.
+Schema 9 intentionally resets older versioned databases in one transaction under
+the ownership lock. Current state survives subsequent starts; future or
+unrecognized schemas are refused. Upgrade server and collectors together.
+Versioned producer directories ignore old manual/hook pending payloads.
+Stop old binaries before upgrading.

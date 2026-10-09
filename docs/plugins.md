@@ -185,7 +185,7 @@ a trigger, and the worker may capture edits made after that trigger.
 Nested hook directories resolve to the checkout root. Discovery includes that
 checkout and all registered live worktrees.
 Non-Git input is ignored; child repositories and branches without checkouts are
-excluded. Explicit `review --branch` can recover committed changes after worktree
+excluded. Explicit `sync --branch` can recover committed changes after worktree
 removal. Discovery never fetches, switches branches or creates worktrees.
 Supply the new path after moving a repository; an old path alone cannot locate
 an arbitrary move. The triggering directory is stored separately from each
@@ -252,11 +252,11 @@ server context. Manual-command logs use `acknowledged` for the same outcome.
 Manually recover committed changes even when another branch is checked out:
 
 ```sh
-servediff review --path /path/to/repository --branch feature --base main --no-browser
-servediff review --path /path/to/checkout --base HEAD --no-browser
+servediff sync --path /path/to/repository --branch feature --base main --no-browser
+servediff sync --path /path/to/checkout --base HEAD --no-browser
 ```
 
-Manual review defaults to auto and collects all registered worktrees, returning
+Manual sync defaults to auto and collects all registered worktrees, returning
 the originating checkout's URL. `--base HEAD` selects working changes only.
 `--branch` reads only the named branch's Git objects, defaults its
 base to auto, and ignores the current checkout's dirty files. Deleted uncommitted
@@ -291,5 +291,5 @@ printf '%s\n' '{"cwd":"/path/to/checkout","session_id":"session-id","session_nam
 Hooks default to `--base auto`, never open a browser, and return after scheduling.
 Scheduling success does not confirm ingestion; hooks log failures and exit
 successfully. Inspect the dashboard or hook log for delivery state. Manual
-`servediff review` always submits, waits for receipts and reports failures
+`servediff sync` always submits, waits for receipts and reports failures
 directly. Manual and hook collection use the same auto baseline.

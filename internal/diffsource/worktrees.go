@@ -3,12 +3,12 @@ package diffsource
 import (
 	"context"
 	"errors"
-	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/flexdinesh/servediff/internal/review"
 )
 
 // Worktree describes a checkout without reading its diff or file contents.
@@ -140,17 +140,5 @@ func parseWorktrees(raw string) []Worktree {
 
 // RemoteRepositoryName extracts the display name from URL and SCP-style remotes.
 func RemoteRepositoryName(remote, fallback string) string {
-	if remote == "" {
-		return fallback
-	}
-	if parsed, err := url.Parse(remote); err == nil && parsed.Scheme != "" && (parsed.Host != "" || parsed.Scheme == "file") {
-		remote = parsed.Path
-	} else if _, suffix, ok := strings.Cut(remote, ":"); ok {
-		remote = suffix
-	}
-	name := strings.TrimSuffix(path.Base(strings.TrimRight(remote, "/")), ".git")
-	if name == "" || name == "." || name == "/" {
-		return fallback
-	}
-	return name
+	return review.RemoteRepositoryName(remote, fallback)
 }

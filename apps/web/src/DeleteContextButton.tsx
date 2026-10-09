@@ -21,8 +21,7 @@ export function DeleteContextButton() {
   const [error, setError] = useState("");
   const pending = useRef(false);
   const cancelRef = useRef<HTMLButtonElement>(null);
-  const snapshot = session.kind !== "worktree";
-  const label = snapshot ? "Delete snapshot" : "Delete context";
+  const label = "Delete snapshot";
 
   async function confirm() {
     if (pending.current) return;
@@ -69,10 +68,9 @@ export function DeleteContextButton() {
       >
         <DialogTitle>{label}?</DialogTitle>
         <DialogDescription>
-          This permanently deletes{" "}
-          {snapshot ? "this snapshot" : "this context and all its stored diffs"}
-          , including comments and reviewed-file marks. This cannot be undone.
-          Your Git files stay unchanged. New collections can appear again.
+          This permanently deletes this snapshot, including comments and
+          reviewed-file marks. This cannot be undone. Your Git files stay
+          unchanged. New collections can appear again.
         </DialogDescription>
         <p
           className="delete-context-details"

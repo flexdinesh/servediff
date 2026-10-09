@@ -23,11 +23,13 @@ import (
 	"github.com/flexdinesh/servediff/internal/collector"
 	"github.com/flexdinesh/servediff/internal/contextservice"
 	"github.com/flexdinesh/servediff/internal/ingestion"
+	"github.com/flexdinesh/servediff/internal/ingestionqueue"
 	"github.com/flexdinesh/servediff/internal/mcpapi"
 	"github.com/flexdinesh/servediff/internal/remoteserver"
 	"github.com/flexdinesh/servediff/internal/review"
 	"github.com/flexdinesh/servediff/internal/reviewstore"
 	"github.com/flexdinesh/servediff/internal/serverapp"
+	"github.com/flexdinesh/servediff/internal/testsupport"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -65,7 +67,16 @@ func start(t *testing.T, state string, remote bool) deployment {
 		}
 	} else {
 		service := contextservice.NewWithContext(t.Context(), store, user)
-		handler, closeService = serverapp.Handler(t.Context(), service, store, assets, ""), service.Close
+		ctx, cancel := context.WithCancel(t.Context())
+		done := make(chan error, 1)
+		go func() {
+			done <- ingestionqueue.Run(ctx, store.Queue(), func(ctx context.Context, _ string, input ingestion.Request) (string, error) {
+				result, err := service.Ingest(ctx, input)
+				return result.Context.ID, err
+			})
+		}()
+		handler = serverapp.Handler(ctx, service, store, assets, "", serverapp.Options{Queue: store.Queue()})
+		closeService = func() error { cancel(); return errors.Join(<-done, service.Close()) }
 	}
 	server := httptest.NewServer(handler)
 	var once sync.Once
@@ -147,7 +158,7 @@ func TestPublicIngestionSurvivesProducerRemovalAndServerRestart(t *testing.T) {
 		t.Run(fmt.Sprintf("remote=%v", remote), func(t *testing.T) {
 			state := filepath.Join(t.TempDir(), "reviews.sqlite")
 			d := start(t, state, remote)
-			client := ingestion.NewClient(d.server.URL, d.token)
+			client := testsupport.NewClient(d.server.URL, d.token)
 			first, err := client.Submit(t.Context(), input)
 			if err != nil {
 				t.Fatal(err)
@@ -295,7 +306,7 @@ func TestIngestionHTTPRejectsMalformedAndAmbiguousInput(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r := httptest.NewRequest(tc.method, "/api/v2/ingestions", strings.NewReader(tc.body))
+			r := httptest.NewRequest(tc.method, "/api/v2/ingestion-jobs", strings.NewReader(tc.body))
 			r.Header.Set("Content-Type", tc.contentType)
 			w := httptest.NewRecorder()
 			d.server.Config.Handler.ServeHTTP(w, r)
@@ -306,7 +317,7 @@ func TestIngestionHTTPRejectsMalformedAndAmbiguousInput(t *testing.T) {
 	}
 	// One giant field tests the body bound rather than merely a validation bound.
 	oversize := io.MultiReader(strings.NewReader(`{"submissionId":"`), strings.NewReader(strings.Repeat("x", ingestion.MaxRequestBytes)), strings.NewReader(`"}`))
-	r := httptest.NewRequest("POST", "/api/v2/ingestions", oversize)
+	r := httptest.NewRequest("POST", "/api/v2/ingestion-jobs", oversize)
 	r.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	d.server.Config.Handler.ServeHTTP(w, r)
@@ -327,7 +338,7 @@ func TestSameOrigin(t *testing.T) {
 		{"", "", true}, {"http://reviews.example", "same-origin", true}, {"https://reviews.example", "same-origin", true},
 		{"https://other.example", "", false}, {"https://reviews.example.evil", "", false}, {"", "cross-site", false}, {"https://reviews.example", "cross-site", false},
 	} {
-		r := httptest.NewRequest("POST", "http://reviews.example/api/v2/ingestions", nil)
+		r := httptest.NewRequest("POST", "http://reviews.example/api/v2/ingestion-jobs", nil)
 		r.Header.Set("Origin", tc.origin)
 		r.Header.Set("Sec-Fetch-Site", tc.fetch)
 		if got := serverapp.SameOrigin(r); got != tc.allow {
@@ -356,7 +367,7 @@ func TestIngestionNotificationReferencesCommittedObservation(t *testing.T) {
 	if _, err := reader.ReadString('\n'); err != nil {
 		t.Fatal(err)
 	}
-	receipt, err := ingestion.NewClient(d.server.URL, "").Submit(t.Context(), emptyRequest())
+	receipt, err := testsupport.NewClient(d.server.URL, "").Submit(t.Context(), emptyRequest())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -387,7 +398,7 @@ func TestCrossOriginSubmissionCannotCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := httptest.NewRequest("POST", "http://reviews.example/api/v2/ingestions", bytes.NewReader(raw))
+	r := httptest.NewRequest("POST", "http://reviews.example/api/v2/ingestion-jobs", bytes.NewReader(raw))
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Origin", "https://foreign.example")
 	w := httptest.NewRecorder()
@@ -401,7 +412,7 @@ func TestGlobalMCPDiscoversStoredReviewsAndRejectsForeignContexts(t *testing.T) 
 	input := collectGit(t) // Producer checkout removed before queries.
 	t.Setenv("PATH", t.TempDir())
 	d := start(t, "", false)
-	client := ingestion.NewClient(d.server.URL, "")
+	client := testsupport.NewClient(d.server.URL, "")
 	first, err := client.Submit(t.Context(), input)
 	if err != nil {
 		t.Fatal(err)

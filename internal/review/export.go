@@ -6,13 +6,13 @@ import (
 )
 
 func Applicability(comment ReviewComment, repository *RepositoryDiff) string {
-	if repository == nil {
+	if repository == nil || comment.DiffID == "" || repository.ID == "" {
 		return "unknown"
 	}
 	if comment.Scope != repository.Mode {
 		return "other-scope"
 	}
-	if comment.DiffID != "" && repository.ID != "" && comment.DiffID != repository.ID {
+	if comment.DiffID != repository.ID {
 		return "other-scope"
 	}
 	for _, file := range repository.Files {

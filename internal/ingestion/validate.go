@@ -9,7 +9,7 @@ import (
 )
 
 func Validate(input Request) error {
-	if input.ProtocolVersion != 1 && input.ProtocolVersion != ProtocolVersion {
+	if input.ProtocolVersion != ProtocolVersion {
 		return fmt.Errorf("unsupported ingestion protocol %d", input.ProtocolVersion)
 	}
 	if strings.TrimSpace(input.SubmissionID) == "" || len(input.SubmissionID) > 128 {

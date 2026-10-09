@@ -1,9 +1,7 @@
 package controlapi
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,9 +10,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-
-	"github.com/flexdinesh/servediff/internal/contextservice"
-	"github.com/flexdinesh/servediff/internal/ingestion"
 )
 
 type Client struct {
@@ -47,42 +42,6 @@ func NewClient(endpoint, token string) *Client {
 func (client *Client) Status(ctx context.Context) (Status, error) {
 	var result Status
 	err := client.do(ctx, http.MethodGet, "/control/v1/status", nil, nil, &result)
-	return result, err
-}
-
-func (client *Client) Register(ctx context.Context, submissionID, path string) (contextservice.Submission, error) {
-	input := struct {
-		SubmissionID string `json:"submissionId"`
-		Path         string `json:"path"`
-	}{SubmissionID: submissionID, Path: path}
-	body, err := json.Marshal(input)
-	if err != nil {
-		return contextservice.Submission{}, err
-	}
-	var result contextservice.Submission
-	err = client.do(ctx, http.MethodPost, "/control/v1/worktrees", bytes.NewReader(body), http.Header{"Content-Type": []string{"application/json"}}, &result)
-	return result, err
-}
-
-func (client *Client) Capture(ctx context.Context, submissionID string, raw []byte, submittedFrom string) (contextservice.Submission, error) {
-	if len(raw) > MaxPatchBytes {
-		return contextservice.Submission{}, &Problem{Status: http.StatusRequestEntityTooLarge, Code: "input_too_large", Detail: "Patch exceeds 16 MiB limit"}
-	}
-	headers := make(http.Header)
-	headers.Set("Content-Type", "application/octet-stream")
-	headers.Set(submissionHeader, submissionID)
-	headers.Set(submittedFromHeader, base64.RawURLEncoding.EncodeToString([]byte(submittedFrom)))
-	var result contextservice.Submission
-	err := client.do(ctx, http.MethodPost, "/control/v1/captures", bytes.NewReader(raw), headers, &result)
-	return result, err
-}
-
-func (client *Client) OpenCapture(ctx context.Context, id string) (contextservice.Submission, error) {
-	if id == "" || strings.ContainsAny(id, "/?#") {
-		return contextservice.Submission{}, fmt.Errorf("invalid capture ID")
-	}
-	var result contextservice.Submission
-	err := client.do(ctx, http.MethodPost, "/control/v1/captures/"+url.PathEscape(id)+"/open", nil, nil, &result)
 	return result, err
 }
 
@@ -129,17 +88,4 @@ func (client *Client) do(ctx context.Context, method, path string, body io.Reade
 		return fmt.Errorf("invalid service response: %w", err)
 	}
 	return nil
-}
-
-func (client *Client) Ingest(ctx context.Context, input ingestion.Request) (contextservice.Submission, error) {
-	raw, err := json.Marshal(input)
-	if err != nil {
-		return contextservice.Submission{}, err
-	}
-	if len(raw) > ingestion.MaxRequestBytes {
-		return contextservice.Submission{}, fmt.Errorf("snapshot exceeds 64 MiB ingestion limit")
-	}
-	var result contextservice.Submission
-	err = client.do(ctx, http.MethodPost, "/control/v1/ingestions", bytes.NewReader(raw), http.Header{"Content-Type": []string{"application/json"}}, &result)
-	return result, err
 }

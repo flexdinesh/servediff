@@ -27,7 +27,7 @@ type Outbox struct {
 
 func Open(ctx context.Context, root, route string) (*Outbox, error) {
 	sum := sha256.Sum256([]byte(route))
-	directory := filepath.Join(root, "sync", hex.EncodeToString(sum[:]))
+	directory := filepath.Join(root, "sync-v3", hex.EncodeToString(sum[:]))
 	if err := os.MkdirAll(directory, 0700); err != nil {
 		return nil, err
 	}

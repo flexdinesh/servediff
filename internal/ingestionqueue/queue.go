@@ -6,8 +6,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/ingestion"
+	"github.com/flexdinesh/servediff/internal/review"
 )
 
 var ErrEmpty = errors.New("no ingestion jobs available")
@@ -93,7 +93,7 @@ func process(ctx context.Context, queue Queue, delivery Delivery, ingest Ingest)
 	if err == nil {
 		return queue.Complete(ctx, delivery, id)
 	}
-	var problem *diffsource.RequestError
+	var problem *review.RequestError
 	if errors.As(err, &problem) && problem.Status >= 400 && problem.Status < 500 {
 		return queue.Fail(ctx, delivery, problem.Detail)
 	}

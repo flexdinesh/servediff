@@ -124,10 +124,12 @@ func TestValidateEmptyAndUnavailableSnapshots(t *testing.T) {
 	}
 }
 
-func TestValidateLegacyProtocol(t *testing.T) {
+func TestRejectLegacyProtocols(t *testing.T) {
 	r := validRequest()
-	r.ProtocolVersion = 1
-	if err := Validate(r); err != nil {
-		t.Fatalf("legacy producer: %v", err)
+	for _, version := range []int{1, 2} {
+		r.ProtocolVersion = version
+		if err := Validate(r); err == nil {
+			t.Fatalf("accepted retired protocol %d", version)
+		}
 	}
 }

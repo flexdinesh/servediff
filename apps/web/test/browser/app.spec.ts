@@ -26,7 +26,7 @@ test("disabled comments issue no requests and expose no comment UI", async ({
       contentType: "application/json",
       body: JSON.stringify({
         id: new URL(route.request().url()).pathname.split("/").at(-1),
-        kind: "capture",
+        kind: "observation",
         source: "stdin",
         name: "Piped",
         root: "fixture",
@@ -616,7 +616,25 @@ test("inline comments use a distinct structured surface while sidebar comments r
   await page.setViewportSize({ width: 1280, height: 4_000 });
   await page.goto("/");
   await page.evaluate(async () => {
-    const response = await fetch("/api/v1/diffs/current?scope=all");
+    const catalog: unknown = await (await fetch("/api/v2/contexts")).json();
+    if (
+      typeof catalog !== "object" ||
+      catalog === null ||
+      !("contexts" in catalog) ||
+      !Array.isArray(catalog.contexts)
+    )
+      throw new Error("Missing catalog");
+    const context: unknown = catalog.contexts[0];
+    if (
+      typeof context !== "object" ||
+      context === null ||
+      !("id" in context) ||
+      typeof context.id !== "string"
+    )
+      throw new Error("Missing context");
+    const contextId = context.id;
+    const base = "/api/v2/contexts/" + encodeURIComponent(contextId);
+    const response = await fetch(base + "/diffs/current?scope=all");
     const data: unknown = await response.json();
     if (typeof data !== "object" || data === null)
       throw new Error("Bad fixture");
@@ -644,7 +662,7 @@ test("inline comments use a distinct structured surface while sidebar comments r
         throw new Error(`Missing fixture fingerprint for ${path}`);
       return fingerprint;
     };
-    const imported = await fetch("/api/v1/comments/import", {
+    const imported = await fetch(base + "/comments/import", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1262,7 +1280,25 @@ test("copy dialog reports clipboard status and restores focus", async ({
   await page.goto("/");
   await expect(page.locator("#connection")).toHaveText("Fixed snapshot");
   await page.evaluate(async () => {
-    const response = await fetch("/api/v1/diffs/current?scope=all");
+    const catalog: unknown = await (await fetch("/api/v2/contexts")).json();
+    if (
+      typeof catalog !== "object" ||
+      catalog === null ||
+      !("contexts" in catalog) ||
+      !Array.isArray(catalog.contexts)
+    )
+      throw new Error("Missing catalog");
+    const context: unknown = catalog.contexts[0];
+    if (
+      typeof context !== "object" ||
+      context === null ||
+      !("id" in context) ||
+      typeof context.id !== "string"
+    )
+      throw new Error("Missing context");
+    const contextId = context.id;
+    const base = "/api/v2/contexts/" + encodeURIComponent(contextId);
+    const response = await fetch(base + "/diffs/current?scope=all");
     const data: unknown = await response.json();
     if (typeof data !== "object" || data === null)
       throw new Error("Bad fixture");
@@ -1287,7 +1323,7 @@ test("copy dialog reports clipboard status and restores focus", async ({
         : undefined;
     if (typeof fingerprint !== "string")
       throw new Error("Missing fixture fingerprint");
-    const imported = await fetch("/api/v1/comments/import", {
+    const imported = await fetch(base + "/comments/import", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

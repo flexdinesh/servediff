@@ -1,4 +1,21 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { Ajv2020 } from "ajv/dist/2020.js";
+import { parse } from "yaml";
+
+const contract: unknown = parse(
+  readFileSync(
+    new URL("../../packages/api/openapi.yaml", import.meta.url),
+    "utf8",
+  ),
+);
+assert.ok(typeof contract === "object" && contract !== null);
+const validator = new Ajv2020({ strict: false, validateFormats: false });
+validator.addSchema(contract, "api");
+function conforms(name: string, value: unknown) {
+  const check = validator.compile({ $ref: "api#/components/schemas/" + name });
+  assert.ok(check(value), JSON.stringify(check.errors));
+}
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { test } from "node:test";
@@ -54,7 +71,7 @@ test("Go distribution implements the API contract", async (t) => {
   const server = spawn(
     binary,
     [
-      "serve",
+      "dev",
       "--fixture",
       fixture,
       "--state",
@@ -77,6 +94,8 @@ test("Go distribution implements the API contract", async (t) => {
   assert.equal(catalog.data?.contexts.length, 1);
   const context = catalog.data?.contexts[0];
   assert.ok(context);
+  conforms("ContextPage", catalog.data);
+  conforms("Context", context);
   assert.equal(context.kind, "observation");
   const contextId = context.id;
 
@@ -85,7 +104,9 @@ test("Go distribution implements the API contract", async (t) => {
   });
   assert.deepEqual(comments.data, { comments: [] });
 
-  const session = await client.GET("/api/v1/session");
+  const session = await client.GET("/api/v2/contexts/{contextId}/session", {
+    params: { path: { contextId } },
+  });
   assert.equal(session.data?.source, "stdin");
   assert.deepEqual(session.data?.capabilities, {
     diff: {
@@ -101,6 +122,7 @@ test("Go distribution implements the API contract", async (t) => {
     params: { path: { contextId }, query: { scope: apiValues.allScope } },
   });
   assert.ok(diff.data);
+  conforms("RepositoryDiff", diff.data);
   assert.equal(session.data?.name, diff.data.name);
   assert.equal(diff.data.files.length, 12);
   const file = diff.data.files.find(
@@ -137,15 +159,20 @@ test("Go distribution implements the API contract", async (t) => {
       body: "Keep the new value.",
     },
   });
+  conforms("ReviewComment", created.data);
+  conforms("FilePatch", preview.data);
   assert.equal(created.data?.path, file.path);
   assert.equal(created.data?.code, "+ export const value = 2;");
   assert.equal(created.data?.body, "Keep the new value.");
 
-  const legacy = await client.GET("/api/v1/diffs/current", {
-    params: { query: { scope: apiValues.allScope } },
-  });
-  assert.equal(legacy.data?.id, diff.data.id);
-  assert.equal(legacy.data?.versionId, diff.data.versionId);
+  for (const path of [
+    "/api/v1/session",
+    "/api/v1/diffs/current",
+    "/api/v2/ingestions",
+  ]) {
+    const response = await fetch(url + path);
+    assert.equal(response.status, 404);
+  }
 
   const patches: Record<string, components["schemas"]["FilePatch"]> = {};
   for (const observedFile of diff.data.files) {
@@ -171,7 +198,7 @@ test("Go distribution implements the API contract", async (t) => {
     patches[observedFile.id] = result.data;
   }
   const body = {
-    protocolVersion: 1,
+    protocolVersion: 3,
     submissionId: "contract-observation",
     metadata: {
       sourceId: "sandbox-contract-source",
@@ -203,8 +230,6 @@ test("Go distribution implements the API contract", async (t) => {
       },
     ],
   } satisfies components["schemas"]["IngestionRequest"];
-  const localIngestion = await client.POST("/api/v2/ingestions", { body });
-  assert.equal(localIngestion.response.status, 404);
   const localJob = await client.POST("/api/v2/ingestion-jobs", { body });
   assert.equal(localJob.response.status, 404);
 
@@ -230,12 +255,25 @@ test("Go distribution implements the API contract", async (t) => {
   const remoteHealth = await remote.GET("/api/v2/health");
   assert.equal(remoteHealth.data?.ingestionEnabled, true);
   assert.equal(remoteHealth.data?.queuedIngestion, true);
-  const ingested = await remote.POST("/api/v2/ingestions", { body });
-  assert.equal(ingested.response.status, 200);
+  const ingested = await remote.POST("/api/v2/ingestion-jobs", { body });
+  assert.equal(ingested.response.status, 202);
   assert.ok(ingested.data);
-  assert.notEqual(ingested.data.contextId, contextId);
-  const replay = await remote.POST("/api/v2/ingestions", { body });
-  assert.deepEqual(replay.data, ingested.data);
+  conforms("IngestionJob", ingested.data);
+  let job = ingested.data;
+  for (let attempt = 0; job.state !== "succeeded" && attempt < 80; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const result = await remote.GET("/api/v2/ingestion-jobs/{jobId}", {
+      params: { path: { jobId: job.id } },
+    });
+    assert.ok(result.data);
+    job = result.data;
+  }
+  conforms("IngestionJob", job);
+  assert.equal(job.state, "succeeded");
+  assert.ok(job.contextId);
+  assert.notEqual(job.contextId, contextId);
+  const replay = await remote.POST("/api/v2/ingestion-jobs", { body });
+  assert.deepEqual(replay.data, job);
 
   const filtered = await remote.GET("/api/v2/contexts", {
     params: {
@@ -250,10 +288,10 @@ test("Go distribution implements the API contract", async (t) => {
     },
   });
   assert.equal(filtered.data?.contexts.length, 1);
-  assert.equal(filtered.data?.contexts[0]?.id, ingested.data.contextId);
+  assert.equal(filtered.data?.contexts[0]?.id, job.contextId);
   assert.deepEqual(filtered.data?.contexts[0]?.observation, body.metadata);
 
-  const conflict = await remote.POST("/api/v2/ingestions", {
+  const conflict = await remote.POST("/api/v2/ingestion-jobs", {
     body: {
       ...body,
       metadata: { ...body.metadata, hostname: "different-host" },

@@ -383,7 +383,7 @@ export function ProjectPicker({
                 aria-selected={entry.id === active?.id}
                 aria-disabled={!available}
                 disabled={!available}
-                title={`${contextDiagnostics(context)}${available ? "" : `\n${contextUnavailableReason(context)}`}`}
+                title={`${contextDiagnostics(context)}${available ? "" : `\n${contextUnavailableReason()}`}`}
                 onClick={() => choose(entry.id)}
                 onMouseMove={() => {
                   if (available) setHighlightedId(entry.id);
@@ -421,7 +421,7 @@ export function ProjectPicker({
                   </span>
                   {!available && (
                     <span className="project-picker-unavailable-reason">
-                      {contextUnavailableReason(context)}
+                      {contextUnavailableReason()}
                     </span>
                   )}
                   {(!pipedContext || grouped) && (

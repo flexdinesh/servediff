@@ -38,13 +38,10 @@ arm64. Windows archives are also published. Archives include the native binary,
 README, and license. The embedded web application needs no installed Node.js
 runtime.
 
-For daemon upgrades, stop the current service before replacing the executable,
-then start it with the new binary. Stop older foreground servers separately:
-they do not honor daemon/database ownership locks. State migrations
-preserve existing review IDs and data and backfill snapshot freshness;
-unsupported older/newer schemas fail
-without modification. Persistent contexts survive restart; in-memory state does
-not. Listener settings are not saved across a stopped service.
+Stop running binaries before upgrading. Schema 9 intentionally resets older
+versioned databases on first open; current state survives subsequent starts.
+Future or unrecognized schemas are refused. Upgrade server and collectors
+together for ingestion protocol 3. In-memory state lasts only for one process.
 
 The tap branch is deterministic per version, such as `servediff-v0.1.0`.
 Rerunning a release whose tag still points to current `main` reuses the existing

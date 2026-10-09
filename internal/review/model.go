@@ -106,7 +106,7 @@ func (comment ReviewComment) Valid() bool {
 	if comment.Target == "file" {
 		validSelection = comment.Side == "additions" && comment.Start == 0 && comment.End == 0 && comment.Code == ""
 	}
-	return modeError == nil &&
+	return comment.Scope != "" && modeError == nil &&
 		validSelection &&
 		strings.TrimSpace(comment.Body) != "" && (comment.Status == "open" || comment.Status == "resolved") &&
 		!math.IsNaN(comment.CreatedAt) && !math.IsInf(comment.CreatedAt, 0) &&

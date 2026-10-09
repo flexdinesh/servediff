@@ -1,14 +1,9 @@
 // Package controlapi implements the private, authenticated CLI-to-daemon API.
 package controlapi
 
-import "github.com/flexdinesh/servediff/internal/diffsource"
 import "github.com/flexdinesh/servediff/internal/config"
 
-const ProtocolVersion = 4
-const MaxPatchBytes = diffsource.MaxInputBytes
-
-const submissionHeader = "X-Servediff-Submission"
-const submittedFromHeader = "X-Servediff-Submitted-From"
+const ProtocolVersion = 5
 
 type Settings = config.ServerSettings
 
@@ -22,8 +17,7 @@ type Status struct {
 	URL             string   `json:"url"`
 	BrowserURL      string   `json:"browserUrl"`
 	Settings        Settings `json:"settings"`
-	Worktrees       int      `json:"worktrees"`
-	Captures        int      `json:"captures"`
+	Observations    int      `json:"observations"`
 }
 
 // Problem is a daemon rejection, distinct from an interrupted transport.

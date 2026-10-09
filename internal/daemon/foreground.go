@@ -9,12 +9,13 @@ import (
 	"os"
 
 	"github.com/flexdinesh/servediff/internal/contextservice"
+	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/flexdinesh/servediff/internal/processlock"
 )
 
 // RunForeground serializes discovery, replacement and publication. Shutdown
 // uses the authenticated control endpoint, never an unverified operating-system PID.
-func RunForeground(ctx context.Context, settings Settings, input InitialInput, confirm func(Status) (bool, error), ready func(Status, *contextservice.Submission)) error {
+func RunForeground(ctx context.Context, settings Settings, input ingestion.Request, confirm func(Status) (bool, error), ready func(Status, *contextservice.Submission)) error {
 	client, err := NewClient()
 	if err != nil {
 		return err
@@ -49,7 +50,6 @@ func RunForeground(ctx context.Context, settings Settings, input InitialInput, c
 	defer RemoveDescriptor(client.RuntimeDirectory, id)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	input.IngestionDisabled = true
 	return runServer(ctx, cancel, settings, client.RuntimeDirectory, id, &input, func(status Status, submitted *contextservice.Submission) {
 		_ = lifecycle.Close()
 		if ready != nil {

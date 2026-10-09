@@ -10,8 +10,9 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
-	"time"
 
+	"github.com/flexdinesh/servediff/internal/collector"
+	"github.com/flexdinesh/servediff/internal/contextservice"
 	"github.com/flexdinesh/servediff/internal/diffsource"
 	"github.com/flexdinesh/servediff/internal/review"
 	"github.com/flexdinesh/servediff/internal/reviewservice"
@@ -59,19 +60,25 @@ func patchSession(t *testing.T, store *reviewstore.Store, source diffsource.Sour
 	if err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := source.Snapshot(t.Context(), review.DiffAll)
+	_, err = source.Snapshot(t.Context(), review.DiffAll)
 	if err != nil {
 		t.Fatal(err)
 	}
-	binding, err := store.Capture(user.ID, raw, snapshot)
+	input, err := collector.CollectPatch(t.Context(), raw, "", collector.Options{SourceID: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	active := session.Resolve(source, policies)
-	active.User = session.User{ID: user.ID, Name: user.Name}
-	active.ContextID = binding.ContextID
-	active.DiffIDs = binding.DiffIDs
-	active.VersionID = binding.VersionID
+	service := contextservice.NewWithContext(t.Context(), store, user)
+	t.Cleanup(func() { service.Close() })
+	submitted, err := service.Ingest(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	active, err := service.Resolve(t.Context(), submitted.Context.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	active.Capabilities = session.ResolveCapabilities(active.Source.Support(), policies)
 	return active
 }
 
@@ -92,7 +99,7 @@ func TestAPIReviewWorkflow(t *testing.T) {
 	handler := New(active, store, reviewservice.New(active, store), fstest.MapFS{"index.html": {Data: []byte("web")}})
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	emptyCommentsResponse := request(t, server.Client(), http.MethodGet, server.URL+"/api/v1/comments", nil)
+	emptyCommentsResponse := request(t, server.Client(), http.MethodGet, server.URL+"/api/review/comments", nil)
 	if emptyCommentsResponse.StatusCode != http.StatusOK {
 		t.Fatalf("comments status: %d", emptyCommentsResponse.StatusCode)
 	}
@@ -103,8 +110,8 @@ func TestAPIReviewWorkflow(t *testing.T) {
 		t.Fatalf("expected empty comment array, got %#v", emptyComments.Comments)
 	}
 	for _, endpoint := range []string{
-		"/api/v1/comments/export?scope=",
-		"/api/v1/comments/export?includeResolved=",
+		"/api/review/comments/export?scope=",
+		"/api/review/comments/export?includeResolved=",
 	} {
 		response := request(t, server.Client(), http.MethodGet, server.URL+endpoint, nil)
 		if response.StatusCode != http.StatusBadRequest {
@@ -112,7 +119,7 @@ func TestAPIReviewWorkflow(t *testing.T) {
 		}
 		response.Body.Close()
 	}
-	diffResponse := request(t, server.Client(), http.MethodGet, server.URL+"/api/v1/diffs/current?scope=all", nil)
+	diffResponse := request(t, server.Client(), http.MethodGet, server.URL+"/api/review/diffs/current?scope=all", nil)
 	if diffResponse.StatusCode != http.StatusOK {
 		t.Fatalf("diff status: %d", diffResponse.StatusCode)
 	}
@@ -120,25 +127,18 @@ func TestAPIReviewWorkflow(t *testing.T) {
 	if snapshot.ID == "" || snapshot.VersionID == "" || snapshot.ID == snapshot.Revision {
 		t.Fatalf("diff identity: %#v", snapshot)
 	}
-	capturesResponse := request(t, server.Client(), http.MethodGet, server.URL+"/api/v1/diffs/captures", nil)
-	captures := decode[struct {
-		Captures []reviewstore.CaptureInfo `json:"captures"`
-	}](t, capturesResponse)
-	if len(captures.Captures) != 1 || captures.Captures[0].ID != snapshot.ID || captures.Captures[0].VersionID != snapshot.VersionID {
-		t.Fatalf("captures: %#v", captures.Captures)
-	}
-	versionResponse := request(t, server.Client(), http.MethodGet, server.URL+"/api/v1/diffs/"+snapshot.ID+"/versions/"+snapshot.VersionID, nil)
+	versionResponse := request(t, server.Client(), http.MethodGet, server.URL+"/api/review/diffs/"+snapshot.ID+"/versions/"+snapshot.VersionID, nil)
 	version := decode[review.RepositoryDiff](t, versionResponse)
 	if version.ID != snapshot.ID || version.Revision != snapshot.Revision {
 		t.Fatalf("stored version: %#v", version)
 	}
 	file := snapshot.Files[0]
-	emptyMark := request(t, server.Client(), http.MethodPut, server.URL+"/api/v1/review-marks/"+file.ID+"?scope=all", map[string]string{"fileVersion": "", "versionId": snapshot.VersionID})
+	emptyMark := request(t, server.Client(), http.MethodPut, server.URL+"/api/review/review-marks/"+file.ID+"?scope=all", map[string]string{"fileVersion": "", "versionId": snapshot.VersionID})
 	if emptyMark.StatusCode != http.StatusConflict {
 		t.Fatalf("empty mark status: %d", emptyMark.StatusCode)
 	}
 	emptyMark.Body.Close()
-	createdResponse := request(t, server.Client(), http.MethodPost, server.URL+"/api/v1/comments", map[string]any{
+	createdResponse := request(t, server.Client(), http.MethodPost, server.URL+"/api/review/comments", map[string]any{
 		"diffId": snapshot.ID, "versionId": snapshot.VersionID, "fileId": file.ID, "scope": "all", "fileVersion": file.Fingerprint,
 		"side": "additions", "start": 1, "end": 1, "body": "Keep the new value.",
 	})
@@ -150,18 +150,18 @@ func TestAPIReviewWorkflow(t *testing.T) {
 	if created.Code != "+ export const value = 2;" || created.Origin == nil {
 		t.Fatalf("created comment: %#v", created)
 	}
-	markResponse := request(t, server.Client(), http.MethodPut, server.URL+"/api/v1/review-marks/"+file.ID+"?scope=all", map[string]string{"fileVersion": file.Fingerprint, "versionId": snapshot.VersionID})
+	markResponse := request(t, server.Client(), http.MethodPut, server.URL+"/api/review/review-marks/"+file.ID+"?scope=all", map[string]string{"fileVersion": file.Fingerprint, "versionId": snapshot.VersionID})
 	if markResponse.StatusCode != http.StatusOK {
 		t.Fatalf("mark status: %d", markResponse.StatusCode)
 	}
 	markResponse.Body.Close()
-	exportResponse := request(t, server.Client(), http.MethodGet, server.URL+"/api/v1/comments/export", nil)
+	exportResponse := request(t, server.Client(), http.MethodGet, server.URL+"/api/review/comments/export", nil)
 	exported, _ := io.ReadAll(exportResponse.Body)
 	exportResponse.Body.Close()
 	if !strings.Contains(string(exported), "Keep the new value.") || !strings.Contains(string(exported), `applicability="anchored"`) {
 		t.Fatalf("unexpected export: %s", exported)
 	}
-	agentCommentsResponse := request(t, server.Client(), http.MethodGet, server.URL+"/api/v1/review/comments", nil)
+	agentCommentsResponse := request(t, server.Client(), http.MethodGet, server.URL+"/api/review/review/comments", nil)
 	if agentCommentsResponse.StatusCode != http.StatusOK {
 		t.Fatalf("agent comments status: %d", agentCommentsResponse.StatusCode)
 	}
@@ -172,7 +172,7 @@ func TestAPIReviewWorkflow(t *testing.T) {
 		t.Fatalf("agent comments: %#v", agentComments.Comments)
 	}
 	for range 2 {
-		resolveResponse := request(t, server.Client(), http.MethodPost, server.URL+"/api/v1/review/comments/"+created.ID+"/resolve", nil)
+		resolveResponse := request(t, server.Client(), http.MethodPost, server.URL+"/api/review/review/comments/"+created.ID+"/resolve", nil)
 		if resolveResponse.StatusCode != http.StatusOK {
 			t.Fatalf("resolve status: %d", resolveResponse.StatusCode)
 		}
@@ -181,14 +181,14 @@ func TestAPIReviewWorkflow(t *testing.T) {
 			t.Fatalf("resolution: %#v", resolution)
 		}
 	}
-	resolvedCommentsResponse := request(t, server.Client(), http.MethodGet, server.URL+"/api/v1/review/comments?includeResolved=true", nil)
+	resolvedCommentsResponse := request(t, server.Client(), http.MethodGet, server.URL+"/api/review/review/comments?includeResolved=true", nil)
 	resolvedComments := decode[struct {
 		Comments []reviewservice.Comment `json:"comments"`
 	}](t, resolvedCommentsResponse)
 	if len(resolvedComments.Comments) != 1 || resolvedComments.Comments[0].Status != "resolved" || resolvedComments.Comments[0].Actionable {
 		t.Fatalf("resolved comments: %#v", resolvedComments.Comments)
 	}
-	missingResponse := request(t, server.Client(), http.MethodPost, server.URL+"/api/v1/review/comments/missing/resolve", nil)
+	missingResponse := request(t, server.Client(), http.MethodPost, server.URL+"/api/review/review/comments/missing/resolve", nil)
 	if missingResponse.StatusCode != http.StatusNotFound {
 		t.Fatalf("missing resolve status: %d", missingResponse.StatusCode)
 	}
@@ -216,71 +216,6 @@ func TestAPIReviewWorkflow(t *testing.T) {
 	}
 }
 
-func TestHistoricalCaptureAndExpiry(t *testing.T) {
-	raw, err := os.ReadFile("../../test/fixtures/sample.diff")
-	if err != nil {
-		t.Fatal(err)
-	}
-	source, err := diffsource.OpenPatch(string(raw))
-	if err != nil {
-		t.Fatal(err)
-	}
-	store, err := reviewstore.Open("")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
-	user, err := store.User("owner", "Owner")
-	if err != nil {
-		t.Fatal(err)
-	}
-	manifest, err := source.Snapshot(t.Context(), review.DiffAll)
-	if err != nil {
-		t.Fatal(err)
-	}
-	previous, err := store.Capture(user.ID, string(raw), manifest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	current, err := store.Capture(user.ID, string(raw), manifest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	active := session.Resolve(source, session.Policies{})
-	active.User = session.User{ID: user.ID, Name: user.Name}
-	active.ContextID = current.ContextID
-	active.DiffIDs = current.DiffIDs
-	active.VersionID = current.VersionID
-	server := httptest.NewServer(New(active, store, reviewservice.New(active, store), fstest.MapFS{"index.html": {Data: []byte("web")}}))
-	defer server.Close()
-	previousVersion := decode[review.RepositoryDiff](t, request(t, server.Client(), http.MethodGet, server.URL+"/api/v1/diffs/"+previous.ContextID+"/versions/"+previous.VersionID, nil))
-	var file review.ChangedFile
-	for _, candidate := range previousVersion.Files {
-		if candidate.Path == "src/value.ts" {
-			file = candidate
-		}
-	}
-	if file.ID == "" {
-		t.Fatal("stored file missing")
-	}
-	previewResponse := request(t, server.Client(), http.MethodGet, server.URL+"/api/v1/diffs/"+previous.ContextID+"/files/"+file.ID+"/patch?scope=all&versionId="+previous.VersionID+"&fileVersion="+file.Fingerprint, nil)
-	if previewResponse.StatusCode != http.StatusOK {
-		t.Fatalf("historical preview status: %d", previewResponse.StatusCode)
-	}
-	preview := decode[review.FilePatch](t, previewResponse)
-	if !strings.Contains(preview.Patch, "export const value = 2") {
-		t.Fatalf("historical preview: %#v", preview)
-	}
-	if err := store.PruneExpired(time.Now().Add(15 * 24 * time.Hour)); err != nil {
-		t.Fatal(err)
-	}
-	expired := request(t, server.Client(), http.MethodGet, server.URL+"/api/v1/diffs/current?scope=all", nil)
-	if expired.StatusCode != http.StatusGone {
-		t.Fatalf("expired active capture status: %d", expired.StatusCode)
-	}
-	expired.Body.Close()
-}
-
 func TestSessionCapabilitiesAndEnforcement(t *testing.T) {
 	raw, err := os.ReadFile("../../test/fixtures/sample.diff")
 	if err != nil {
@@ -298,7 +233,7 @@ func TestSessionCapabilitiesAndEnforcement(t *testing.T) {
 	server := httptest.NewServer(New(active, store, reviewservice.New(active, store), fstest.MapFS{"index.html": {Data: []byte("web")}}))
 	defer server.Close()
 
-	sessionResponse := request(t, server.Client(), http.MethodGet, server.URL+"/api/v1/session", nil)
+	sessionResponse := request(t, server.Client(), http.MethodGet, server.URL+"/api/review/session", nil)
 	if sessionResponse.StatusCode != http.StatusOK {
 		t.Fatalf("session status: %d", sessionResponse.StatusCode)
 	}
@@ -313,13 +248,13 @@ func TestSessionCapabilitiesAndEnforcement(t *testing.T) {
 	}
 
 	for _, endpoint := range []string{
-		"/api/v1/diffs/current?scope=staged",
-		"/api/v1/diffs/revision/files/file/contents?scope=all&fileVersion=version",
+		"/api/review/diffs/current?scope=staged",
+		"/api/review/diffs/" + active.DiffIDs[review.DiffAll] + "/files/file/contents?scope=all&fileVersion=version&versionId=version",
 	} {
 		response := request(t, server.Client(), http.MethodGet, server.URL+endpoint, nil)
 		assertCapabilityProblem(t, response, map[string]string{
-			"/api/v1/diffs/current?scope=staged":                                       session.DiffScopes,
-			"/api/v1/diffs/revision/files/file/contents?scope=all&fileVersion=version": session.FilesContents,
+			"/api/review/diffs/current?scope=staged": session.DiffScopes,
+			"/api/review/diffs/" + active.DiffIDs[review.DiffAll] + "/files/file/contents?scope=all&fileVersion=version&versionId=version": session.FilesContents,
 		}[endpoint])
 	}
 }
@@ -346,15 +281,15 @@ func TestDisabledCommentsRejectEveryRoute(t *testing.T) {
 		path   string
 		body   any
 	}{
-		{method: http.MethodGet, path: "/api/v1/comments"},
-		{method: http.MethodPost, path: "/api/v1/comments", body: map[string]string{}},
-		{method: http.MethodDelete, path: "/api/v1/comments"},
-		{method: http.MethodPost, path: "/api/v1/comments/import", body: map[string]string{}},
-		{method: http.MethodGet, path: "/api/v1/comments/export"},
-		{method: http.MethodPatch, path: "/api/v1/comments/id", body: map[string]string{}},
-		{method: http.MethodDelete, path: "/api/v1/comments/id"},
-		{method: http.MethodGet, path: "/api/v1/review/comments"},
-		{method: http.MethodPost, path: "/api/v1/review/comments/id/resolve"},
+		{method: http.MethodGet, path: "/api/review/comments"},
+		{method: http.MethodPost, path: "/api/review/comments", body: map[string]string{}},
+		{method: http.MethodDelete, path: "/api/review/comments"},
+		{method: http.MethodPost, path: "/api/review/comments/import", body: map[string]string{}},
+		{method: http.MethodGet, path: "/api/review/comments/export"},
+		{method: http.MethodPatch, path: "/api/review/comments/id", body: map[string]string{}},
+		{method: http.MethodDelete, path: "/api/review/comments/id"},
+		{method: http.MethodGet, path: "/api/review/review/comments"},
+		{method: http.MethodPost, path: "/api/review/review/comments/id/resolve"},
 	} {
 		response := request(t, server.Client(), test.method, server.URL+test.path, test.body)
 		assertCapabilityProblem(t, response, session.ReviewComments)
