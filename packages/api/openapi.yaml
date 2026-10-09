@@ -381,7 +381,7 @@ paths:
       description: Check authenticated database readiness and ingestion compatibility. State identity changes when the account database is replaced.
       responses:
         "200":
-          description: Ingestion is available.
+          description: Database readiness and available HTTP ingestion capabilities.
           content:
             application/json:
               schema:
@@ -393,6 +393,9 @@ paths:
                     type: string
                   protocolVersion:
                     type: integer
+                  ingestionEnabled:
+                    description: Whether this runtime accepts HTTP ingestion. False for foreground local snapshots.
+                    type: boolean
                   queuedIngestion:
                     type: boolean
         default:

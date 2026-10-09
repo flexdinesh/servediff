@@ -70,9 +70,6 @@ func acquireInput(values options, stdin *os.File) (daemon.InitialInput, error) {
 		}
 		return daemon.InitialInput{Kind: "capture", Raw: raw, SubmittedFrom: cwd}, nil
 	}
-	if !values.repositorySet {
-		return daemon.InitialInput{}, errors.New("provide a repository path, a fixture, or pipe a Git diff")
-	}
 	path, err := filepath.Abs(values.directory)
 	return daemon.InitialInput{Kind: "worktree", Path: path}, err
 }

@@ -31,9 +31,10 @@ go install github.com/flexdinesh/servediff/cmd/servediff@main
 
 ## Usage
 
-Watch the selected checkout in one foreground process:
+Capture the selected checkout once in one foreground process:
 
 ```sh
+servediff
 servediff .
 servediff /path/to/repo --host 0.0.0.0
 servediff . --replace
@@ -41,11 +42,12 @@ servediff . --base HEAD --no-browser
 ```
 
 Collection and ingestion run in-process. The same process serves the web UI,
-REST and MCP until Ctrl-C. It watches only the selected checkout, follows branch
-switches, and preserves observations/comments across restarts in the shared local
-database. The browser follows new observations; choosing a historical review or
-starting a comment pins the current review. Failed collection never substitutes
-an empty diff.
+REST and MCP until Ctrl-C. The path defaults to the current directory and resolves
+to its containing checkout, including linked worktrees. Only that checkout is
+collected. The browser opens the captured snapshot; later edits and branch switches
+do not change it. Run the command again to capture a newer diff. Observations and
+comments persist across restarts in the shared local database. Failed collection
+never substitutes an empty diff.
 
 Only one local instance runs. Starting another prompts before replacing it;
 scripts must pass `--replace`. Replacement requests authenticated graceful
@@ -89,7 +91,7 @@ The default listener binds to `127.0.0.1` on an available port from 7981–7990.
 reviews to reachable clients. The browser opens a loopback URL for wildcard binds.
 
 Legacy `review`, `serve`, and `service` commands remain compatibility
-paths during migration. Bare `servediff` without redirected stdin prints help.
+paths during migration. Use `servediff --help` for usage.
 
 ## Agent hooks and remote ingestion
 

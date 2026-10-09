@@ -193,7 +193,9 @@ func TestAcquireInputPriority(t *testing.T) {
 	}
 }
 
-func TestAcquireRepositoryInputRequiresExplicitPath(t *testing.T) {
+func TestAcquireRepositoryInputDefaultsToCurrentDirectory(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
 	stdin, err := os.Open(os.DevNull)
 	if err != nil {
 		t.Fatal(err)
@@ -206,10 +208,11 @@ func TestAcquireRepositoryInputRequiresExplicitPath(t *testing.T) {
 	if piped {
 		t.Skip("null device is not a terminal-like input on this platform")
 	}
-	if _, err := acquireInput(options{directory: "."}, stdin); err == nil {
-		t.Fatal("bare invocation accepted without repository or patch")
+	input, err := acquireInput(options{directory: "."}, stdin)
+	if err != nil || input.Kind != "worktree" || input.Path != root {
+		t.Fatalf("default directory input: %#v %v", input, err)
 	}
-	input, err := acquireInput(options{directory: "./service", repositorySet: true}, stdin)
+	input, err = acquireInput(options{directory: "./service", repositorySet: true}, stdin)
 	if err != nil || input.Kind != "worktree" || !filepath.IsAbs(input.Path) || filepath.Base(input.Path) != "service" {
 		t.Fatalf("explicit directory input: %#v %v", input, err)
 	}

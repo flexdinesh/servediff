@@ -29,7 +29,6 @@ import (
 // InitialInput is acquired by a foreground CLI, never by the daemon's stdin.
 type InitialInput struct {
 	IngestionDisabled bool
-	Watch             func(context.Context, *contextservice.Service) error
 	Ingestion         *ingestion.Request
 	Kind              string
 	Path              string
@@ -153,10 +152,6 @@ func runServer(ctx context.Context, cancel context.CancelFunc, settings Settings
 	if initial != nil {
 		configuration.IngestionDisabled = initial.IngestionDisabled
 	}
-	if initial != nil && initial.Watch != nil {
-		configuration.IngestionDisabled = true
-		status.WatchPath = initial.Path
-	}
 	mux := serverapp.Handler(ctx, service, store, assets, defaultContextID, configuration)
 	webServer := &http.Server{Handler: publicRequests(mux, settings), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second, ErrorLog: logger}
 	endpoints := []serverapp.Endpoint{{Server: webServer, Listener: listener}}
@@ -186,9 +181,6 @@ func runServer(ctx context.Context, cancel context.CancelFunc, settings Settings
 		}
 	}
 	tasks := []serverapp.Task{serverapp.Prune(store.PruneExpired)}
-	if initial != nil && initial.Watch != nil {
-		tasks = append(tasks, func(ctx context.Context) error { return initial.Watch(ctx, service) })
-	}
 	return serverapp.Run(ctx, endpoints, tasks, func() {
 		if ready != nil {
 			ready(status, submitted)

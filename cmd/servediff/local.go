@@ -12,10 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/collector"
 	"github.com/flexdinesh/servediff/internal/contextservice"
 	"github.com/flexdinesh/servediff/internal/daemon"
-	"github.com/flexdinesh/servediff/internal/ingestion"
 	"github.com/mattn/go-isatty"
 )
 
@@ -42,16 +40,7 @@ func runLocal(ctx context.Context, arguments []string, stdin *os.File, stdout, s
 		return err
 	}
 	started := time.Now()
-	options, err := collectionOptions(values)
-	if err != nil {
-		return err
-	}
-	var request ingestion.Request
-	if input.Kind == "worktree" {
-		request, err = collector.Collect(ctx, input.Path, options)
-	} else {
-		request, err = collector.CollectPatch(ctx, string(input.Raw), input.SubmittedFrom, options)
-	}
+	request, err := collectInitialInput(ctx, values, input)
 	if err != nil {
 		return err
 	}
@@ -59,12 +48,6 @@ func runLocal(ctx context.Context, arguments []string, stdin *os.File, stdout, s
 	label := "Piped diff"
 	if input.Kind == "worktree" {
 		input.Path, label = request.Metadata.Root, request.Metadata.Root
-		input.Watch = func(ctx context.Context, service *contextservice.Service) error {
-			return collector.Watch(ctx, request.Metadata.Root, options, collector.Fingerprint(request), time.Second, func(ctx context.Context, next ingestion.Request) error {
-				_, err := service.Ingest(ctx, next)
-				return err
-			}, func(err error) { fmt.Fprintf(stderr, "Watch: %v\n", err) })
-		}
 	}
 	return daemon.RunForeground(ctx, settings, input, func(status daemon.Status) (bool, error) {
 		if values.replace {
@@ -93,16 +76,16 @@ func runLocal(ctx context.Context, arguments []string, stdin *os.File, stdout, s
 			return strings.EqualFold(strings.TrimSpace(reply.answer), "y") || strings.EqualFold(strings.TrimSpace(reply.answer), "yes"), nil
 		}
 	}, func(status daemon.Status, submitted *contextservice.Submission) {
-		if input.Kind == "capture" && submitted != nil {
-			address := status.BrowserURL + "/contexts/" + url.PathEscape(submitted.Context.ID)
-			loaded := submissionInput(*submitted, time.Since(started))
-			loaded.mode, loaded.directory, loaded.contextID, loaded.mcpURL = "pipe", "", submitted.Context.ID, status.BrowserURL+"/mcp"
-			writeStartup(stdout, loaded, address)
-			openBrowser(values, address, stderr)
+		if submitted == nil {
 			return
 		}
-		address := status.BrowserURL + "/?" + url.Values{"watch": {request.Metadata.CheckoutKey}, "source": {request.Metadata.SourceID}}.Encode()
-		fmt.Fprintf(stdout, "Watching %s\n%s\nMCP: %s/mcp\n", input.Path, address, status.BrowserURL)
+		address := status.BrowserURL + "/contexts/" + url.PathEscape(submitted.Context.ID)
+		loaded := submissionInput(*submitted, time.Since(started))
+		if input.Kind == "capture" {
+			loaded.mode, loaded.directory = "pipe", ""
+		}
+		loaded.contextID, loaded.mcpURL = submitted.Context.ID, status.BrowserURL+"/mcp"
+		writeStartup(stdout, loaded, address)
 		openBrowser(values, address, stderr)
 	})
 }
@@ -121,9 +104,6 @@ func acquireLocalInput(values options, stdin *os.File) (daemon.InitialInput, err
 	}
 	if piped || values.directory == "-" {
 		return acquireInput(values, stdin)
-	}
-	if !values.repositorySet {
-		return daemon.InitialInput{}, errors.New("provide a repository path or pipe a Git diff")
 	}
 	path, err := filepath.Abs(values.directory)
 	return daemon.InitialInput{Kind: "worktree", Path: path}, err

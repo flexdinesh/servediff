@@ -47,7 +47,7 @@ func TestOptionsRejectRemovedAgentFlag(t *testing.T) {
 }
 
 func TestHelpDocumentsHarnessFlag(t *testing.T) {
-	for _, arguments := range [][]string{{}, {"review", "--help"}, {"hook", "--help"}} {
+	for _, arguments := range [][]string{{"--help"}, {"review", "--help"}, {"hook", "--help"}} {
 		var output bytes.Buffer
 		if err := run(t.Context(), arguments, nil, &output, &output); err != nil {
 			t.Fatal(err)

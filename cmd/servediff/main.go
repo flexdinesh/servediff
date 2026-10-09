@@ -28,18 +28,6 @@ var errServiceStopped = errors.New("service is stopped")
 
 func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr io.Writer) (failure error) {
 	if len(arguments) == 0 {
-		piped := false
-		if stdin != nil {
-			var err error
-			piped, err = redirected(stdin)
-			if err != nil {
-				return err
-			}
-		}
-		if !piped {
-			writeHelp(stdout)
-			return nil
-		}
 		return runLocal(ctx, arguments, stdin, stdout, stderr)
 	}
 	if arguments[0] == "config" {
@@ -167,6 +155,7 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 		if err != nil {
 			return err
 		}
+		input.IngestionDisabled = true
 		if input.Kind != "reopen" {
 			request, collectErr := collectInitialInput(ctx, values, input)
 			if collectErr != nil {
@@ -185,8 +174,9 @@ func run(ctx context.Context, arguments []string, stdin *os.File, stdout, stderr
 			if submitted == nil {
 				return
 			}
-			writeStartup(stdout, submissionInput(*submitted, time.Since(started)), status.BrowserURL)
-			openBrowser(values, status.BrowserURL, stderr)
+			address := status.BrowserURL + "/contexts/" + url.PathEscape(submitted.Context.ID)
+			writeStartup(stdout, submissionInput(*submitted, time.Since(started)), address)
+			openBrowser(values, address, stderr)
 		})
 	}
 	if command == "service" {
@@ -400,19 +390,6 @@ func main() {
 		}
 		os.Exit(1)
 	}
-}
-
-func writeHelp(writer io.Writer) {
-	fmt.Fprintln(writer, "  Usage: servediff PATH [--host IP] [--replace]")
-	fmt.Fprintln(writer, "         git diff | servediff [options]")
-	fmt.Fprintln(writer, "         servediff sync [--path DIRECTORY] [--print] [--debug] [--retry]")
-	fmt.Fprintln(writer, "         servediff config {set|get|remove} KEY [VALUE]")
-	fmt.Fprintln(writer, "         servediff review [--path DIRECTORY] [options]")
-	fmt.Fprintln(writer, "         servediff hook --harness NAME [--path DIRECTORY] [--config-file FILE]")
-	fmt.Fprintln(writer, "         servediff collector {status|retry} [--config-file FILE]")
-	fmt.Fprintln(writer, "         servediff service {start|stop|restart|status} [options]")
-	fmt.Fprintln(writer, "         servediff service config {set KEY VALUE|get KEY|remove KEY}")
-	fmt.Fprintln(writer, "         servediff serve [directory | --fixture FILE] [options]")
 }
 
 func submitRemote(ctx context.Context, command string, values options, request ingestion.Request, stdout, stderr io.Writer, started time.Time) error {

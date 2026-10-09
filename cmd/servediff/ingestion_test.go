@@ -41,22 +41,24 @@ func cliRepository(t *testing.T) string {
 	return root
 }
 
-func TestBareInvocationShowsHelpWithoutConsumingStdin(t *testing.T) {
+func TestBareInvocationRejectsNonRepositoryWithoutConsumingStdin(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("SERVEDIFF_CONFIG_PATH", filepath.Join(t.TempDir(), "config.json"))
 	stdin, err := os.Open(os.DevNull)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer stdin.Close()
 	var output bytes.Buffer
-	if err := run(t.Context(), nil, stdin, &output, io.Discard); err != nil {
-		t.Fatal(err)
+	if err := run(t.Context(), nil, stdin, &output, io.Discard); err == nil {
+		t.Fatal("accepted non-Git current directory")
 	}
 	position, err := stdin.Seek(0, io.SeekCurrent)
 	if err != nil || position != 0 {
 		t.Fatalf("stdin consumed: %d %v", position, err)
 	}
-	if !strings.Contains(output.String(), "servediff PATH") || !strings.Contains(output.String(), "git diff | servediff") || strings.Contains(output.String(), "servediff pipe") {
-		t.Fatalf("help: %s", output.String())
+	if output.Len() != 0 {
+		t.Fatalf("unexpected startup: %s", output.String())
 	}
 }
 

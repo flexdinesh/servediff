@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/flexdinesh/servediff/internal/collector"
@@ -228,6 +229,9 @@ func TestObservationStoredOnlyAfterCheckoutChangesAndRemoval(t *testing.T) {
 		item, err := service.Get(t.Context(), submitted.Context.ID)
 		if err != nil || item.Availability != "available" || item.LastChangedAt != collected.Metadata.CollectedAt {
 			t.Fatalf("stored metadata: %#v, %v", item, err)
+		}
+		if !reflect.DeepEqual(item.Capabilities, active.Capabilities) {
+			t.Fatalf("catalog/session capabilities diverged: %+v, %+v", item.Capabilities, active.Capabilities)
 		}
 	}
 	assertStored(service)

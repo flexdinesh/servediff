@@ -349,22 +349,7 @@ func capabilities(kind string) session.Capabilities {
 	if kind == "worktree" {
 		support = worktreeSupport()
 	}
-	return session.Capabilities{
-		Diff: session.DiffCapabilities{
-			Scopes:          session.ScopesCapability{State: session.Enabled, Values: support.Scopes},
-			Refresh:         session.Capability{State: state(support.Refresh)},
-			StagingMetadata: session.Capability{State: state(support.StagingMetadata)},
-		},
-		Files:  session.FileCapabilities{Contents: session.Capability{State: state(support.FileContents)}},
-		Review: session.ReviewCapabilities{Comments: session.Capability{State: session.Enabled}},
-	}
-}
-
-func state(enabled bool) session.State {
-	if enabled {
-		return session.Enabled
-	}
-	return session.Unavailable
+	return session.ResolveCapabilities(support, session.Policies{})
 }
 
 func bindSnapshot(snapshot review.RepositoryDiff, binding reviewdata.Binding) review.RepositoryDiff {

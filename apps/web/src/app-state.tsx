@@ -10,11 +10,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
-import {
-  capabilityEnabled,
-  usePinContext,
-  useSession,
-} from "./session-context.tsx";
+import { capabilityEnabled, useSession } from "./session-context.tsx";
 import { useSidebarState } from "./sidebar-context.tsx";
 import { useDiff } from "./use-diff.ts";
 import { useFileNavigation } from "./use-file-navigation.ts";
@@ -59,10 +55,6 @@ function WorkspaceProvider({ children }: { children: ReactNode }) {
   const scopes = capabilities.diff.scopes.values;
   const [mode, setMode] = useState<DiffMode>("all");
   const [draft, setDraft] = useState<ReviewComment | null>(null);
-  const pinContext = usePinContext();
-  useEffect(() => {
-    if (draft) pinContext();
-  }, [draft, pinContext]);
   const [collapsed, setCollapsed] = useState(new Set<string>());
   const diff = useDiff(contextId, mode);
   const repository = diff.repository;
