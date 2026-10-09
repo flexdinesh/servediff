@@ -180,6 +180,12 @@ The header's delete action removes the selected snapshot, all
 its stored diff scopes, comments, and reviewed-file marks after confirmation.
 Deletion preserves stream freshness history; older snapshots remain stale.
 It leaves Git files untouched, and a new collection can create a review again.
+The footer shows the selected scope's actual baseline. Its Diff comparison popover
+explains the calculation and exposes the recorded base ref, base commit, merge base,
+and HEAD with full commit IDs. These facts are persisted in observation metadata
+and returned by `GET /api/v2/contexts/{contextId}` as `observation.comparison`
+and `observation.head`; reading them never resolves current Git refs.
+
 `DiffWorkspace.tsx` owns Pierre rendering,
 versions, worker options, and measured geometry. `use-review.ts` and
 `use-reviewed-files.ts` own their REST requests and recovery; reads cannot settle

@@ -361,14 +361,18 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /** @description Immutable Git comparison facts captured by the producer and stored with the observation. Applies to the all scope; staged always compares HEAD to index and unstaged compares index to working tree. Missing comparison metadata retains legacy HEAD semantics. */
     Comparison: {
-      /** @enum {string} */
+      /**
+       * @description Working-tree compares HEAD to working changes. Branch compares the default or explicit base ref's merge base to the checkout, including committed and working changes; object-only branch recovery compares that merge base to HEAD.
+       * @enum {string}
+       */
       kind: "working-tree" | "branch";
       /** @description Logical comparison baseline. HEAD for working changes; normalized Git ref for branch comparisons. */
       baseRef: string;
       /** @description Resolved baseline tip at collection time. Absent for unborn checkouts. */
       baseCommit?: string;
-      /** @description Commit actually used as the branch comparison baseline. */
+      /** @description Full commit ID actually used as the all-scope baseline. For branch comparisons this is the merge base of baseCommit and observation.head, which may differ from the base ref tip. For working-tree comparisons it equals the captured HEAD; absent for unborn checkouts. */
       mergeBase?: string;
     };
     AgentSession: {
