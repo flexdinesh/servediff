@@ -162,6 +162,115 @@ async function ready(page: Page, value = "all-v1") {
   ).toBeVisible();
 }
 
+test("comparison uses the captured merge base and follows the selected scope", async ({
+  page,
+}) => {
+  const state = await localWorkspace(page);
+  const head = "a".repeat(40);
+  const baseCommit = "b".repeat(40);
+  const mergeBase = "c".repeat(40);
+  state.context.kind = "observation";
+  state.context.observation = {
+    sourceId: "machine",
+    hostname: "host",
+    runId: "",
+    agent: "",
+    trigger: "manual",
+    repositoryKey: "repo",
+    repositoryName: "repo",
+    remoteUrl: "",
+    checkoutKey: "checkout",
+    root: "/repo",
+    worktreeName: "repo",
+    branch: "feature",
+    head,
+    collectedAt: 1,
+    collectorVersion: "test",
+    comparison: {
+      kind: "branch",
+      baseRef: "refs/heads/main",
+      baseCommit,
+      mergeBase,
+    },
+  };
+  await page.goto("/contexts/local-review");
+  await ready(page);
+  const trigger = page.locator("#scope-description");
+  await expect(trigger).toContainText(
+    "Merge base (main · ccccccc) → working tree",
+  );
+  await trigger.click();
+  const popup = page.getByRole("dialog", { name: "Diff comparison" });
+  await expect(popup).toContainText(
+    "including committed, staged, unstaged, and untracked changes",
+  );
+  for (const value of ["refs/heads/main", head, baseCommit, mergeBase])
+    await expect(popup.getByText(value, { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(trigger).toBeFocused();
+  await page.getByRole("button", { name: "Staged", exact: true }).click();
+  await expect(trigger).toContainText("HEAD → index");
+  await trigger.click();
+  await expect(popup).toContainText("Committed branch changes are excluded");
+  await expect(popup.getByText(head, { exact: true })).toBeVisible();
+  await expect(popup.getByText(mergeBase, { exact: true })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Unstaged", exact: true }).click();
+  await expect(trigger).toContainText("Index → working tree");
+  await trigger.click();
+  await expect(popup).toContainText("Unstaged changes compare the index");
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "All changes", exact: true }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(trigger).toBeVisible();
+  await expect(trigger).toContainText("Comparison");
+  await trigger.click();
+  await expect(popup.getByText(mergeBase, { exact: true })).toBeVisible();
+  const bounds = await popup.boundingBox();
+  expect(bounds).not.toBeNull();
+  if (bounds) {
+    expect(bounds.x).toBeGreaterThanOrEqual(0);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
+  }
+});
+
+test("working comparison identifies HEAD and unborn baselines", async ({
+  page,
+}) => {
+  const state = await localWorkspace(page);
+  await page.goto("/contexts/local-review");
+  await ready(page);
+  const trigger = page.locator("#scope-description");
+  await expect(trigger).toContainText("HEAD → working tree");
+  await trigger.click();
+  const popup = page.getByRole("dialog", { name: "Diff comparison" });
+  await expect(popup).toContainText("Committed branch changes are excluded");
+  await expect(popup.getByText("head", { exact: true })).toBeVisible();
+  state.context.observation = {
+    sourceId: "machine",
+    hostname: "host",
+    runId: "",
+    agent: "",
+    trigger: "manual",
+    repositoryKey: "repo",
+    repositoryName: "repo",
+    remoteUrl: "",
+    checkoutKey: "checkout",
+    root: "/repo",
+    worktreeName: "repo",
+    branch: "main",
+    head: null,
+    collectedAt: 1,
+    collectorVersion: "test",
+    comparison: { kind: "working-tree", baseRef: "HEAD" },
+  };
+  await page.reload();
+  await ready(page);
+  await expect(trigger).toContainText("Empty tree → working tree");
+  await trigger.click();
+  await expect(popup).toContainText("Unborn (no commits)");
+});
+
 test("snapshot stays selected after newer captures and branch transitions", async ({
   page,
 }) => {

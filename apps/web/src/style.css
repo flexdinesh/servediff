@@ -607,8 +607,50 @@ h2 {
 }
 .main-footer > #scope-description {
   min-width: 0;
+  flex-shrink: 1;
+  justify-content: flex-start;
+  padding-inline: 0;
+  font: inherit;
+}
+.diff-comparison-trigger > span {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.diff-comparison-mobile-label {
+  display: none;
+}
+.diff-comparison-popup {
+  width: min(30rem, calc(100vw - 2 * var(--space-4)));
+  max-height: var(--available-height);
+  overflow-y: auto;
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  color: var(--fg);
+  font-size: var(--text-sm);
+  line-height: var(--leading-copy);
+}
+.diff-comparison-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+  font-weight: var(--weight-semibold);
+}
+.diff-comparison-popup dl {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+.diff-comparison-popup dt {
+  color: var(--text-secondary);
+}
+.diff-comparison-popup dd {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+  user-select: text;
 }
 .mobile-review-progress {
   display: none;
@@ -671,8 +713,11 @@ h2 {
   }
 }
 @media (max-width: 767px) {
-  .main-footer > #scope-description {
+  .main-footer .diff-comparison-summary {
     display: none;
+  }
+  .diff-comparison-mobile-label {
+    display: inline;
   }
   .main-footer .footer-details {
     margin-left: auto;

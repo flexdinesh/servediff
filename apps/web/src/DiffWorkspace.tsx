@@ -27,6 +27,7 @@ import {
 import { useAppearance } from "./appearance-context.tsx";
 import { CopyPathButton } from "./CopyPathButton.tsx";
 import { DiffToolbar } from "./DiffToolbar.tsx";
+import { DiffComparison } from "./DiffComparison.tsx";
 import { themesFor } from "./display-options.ts";
 import { DraftComment, ReviewCommentCard } from "./review.tsx";
 import type { CommentAnnotation } from "./review-model.ts";
@@ -610,13 +611,6 @@ export function DiffWorkspace() {
     ],
   );
 
-  const scopeDescription = piped
-    ? "Command output · fixed snapshot"
-    : mode === "staged"
-      ? "HEAD → index"
-      : mode === "unstaged"
-        ? "Index → working tree, including untracked files"
-        : "HEAD → working tree, including untracked files";
   const emptyTitle = !repository
     ? diff.notice
       ? "Cannot load changes"
@@ -765,7 +759,7 @@ export function DiffWorkspace() {
         </div>
       </div>
       <footer className="main-footer">
-        <span id="scope-description">{scopeDescription}</span>
+        <DiffComparison />
         <span
           className="mobile-review-progress"
           aria-label={`${reviewedCount} of ${allFiles.length} files reviewed`}

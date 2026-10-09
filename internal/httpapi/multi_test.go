@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"testing/fstest"
 
@@ -262,6 +263,78 @@ func gitCommand(t *testing.T, root string, arguments ...string) {
 	command := exec.Command("git", append([]string{"-C", root}, arguments...)...)
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v: %s", arguments, err, output)
+	}
+}
+
+func TestComparisonMetadataSurvivesRestartWithoutGit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "reviews.db")
+	store, err := reviewstore.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { store.Close() }()
+	user, err := store.User("uid", "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := contextservice.New(store, user)
+	root := t.TempDir()
+	gitCommand(t, root, "init", "--initial-branch=main")
+	commit := func(name string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(root, name), []byte(name+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		gitCommand(t, root, "add", ".")
+		gitCommand(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", name)
+	}
+	commit("initial")
+	gitCommand(t, root, "checkout", "-b", "feature")
+	commit("feature")
+	gitCommand(t, root, "checkout", "main")
+	commit("main-advanced")
+	gitCommand(t, root, "checkout", "feature")
+	expected := make(map[string]ingestion.Metadata)
+	for _, base := range []string{"auto", "HEAD"} {
+		input, err := collector.Collect(t.Context(), root, collector.Options{SourceID: "machine", SubmissionID: base, Base: base})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if base == "auto" && (input.Metadata.Comparison == nil || input.Metadata.Comparison.MergeBase == input.Metadata.Comparison.BaseCommit) {
+			t.Fatal("fixture must distinguish merge base from base ref tip")
+		}
+		target, err := provider.Ingest(t.Context(), input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		expected[target.Context.ID] = input.Metadata
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := reviewstore.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store = reopened
+	if err := os.RemoveAll(root); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", t.TempDir())
+	server := httptest.NewServer(NewMulti(contextservice.New(store, user), store, fstest.MapFS{"index.html": {Data: []byte("web")}}))
+	defer server.Close()
+	page := decode[contextservice.Page](t, request(t, server.Client(), http.MethodGet, server.URL+"/api/v2/contexts", nil))
+	if len(page.Contexts) != len(expected) {
+		t.Fatalf("catalog count: %d", len(page.Contexts))
+	}
+	for _, listed := range page.Contexts {
+		want := expected[listed.ID]
+		retained := decode[contextservice.Context](t, request(t, server.Client(), http.MethodGet, server.URL+"/api/v2/contexts/"+listed.ID, nil))
+		for _, got := range []*ingestion.Metadata{listed.Observation, retained.Observation} {
+			if got == nil || !reflect.DeepEqual(got.Comparison, want.Comparison) || !reflect.DeepEqual(got.Head, want.Head) {
+				t.Fatalf("stored comparison changed: want %+v, got %+v", want, got)
+			}
+		}
 	}
 }
 
