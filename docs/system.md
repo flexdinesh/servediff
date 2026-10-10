@@ -44,9 +44,15 @@ Noninteractive callers use `--replace`. There is no collector daemon.
 
 `diffx sync` collects the originating checkout and registered worktrees once,
 saves immutable pending payloads, and submits them over authenticated HTTP.
-The Docker server owns durable queue admission, the ingestion worker, shared
+The remote server binary owns durable queue admission, the ingestion worker, shared
 application services and persistent storage. Sync waits for committed results.
 Plugins schedule finite remote-only collector invocations with harness metadata.
+
+`diffx-server` runs directly or as the same binary inside a container. It resolves
+deployment config without reading or writing personal CLI settings. Container
+defaults come from env vars, with SQLite and generated credentials under `/data`.
+Compose mounts a named volume and publishes HTTP on host loopback; stopping or
+recreating the container preserves data. Only one process may own that database.
 
 Both modes use identical collection, validation, identity, ingestion, catalog
 and review operations. Their lifecycle and submission delivery differ.
@@ -150,7 +156,8 @@ fresh submission; retries do not extend it. Reads enforce
 expiry immediately; local and remote servers prune at startup and hourly,
 removing all scopes, previews, comments and marks. Compact replay identities and
 stream heads survive deletion and expiry, preventing replay resurrection and
-regression of freshness. See architecture.md for the intentional schema reset.
+regression of freshness. Incompatible schemas are refused without resetting data;
+see architecture.md for the explicit fresh-state procedure.
 
 ## Freshness and delivery
 

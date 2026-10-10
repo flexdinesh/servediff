@@ -3,27 +3,49 @@ package reviewstore
 import (
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
-func TestSchemaResetOnceAndFutureVersionRefused(t *testing.T) {
+func TestOlderSchemaRefusedWithoutReset(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.db")
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = db.Exec("CREATE TABLE legacy(value TEXT); INSERT INTO legacy VALUES('discard'); PRAGMA user_version=8")
+	_, err = db.Exec("CREATE TABLE legacy(value TEXT); INSERT INTO legacy VALUES('retain'); PRAGMA user_version=8")
 	if err != nil {
 		t.Fatal(err)
 	}
 	db.Close()
-	store, err := Open(path)
+	for range 2 {
+		if store, err := Open(path); err == nil {
+			store.Close()
+			t.Fatal("accepted older schema")
+		} else if !strings.Contains(err.Error(), "automatic reset is disabled") {
+			t.Fatalf("missing recovery guidance: %v", err)
+		}
+	}
+	db, err = sql.Open("sqlite", path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var name string
-	if err := store.db.QueryRow("SELECT name FROM sqlite_master WHERE name='legacy'").Scan(&name); err != sql.ErrNoRows {
-		t.Fatalf("legacy table survived: %v", err)
+	defer db.Close()
+	var value string
+	if err := db.QueryRow("SELECT value FROM legacy").Scan(&value); err != nil || value != "retain" {
+		t.Fatalf("older data changed: %q %v", value, err)
+	}
+	var version int
+	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 8 {
+		t.Fatalf("older schema version changed: %d %v", version, err)
+	}
+}
+
+func TestCurrentSchemaSurvivesRestartAndFutureVersionRefused(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.db")
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
 	}
 	user, err := store.User("owner", "owner")
 	if err != nil {
@@ -46,7 +68,7 @@ func TestSchemaResetOnceAndFutureVersionRefused(t *testing.T) {
 		newer.Close()
 		t.Fatal("accepted future schema")
 	}
-	db, err = sql.Open("sqlite", path)
+	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -14,10 +14,10 @@ FROM scratch
 COPY --from=build /diffx-server /diffx-server
 COPY --from=build --chown=10001:10001 /data /data
 USER 10001:10001
-ENV DIFFX_CONFIG_PATH=/data/config.json
-ENV HOME=/data
+ENV DIFFX_HOST=0.0.0.0
+ENV DIFFX_PORT=7981
+ENV DIFFX_STATE=/data/state.db
 VOLUME ["/data"]
 EXPOSE 7981
 STOPSIGNAL SIGTERM
 ENTRYPOINT ["/diffx-server"]
-CMD ["--listen", "0.0.0.0:7981", "--state", "/data/state.db"]

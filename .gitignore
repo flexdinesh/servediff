@@ -1,4 +1,6 @@
 node_modules/
+/data/
+/test-data/
 dist/
 !packages/plugin-opencode/dist/
 !packages/plugin-opencode/dist/index.js

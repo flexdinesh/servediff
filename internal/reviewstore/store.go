@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/flexdinesh/diffx/internal/processlock"
@@ -151,6 +150,9 @@ func (store *Store) initialize() error {
 	if version > schemaVersion {
 		return fmt.Errorf("diffx state schema %d is newer than supported schema %d", version, schemaVersion)
 	}
+	if version > 0 && version < schemaVersion {
+		return fmt.Errorf("diffx state schema %d is older than supported schema %d; automatic reset is disabled: use a compatible binary or back up the state directory and explicitly choose a fresh database path", version, schemaVersion)
+	}
 	if _, err := store.db.Exec("PRAGMA foreign_keys=OFF"); err != nil {
 		return err
 	}
@@ -168,29 +170,6 @@ func (store *Store) initialize() error {
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
-		}
-	}
-	if version > 0 && version < schemaVersion {
-		rows, err := transaction.Query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
-		if err != nil {
-			return err
-		}
-		var tables []string
-		for rows.Next() {
-			var name string
-			if err := rows.Scan(&name); err != nil {
-				rows.Close()
-				return err
-			}
-			tables = append(tables, name)
-		}
-		if err := errors.Join(rows.Err(), rows.Close()); err != nil {
-			return err
-		}
-		for _, name := range tables {
-			if _, err := transaction.Exec("DROP TABLE \"" + strings.ReplaceAll(name, "\"", "\"\"") + "\""); err != nil {
-				return err
-			}
 		}
 	}
 	statements := []string{

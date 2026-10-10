@@ -5,10 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 
@@ -22,11 +20,11 @@ func parseSettings(arguments []string, stderr io.Writer) (remoteserver.Settings,
 	settings := remoteserver.Settings{Token: os.Getenv("DIFFX_TOKEN")}
 	flags := flag.NewFlagSet("diffx-server", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	flags.StringVar(&settings.Listen, "listen", "0.0.0.0:7981", "HTTP listen address; terminate TLS at the deployment boundary")
+	flags.StringVar(&settings.Listen, "listen", "127.0.0.1:7981", "HTTP listen address; terminate TLS at the deployment boundary")
 	flags.StringVar(&settings.State, "state", "", "SQLite database path")
 	flags.StringVar(&settings.Account, "account", "admin", "bootstrap account name; persisted credentials are never replaced")
 	flags.IntVar(&settings.RetentionDays, "retention-days", 7, "snapshot retention in days")
-	path := flags.String("config-file", "", "machine JSON config path")
+	path := flags.String("config-file", "", "optional read-only server JSON config path")
 	showVersion := flags.Bool("version", false, "print version and exit")
 	if err := flags.Parse(arguments); err != nil {
 		return settings, false, err
@@ -37,37 +35,40 @@ func parseSettings(arguments []string, stderr io.Writer) (remoteserver.Settings,
 	if flags.NArg() != 0 {
 		return settings, false, fmt.Errorf("diffx-server takes no positional arguments")
 	}
-	values, err := config.LoadFile(*path)
+	values, err := config.LoadRemoteFile(*path)
 	if err != nil {
 		return settings, false, err
 	}
-	resolved, err := values.Settings()
-	if err != nil {
-		return settings, false, err
-	}
-	listenSet, stateSet, retentionSet := false, false, false
+	listenSet, stateSet, accountSet, retentionSet := false, false, false, false
 	flags.Visit(func(value *flag.Flag) {
 		listenSet = listenSet || value.Name == "listen"
 		stateSet = stateSet || value.Name == "state"
+		accountSet = accountSet || value.Name == "account"
 		retentionSet = retentionSet || value.Name == "retention-days"
 	})
-	_, hostEnv := os.LookupEnv("DIFFX_HOST")
-	_, portEnv := os.LookupEnv("DIFFX_PORT")
-	if !listenSet && (*path != "" || os.Getenv("DIFFX_CONFIG_PATH") != "" || hostEnv || portEnv) {
-		port := resolved.Port
-		if port < 0 {
-			port = 7981
+	if !listenSet {
+		settings.Listen, err = values.ListenAddress()
+		if err != nil {
+			return settings, false, err
 		}
-		settings.Listen = net.JoinHostPort(resolved.Host, strconv.Itoa(port))
 	}
 	if !stateSet || settings.State == "" {
-		settings.State = resolved.State
+		settings.State = values.State
+	}
+	if !accountSet {
+		settings.Account = values.Account
 	}
 	if !retentionSet {
 		settings.RetentionDays = values.RetentionDays
 	}
-	if retentionSet && settings.RetentionDays <= 0 {
+	if settings.RetentionDays <= 0 {
 		return settings, false, fmt.Errorf("retention days must be positive")
+	}
+	if settings.State == "" {
+		return settings, false, fmt.Errorf("state must be a database path or memory")
+	}
+	if strings.TrimSpace(settings.Account) == "" || len(settings.Account) > 256 || strings.ContainsAny(settings.Account, "\r\n:") {
+		return settings, false, fmt.Errorf("invalid bootstrap account name")
 	}
 	if _, err := remoteserver.Retention(settings.RetentionDays); err != nil {
 		return settings, false, err
@@ -117,7 +118,7 @@ func createUser(arguments []string, stdout, stderr io.Writer) error {
 	flags.SetOutput(stderr)
 	name := flags.String("name", "", "new account name")
 	state := flags.String("state", "", "SQLite database path; server must be stopped")
-	configPath := flags.String("config-file", "", "machine JSON config path")
+	configPath := flags.String("config-file", "", "optional read-only server JSON config path")
 	if err := flags.Parse(arguments[1:]); err != nil {
 		return err
 	}
