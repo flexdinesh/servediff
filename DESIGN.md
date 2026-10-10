@@ -416,6 +416,9 @@ Do not add motion for decoration. New animation must honor
   File/folder rows, filter, summary toggle, and review progress retain desktop
   control heights and spacing; do not apply the general mobile enlargement here.
 - Hide redundant summary/shortcut detail before removing essential actions.
+  Keep the Files changed total and inline added/deleted/modified/renamed counts
+  visible in the drawer. Use file icons, semantic status colors, hover labels,
+  and accessible names; wrap the group when the sidebar is too narrow.
 - At mobile widths or coarse pointers, app-owned controls target 44px hit heights;
   icon controls also reach 44px width. Text-input sizing uses `--text-input-touch`.
   The compact View options and collapse/expand icons match the theme control's

@@ -329,6 +329,47 @@ kbd {
 .summary-row strong {
   font: var(--text-sm) var(--font-mono);
 }
+.summary-files-row {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+}
+.summary-file-counts,
+.summary-file-breakdown,
+.summary-file-kind {
+  display: flex;
+  align-items: center;
+}
+.summary-file-counts {
+  margin-left: auto;
+  gap: var(--space-2);
+}
+.summary-file-breakdown {
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  border-left: 1px solid var(--border-muted);
+  padding-left: var(--space-2);
+}
+.summary-file-kind {
+  gap: var(--space-1);
+  font: var(--text-xs) var(--font-mono);
+}
+.summary-file-kind svg {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+.summary-file-kind[data-kind="added"] {
+  color: var(--success);
+}
+.summary-file-kind[data-kind="deleted"] {
+  color: var(--error);
+}
+.summary-file-kind[data-kind="modified"] {
+  color: var(--warning);
+}
+.summary-file-kind[data-kind="renamed"] {
+  color: var(--accent);
+}
 .change-bar {
   height: var(--space-1);
   background: var(--error);

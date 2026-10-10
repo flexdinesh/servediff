@@ -1,4 +1,11 @@
-import { ChevronDownIcon, CopyIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  CopyIcon,
+  FileMinus2Icon,
+  FilePenLineIcon,
+  FilePlus2Icon,
+  FileSymlinkIcon,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -145,6 +152,34 @@ export function ChangeSummary() {
     save("summary-collapsed", String(summaryCollapsed));
   }, [summaryCollapsed]);
   const allFiles = repository?.files ?? [];
+  const fileChanges = [
+    {
+      kind: "added",
+      Icon: FilePlus2Icon,
+      count: allFiles.filter((file) => ["A", "?", "C"].includes(file.status))
+        .length,
+      description: "Files added (including untracked and copied files)",
+    },
+    {
+      kind: "deleted",
+      Icon: FileMinus2Icon,
+      count: allFiles.filter((file) => file.status === "D").length,
+      description: "Files deleted",
+    },
+    {
+      kind: "modified",
+      Icon: FilePenLineIcon,
+      count: allFiles.filter((file) => ["M", "T", "U"].includes(file.status))
+        .length,
+      description: "Files modified (including type changes and conflicts)",
+    },
+    {
+      kind: "renamed",
+      Icon: FileSymlinkIcon,
+      count: allFiles.filter((file) => file.status === "R").length,
+      description: "Files renamed",
+    },
+  ];
   const additions = allFiles.reduce((sum, file) => sum + file.additions, 0);
   const deletions = allFiles.reduce((sum, file) => sum + file.deletions, 0);
   const reviewedCount = allFiles.filter(isReviewed).length;
@@ -166,9 +201,30 @@ export function ChangeSummary() {
       </Button>
       <div id="summary-content" hidden={summaryCollapsed}>
         <div className="sidebar-bottom">
-          <div className="summary-row">
+          <div className="summary-row summary-files-row">
             <span>Files changed</span>
-            <strong id="summary-files">{allFiles.length}</strong>
+            <div className="summary-file-counts">
+              <strong id="summary-files">{allFiles.length}</strong>
+              <div
+                className="summary-file-breakdown"
+                role="group"
+                aria-label="File changes by type"
+              >
+                {fileChanges.map(({ kind, Icon, count, description }) => (
+                  <span
+                    key={kind}
+                    className="summary-file-kind"
+                    data-kind={kind}
+                    role="img"
+                    aria-label={`${count} ${count === 1 ? "file" : "files"} ${kind}`}
+                    title={`${description}: ${count}`}
+                  >
+                    <Icon aria-hidden="true" />
+                    <span aria-hidden="true">{count.toLocaleString()}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
           </div>
           <div className="summary-row">
             <span>Additions</span>
