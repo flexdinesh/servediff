@@ -763,7 +763,7 @@ h2 {
   .main-footer .footer-details {
     margin-left: auto;
   }
-  .topbar {
+  .header-actions {
     gap: var(--space-2);
   }
   .brand {

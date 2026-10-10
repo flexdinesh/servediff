@@ -202,7 +202,8 @@ such detail into a token. New layout spacing must use the scale.
   visible “All changes” label to “All”, retaining its full accessible name.
 - Header and display-toolbar icon actions share borderless ghost buttons,
   16px icons, and 1.7px strokes, including menu and dialog triggers. Hover and
-  expanded states use the same neutral surface feedback.
+  expanded states use the same neutral surface feedback. On mobile, both rows
+  use 8px action gaps and the same trailing inset so icon columns align.
 - Header uses `--panel`, a quiet brand, and the review trigger as its primary
   context. Keep the secondary scope heading and muted monospace path inline;
   hide the path at 768–1011px and both below 768px. Group ghost Refresh/theme
