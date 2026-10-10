@@ -103,7 +103,7 @@ export function DiffToolbar() {
             <Button
               type="button"
               id="view-options"
-              variant="outline-muted"
+              variant="ghost"
               size="icon-sm"
               aria-label="View options"
               title="View options"
@@ -162,7 +162,7 @@ export function DiffToolbar() {
       <Button
         type="button"
         id="toggle-all-files"
-        variant="outline-muted"
+        variant="ghost"
         size="icon-sm"
         disabled={files.length === 0}
         aria-label={allCollapsed ? "Expand all files" : "Collapse all files"}

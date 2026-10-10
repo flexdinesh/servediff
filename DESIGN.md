@@ -200,6 +200,9 @@ such detail into a token. New layout spacing must use the scale.
   its icon buttons match the header's 44px touch targets and 16px icons. Scope
   controls fill the row without adding border/padding height; abbreviate the
   visible “All changes” label to “All”, retaining its full accessible name.
+- Header and display-toolbar icon actions share borderless ghost buttons,
+  16px icons, and 1.7px strokes, including menu and dialog triggers. Hover and
+  expanded states use the same neutral surface feedback.
 - Header uses `--panel`, a quiet brand, and the review trigger as its primary
   context. Keep the secondary scope heading and muted monospace path inline;
   hide the path at 768–1011px and both below 768px. Group ghost Refresh/theme
@@ -257,7 +260,7 @@ such detail into a token. New layout spacing must use the scale.
 ## Borders, radii, and shadows
 
 - Use the shared `outline-muted` Button variant (`--border-muted`) for compact
-  diff actions and reset reviewed. Segmented layout controls and the grouped
+  file-level diff actions and reset reviewed. Segmented layout controls and the grouped
   file-filter field share this token.
   Text, icons, hover and focus identify these actions; avoid per-button colors.
 - Use 1px `--border-muted` for separators and `--border-control` for interactive

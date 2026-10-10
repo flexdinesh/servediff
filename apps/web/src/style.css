@@ -171,7 +171,8 @@ kbd {
   justify-content: center;
   padding: 0;
 }
-.topbar [data-slot="button"] svg {
+.topbar button svg,
+.toolbar button svg {
   stroke-width: 1.7;
 }
 .topbar [data-variant="ghost"]:hover,

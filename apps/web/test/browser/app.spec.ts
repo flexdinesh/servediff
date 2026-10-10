@@ -1251,6 +1251,10 @@ test("header icons and sidebar tab indicator use design-system sizes", async ({
       viewOptions: size("#view-options svg"),
       refresh: size("#refresh svg"),
       theme: size("#theme svg"),
+      chromeStrokes: Array.from(
+        document.querySelectorAll(".topbar button svg, .toolbar button svg"),
+        (element) => getComputedStyle(element).strokeWidth,
+      ),
       tabBorderWidth: getComputedStyle(tab).borderBottomWidth,
       indicatorColor: indicator.backgroundColor,
       indicatorOpacity: indicator.opacity,
@@ -1275,6 +1279,7 @@ test("header icons and sidebar tab indicator use design-system sizes", async ({
     headerHeight: 40,
   });
   expect(styles.branch).toBe(styles.viewOptions);
+  expect(styles.chromeStrokes.every((stroke) => stroke === "1.7px")).toBe(true);
   expect(styles.dividerCenterOffset).toBeLessThanOrEqual(0.5);
   expect(styles.indicatorColor).toBe(styles.accent);
 });
