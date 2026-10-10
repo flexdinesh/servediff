@@ -18,7 +18,7 @@ func TestRemoteConfigMappingAndPrecedence(t *testing.T) {
 	t.Setenv("DIFFX_CONFIG_PATH", "")
 	t.Setenv("DIFFX_RUNTIME_DIR", t.TempDir())
 	settings, _, err := parseSettings(nil, io.Discard)
-	if err != nil || settings.Listen != "0.0.0.0:7981" {
+	if err != nil || settings.Listen != "127.0.0.1:7981" || settings.State != "data/state.db" {
 		t.Fatalf("remote default changed: %#v %v", settings, err)
 	}
 	settings, _, err = parseSettings([]string{"--config-file", path}, io.Discard)
@@ -35,6 +35,12 @@ func TestRemoteConfigMappingAndPrecedence(t *testing.T) {
 	settings, _, err = parseSettings([]string{"--config-file", path, "--listen", "0.0.0.0:6123", "--state", "flags.db"}, io.Discard)
 	if err != nil || settings.Listen != "0.0.0.0:6123" || settings.State != "flags.db" {
 		t.Fatalf("flags mapping: %#v %v", settings, err)
+	}
+	t.Setenv("DIFFX_HOST", "invalid")
+	t.Setenv("DIFFX_PORT", "65536")
+	settings, _, err = parseSettings([]string{"--listen", "127.0.0.1:0"}, io.Discard)
+	if err != nil || settings.Listen != "127.0.0.1:0" {
+		t.Fatalf("overridden listener was validated: %+v %v", settings, err)
 	}
 }
 
@@ -84,14 +90,55 @@ func TestCreateUserValidation(t *testing.T) {
 	}
 }
 
-func TestRemoteConfigAutomaticPortAndVersion(t *testing.T) {
-	t.Setenv("DIFFX_CONFIG_PATH", filepath.Join(t.TempDir(), "config.json"))
+func TestRemoteConfigDefaultsAndVersion(t *testing.T) {
+	t.Setenv("DIFFX_CONFIG_PATH", "")
 	settings, _, err := parseSettings(nil, io.Discard)
 	if err != nil || settings.Listen != "127.0.0.1:7981" {
-		t.Fatalf("automatic config port: %#v %v", settings, err)
+		t.Fatalf("default server port: %#v %v", settings, err)
 	}
 	if _, showVersion, err := parseSettings([]string{"--version", "--config-file", "/missing/config.json"}, io.Discard); err != nil || !showVersion {
 		t.Fatalf("version resolved config: %v", err)
+	}
+}
+
+func TestRemoteAccountConfigPrecedence(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "server.json")
+	if err := os.WriteFile(path, []byte(`{"account":"file-admin"}`), 0o400); err != nil {
+		t.Fatal(err)
+	}
+	settings, _, err := parseSettings([]string{"--config-file", path}, io.Discard)
+	if err != nil || settings.Account != "file-admin" {
+		t.Fatalf("file account: %+v %v", settings, err)
+	}
+	t.Setenv("DIFFX_ACCOUNT", "env-admin")
+	settings, _, err = parseSettings([]string{"--config-file", path}, io.Discard)
+	if err != nil || settings.Account != "env-admin" {
+		t.Fatalf("environment account: %+v %v", settings, err)
+	}
+	settings, _, err = parseSettings([]string{"--config-file", path, "--account", "flag-admin"}, io.Discard)
+	if err != nil || settings.Account != "flag-admin" {
+		t.Fatalf("flag account: %+v %v", settings, err)
+	}
+}
+
+func TestRemoteRejectsInvalidDeploymentSettings(t *testing.T) {
+	for _, tc := range []struct{ key, value string }{
+		{"DIFFX_HOST", "localhost"},
+		{"DIFFX_PORT", "not-a-port"},
+		{"DIFFX_PORT", "65536"},
+		{"DIFFX_STATE", ""},
+		{"DIFFX_RETENTION_DAYS", "0"},
+		{"DIFFX_RETENTION_DAYS", "-1"},
+		{"DIFFX_ACCOUNT", ""},
+		{"DIFFX_ACCOUNT", "invalid:name"},
+	} {
+		t.Run(tc.key+"="+tc.value, func(t *testing.T) {
+			t.Setenv("DIFFX_CONFIG_PATH", "")
+			t.Setenv(tc.key, tc.value)
+			if _, _, err := parseSettings(nil, io.Discard); err == nil {
+				t.Fatal("accepted invalid deployment settings")
+			}
+		})
 	}
 }
 

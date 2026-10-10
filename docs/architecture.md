@@ -128,8 +128,17 @@ uses `X-Diffx-State` to pin submission and polling to the destination identity;
 older protocols are rejected. Release artifacts use the explicit `diffx` project
 name, independent of the checkout directory.
 
-Schema 9 intentionally resets older versioned databases in one transaction under
-the ownership lock. Current state survives subsequent starts; future or
-unrecognized schemas are refused. Upgrade server and collectors together.
+Schema 9 preserves current state across starts. Older, future and unrecognized
+schemas are refused; opening a database never resets it. Durable server volumes
+require an explicit reset decision: stop the owner, back up its state directory,
+then select a fresh database path. No automatic schema migration is implemented.
+Upgrade server and collectors together.
 Versioned producer directories ignore old manual/hook pending payloads.
 Stop old binaries before upgrading.
+
+Remote configuration is owned by `config` and composed by `cmd/diffx-server`:
+defaults, an explicitly selected read-only server JSON file, environment, then
+explicit flags. Server startup does not discover, create or lock personal CLI
+config. The binary defaults to loopback and a separate `./data/state.db`; the
+container supplies overridable env defaults for its listener and `/data` volume.
+One process owns the volume's SQLite database, credentials and durable queue.

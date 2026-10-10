@@ -44,6 +44,8 @@ List available tasks with `mise tasks`. Keep personal overrides in
 | Build the dependency-free CLI at `dist/diffx`              | `mise run build`                 |
 | Build and locally install the CLI                          | `mise run install`               |
 | Build agent plugin adapters                                | `mise run plugins:build`         |
+| Start the container server with persistent SQLite          | `mise run docker:up`             |
+| Stop the container server, preserving SQLite               | `mise run docker:down`           |
 | Install Playwright Chromium                                | `pnpm test:browser:install`      |
 | Run web unit and browser tests                             | `pnpm test:web`                  |
 | Run Go tests                                               | `mise run test:go`               |
@@ -115,9 +117,10 @@ runtime directories (`DIFFX_RUNTIME_DIR`) and in-memory state for lifecycle test
 must not register inputs in the personal service. `DIFFX_EXIT_ON_STDIN_CLOSE`
 is a foreground development-process lifecycle hook.
 
-Stop running processes before upgrading. Schema 9 resets older versioned
-databases transactionally on first open. Current databases survive restart;
-in-memory state does not. Server `retentionDays` defaults to seven; fresh
+Stop running processes before upgrading. Current schema 9 databases survive
+restart; incompatible schemas are refused without resetting data. To start
+fresh, back up the state directory while stopped and explicitly choose a new
+database path. In-memory state does not survive restart. Server `retentionDays` defaults to seven; fresh
 submissions apply the current setting, while exact retries preserve expiry.
 
 For isolated production-user tests, start `diffx-server` with a temporary
@@ -125,6 +128,65 @@ persistent database. Initial admin credentials live in `<database>.admin-token`;
 startup reports its path. Stop the server before `user create --name NAME --state
 DB`, save its printed token and restart. Users share one database, while credentials
 scope REST, MCP and events. Do not provision against the running personal service.
+
+## Server development
+
+Build both binaries with `mise run build`, then run server mode directly:
+
+```sh
+DIFFX_HOST=127.0.0.1 DIFFX_PORT=7981 DIFFX_STATE=./test-data/state.db ./dist/diffx-server
+```
+
+Or use the checked-in Compose setup:
+
+```sh
+mise run docker:up
+docker compose logs server
+docker compose cp server:/data/state.db.admin-token ./admin-token
+mise run docker:down
+```
+
+The same server binary handles authentication, durable admission, workers and
+queries in both setups. The image uses committed embedded assets; run
+`mise run web:stage` before rebuilding it after UI changes.
+
+| Setting                | Binary default                 | Container default              | Flag                    |
+| ---------------------- | ------------------------------ | ------------------------------ | ----------------------- |
+| `DIFFX_HOST`           | `127.0.0.1`                    | `0.0.0.0`                      | `--listen HOST:PORT`    |
+| `DIFFX_PORT`           | `7981`                         | `7981`                         | `--listen HOST:PORT`    |
+| `DIFFX_STATE`          | `data/state.db`                | `/data/state.db`               | `--state PATH`          |
+| `DIFFX_ACCOUNT`        | `admin`                        | `admin`                        | `--account NAME`        |
+| `DIFFX_RETENTION_DAYS` | `7`                            | `7`                            | `--retention-days DAYS` |
+| `DIFFX_TOKEN`          | Generated for persistent state | Generated for persistent state | None                    |
+
+`DIFFX_TOKEN` supplies initial bootstrap credentials only; existing credentials
+are never replaced. Omit it to generate a private `<database>.admin-token` file.
+`memory` and `:memory:` disable persistence and require an explicit token.
+
+Precedence is defaults → explicit JSON file → env vars → explicit flags. Use
+`--config-file FILE` or `DIFFX_CONFIG_PATH` to select a server config. The file
+supports `host`, `port`, `state`, `account` and `retentionDays`. It must exist and
+can be mounted read-only; startup never creates it or a config lock. Personal
+CLI config, `DIFFX_RUNTIME_DIR`, producer URL settings and external web assets
+do not configure server mode. Restart to apply changes.
+
+Compose keeps the SQLite database, sidecar files, ownership lock and generated
+credential in the `diffx-data` volume. The root filesystem is read-only; the
+image prepares `/data` for UID/GID 10001. If using a bind mount instead, make
+the directory writable by that identity. Keep database files inside `/data`.
+`mise run docker:down` preserves the volume; `docker compose down --volumes`
+explicitly deletes it. Stop the server and back up the whole directory before
+starting with a fresh database; a volume is not a backup.
+
+Set `DIFFX_PORT=7982 mise run docker:up` for a different published and internal
+port. Compose also accepts `DIFFX_ACCOUNT` and `DIFFX_RETENTION_DAYS` overrides.
+For other settings, use image env overrides or a Compose override file.
+Only one server may own a SQLite database; competing starts fail rather than
+share ownership. SIGTERM stops HTTP and workers before releasing storage;
+unfinished admitted jobs recover from the durable queue after leases expire.
+
+This setup targets one server with SQLite. PostgreSQL, multiple replicas,
+browser login and integrations remain separate future changes.
 
 ## Build pipeline
 

@@ -146,15 +146,28 @@ review context. Sessions associate with shared reviews; they do not own or
 claim authorship of every worktree's edits. Harness, session ID and optional
 session name remain searchable even when identical content reuses a review.
 
-Build and run the Docker server (deploy behind HTTPS):
+Build and run the container setup for server development:
+
+```sh
+mise run docker:up
+mise run docker:down
+```
+
+Compose publishes HTTP on `127.0.0.1:7981` and preserves the named SQLite volume
+when stopped or recreated. Set `DIFFX_PORT=7982` to use another port. Retrieve
+the initial credential with `docker compose cp server:/data/state.db.admin-token ./admin-token`.
+See [server development](docs/development.md#server-development) for configuration
+and persistence details. Deploy behind HTTPS when exposing the server remotely.
+
+Or build and run the image directly:
 
 ```sh
 mise run docker:build
-docker run --name diffx-server -p 127.0.0.1:7981:7981 \
+docker run --name diffx-server --read-only -p 127.0.0.1:7981:7981 \
   --mount source=diffx-data,target=/data diffx-server:local
 ```
 
-The volume contains observations, jobs, credentials and configuration. First
+The volume contains observations, jobs and credentials. First
 startup writes the admin token to `/data/state.db.admin-token`; copy it with
 `docker cp diffx-server:/data/state.db.admin-token ./admin-token`.
 The image runs without Git or a repository mount, as an unprivileged user.
@@ -165,11 +178,11 @@ Build/install the remote server with Go:
 
 ```sh
 go install github.com/flexdinesh/diffx/cmd/diffx-server@main
-diffx-server --listen 0.0.0.0:7981 --state /data/state.db
+DIFFX_HOST=127.0.0.1 DIFFX_PORT=7981 DIFFX_STATE=./test-data/state.db diffx-server
 ```
 
 First startup creates `admin` with a generated token saved privately at
-`/data/state.db.admin-token`; startup prints its path. The token persists across
+`<database>.admin-token`; startup prints its path. The token persists across
 restarts. API/MCP requests use bearer authentication; the browser uses HTTP Basic
 with the username and token as password. Deploy behind TLS. Multiple individual
 users share one SQLite database; credentials select and isolate each user's data.
@@ -179,9 +192,12 @@ The database stores credential hashes. To add a user, stop the server, run:
 diffx-server user create --name alice --state /data/state.db
 ```
 
-Save the printed token, then restart the server. `--account` and `DIFFX_TOKEN`
+Save the printed token, then restart the server. `--account` / `DIFFX_ACCOUNT` and `DIFFX_TOKEN`
 can supply initial bootstrap credentials; existing credentials are never replaced.
 Use `--retention-days 14` or config/environment to change server retention.
+The server defaults to `127.0.0.1:7981` and `./data/state.db`, independent of
+personal CLI settings. Its image defaults to `0.0.0.0:7981` and `/data/state.db`;
+env vars override image defaults, and explicit flags override env vars.
 
 Collectors select that destination with config `server`, `DIFFX_SERVER_URL`
 or `--server`, and authenticate with config `token`, `DIFFX_TOKEN` or `--token`:
@@ -256,8 +272,9 @@ WebMCP while the page is open; see [docs/webmcp.md](docs/webmcp.md).
 
 Local data lives in `$XDG_STATE_HOME/diffx/state.db`, or
 `~/.local/state/diffx/state.db`. `--state memory` disables persistence.
-Schema 9 intentionally resets older versioned databases on first open. Current
-state persists across restarts; newer or unrecognized databases are refused.
+Current schema 9 state persists across restarts. Older, newer or unrecognized
+databases are refused without an automatic reset. To start fresh, stop the
+server, back up its state directory, and explicitly choose a new database path.
 Legacy commands and pending producer payloads are retired.
 Stop older processes before upgrading. Local service lifecycle uses a private
 authenticated loopback control listener; its token does not authenticate the

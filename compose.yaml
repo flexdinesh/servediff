@@ -1,0 +1,20 @@
+services:
+  server:
+    build: .
+    image: diffx-server:local
+    environment:
+      DIFFX_HOST: 0.0.0.0
+      DIFFX_PORT: "${DIFFX_PORT:-7981}"
+      DIFFX_STATE: /data/state.db
+      DIFFX_ACCOUNT: "${DIFFX_ACCOUNT:-admin}"
+      DIFFX_RETENTION_DAYS: "${DIFFX_RETENTION_DAYS:-7}"
+    ports:
+      - "127.0.0.1:${DIFFX_PORT:-7981}:${DIFFX_PORT:-7981}"
+    volumes:
+      - diffx-data:/data
+    read_only: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+
+volumes:
+  diffx-data:

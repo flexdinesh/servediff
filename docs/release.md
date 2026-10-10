@@ -38,9 +38,10 @@ arm64. Windows archives are also published. Archives include the native binary,
 README, and license. The embedded web application needs no installed Node.js
 runtime.
 
-Stop running binaries before upgrading. Schema 9 intentionally resets older
-versioned databases on first open; current state survives subsequent starts.
-Future or unrecognized schemas are refused. Upgrade server and collectors
+Stop running binaries before upgrading. Current schema 9 state survives
+subsequent starts; older, future or unrecognized schemas are refused without
+resetting data. Back up the state directory and explicitly choose a fresh
+database path if discarding incompatible state. Upgrade server and collectors
 together for ingestion protocol 4. In-memory state lasts only for one process.
 
 The tap branch is deterministic per version, such as `diffx-v0.2.0`.

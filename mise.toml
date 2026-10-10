@@ -166,3 +166,11 @@ run = "ruby -c homebrew-tap/Formula/diffx.rb"
 [tasks."docker:build"]
 description = "Build the remote server image using committed embedded assets"
 run = "docker build --tag diffx-server:local ."
+
+[tasks."docker:up"]
+description = "Build and start the server with a persistent SQLite volume"
+run = "docker compose up --build -d"
+
+[tasks."docker:down"]
+description = "Stop the server, preserving its data volume"
+run = "docker compose down"
