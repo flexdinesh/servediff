@@ -125,6 +125,6 @@
 }
 @media (max-width: 767px), (pointer: coarse) {
   :root {
-    --topbar-height: 3rem;
+    --topbar-height: var(--touch-target);
   }
 }

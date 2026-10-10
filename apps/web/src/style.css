@@ -791,8 +791,16 @@ h2 {
   }
   #view-options svg,
   #toggle-all-files svg {
-    width: var(--icon-lg);
-    height: var(--icon-lg);
+    width: var(--icon-base);
+    height: var(--icon-base);
+  }
+  .toolbar .segmented {
+    border: 0;
+    padding: 0;
+    outline: 1px solid var(--border-muted);
+  }
+  .scope-label-detail {
+    display: none;
   }
   .toolbar-spacer {
     min-width: 0;

@@ -1616,7 +1616,10 @@ test("drawer aligns its header and retains desktop navigation density", async ({
       const toolbar = await page.locator(".toolbar").boundingBox();
       const theme = await page.locator("#theme").boundingBox();
       const options = await page.locator("#view-options").boundingBox();
+      expect(header.height).toBe(44);
       expect(toolbar?.height).toBe(header.height);
+      expect(theme?.width).toBe(44);
+      expect(theme?.height).toBe(44);
       expect(options?.width).toBe(theme?.width);
       expect(options?.height).toBe(theme?.height);
     }

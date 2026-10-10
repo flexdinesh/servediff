@@ -59,12 +59,21 @@ export function DiffToolbar() {
         }}
       >
         {scopes.values.map((value) => (
-          <ToggleGroupItem key={value} value={value} data-mode={value}>
-            {value === "all"
-              ? "All changes"
-              : value === "staged"
-                ? "Staged"
-                : "Unstaged"}
+          <ToggleGroupItem
+            key={value}
+            value={value}
+            data-mode={value}
+            aria-label={value === "all" ? "All changes" : undefined}
+          >
+            {value === "all" ? (
+              <>
+                All<span className="scope-label-detail"> changes</span>
+              </>
+            ) : value === "staged" ? (
+              "Staged"
+            ) : (
+              "Unstaged"
+            )}
           </ToggleGroupItem>
         ))}
       </ToggleGroup>
