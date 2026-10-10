@@ -99,7 +99,7 @@ kbd {
 .topbar {
   height: var(--topbar-height);
   display: flex;
-  gap: var(--space-3);
+  gap: var(--space-2);
   align-items: center;
   border-bottom: 1px solid var(--border);
   background: var(--panel);
@@ -118,7 +118,7 @@ kbd {
 }
 .header-divider {
   width: 1px;
-  height: var(--space-6);
+  height: var(--space-4);
   align-self: center;
   background: var(--border);
   flex-shrink: 0;
@@ -126,10 +126,9 @@ kbd {
 .header-heading {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   flex: 1;
   min-width: 0;
-  margin-left: var(--space-2);
 }
 .header-heading h1 {
   flex-shrink: 0;
@@ -172,7 +171,8 @@ kbd {
   justify-content: center;
   padding: 0;
 }
-.topbar [data-slot="button"] svg {
+.topbar button svg,
+.toolbar button svg {
   stroke-width: 1.7;
 }
 .topbar [data-variant="ghost"]:hover,
@@ -763,7 +763,7 @@ h2 {
   .main-footer .footer-details {
     margin-left: auto;
   }
-  .topbar {
+  .header-actions {
     gap: var(--space-2);
   }
   .brand {
@@ -792,8 +792,16 @@ h2 {
   }
   #view-options svg,
   #toggle-all-files svg {
-    width: var(--icon-lg);
-    height: var(--icon-lg);
+    width: var(--icon-base);
+    height: var(--icon-base);
+  }
+  .toolbar .segmented {
+    border: 0;
+    padding: 0;
+    outline: 1px solid var(--border-muted);
+  }
+  .scope-label-detail {
+    display: none;
   }
   .toolbar-spacer {
     min-width: 0;
@@ -1161,6 +1169,9 @@ h2 {
   }
   .context-switcher-name {
     max-width: 40%;
+  }
+  .context-switcher-worktree {
+    flex-shrink: 0;
   }
   .project-picker {
     top: var(--space-4);

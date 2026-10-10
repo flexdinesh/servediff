@@ -54,9 +54,9 @@ export function Header() {
         onClick={sidebar.toggle}
       >
         {sidebar.expanded ? (
-          <PanelLeftCloseIcon className="size-(--icon-lg)" />
+          <PanelLeftCloseIcon className="size-(--icon-base)" />
         ) : (
-          <PanelLeftOpenIcon className="size-(--icon-lg)" />
+          <PanelLeftOpenIcon className="size-(--icon-base)" />
         )}
       </Button>
       <a className="brand" href="/" aria-label="diffx home">
@@ -125,11 +125,11 @@ export function Header() {
             }
           >
             {themePreference === "system" ? (
-              <MonitorIcon className="size-(--icon-lg)" aria-hidden="true" />
+              <MonitorIcon className="size-(--icon-base)" aria-hidden="true" />
             ) : themePreference === "dark" ? (
-              <MoonIcon className="size-(--icon-lg)" aria-hidden="true" />
+              <MoonIcon className="size-(--icon-base)" aria-hidden="true" />
             ) : (
-              <SunIcon className="size-(--icon-lg)" aria-hidden="true" />
+              <SunIcon className="size-(--icon-base)" aria-hidden="true" />
             )}
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" aria-label="Theme">

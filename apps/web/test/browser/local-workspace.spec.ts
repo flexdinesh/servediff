@@ -217,6 +217,20 @@ test("comparison uses the captured merge base and follows the selected scope", a
   await expect(popup).toContainText("Unstaged changes compare the index");
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "All changes", exact: true }).click();
+  for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    await expect(page.locator(".topbar")).toHaveCSS("height", "44px");
+    await expect(page.locator(".toolbar")).toHaveCSS("height", "44px");
+    for (const name of ["All changes", "Staged", "Unstaged", "View options"]) {
+      const control = page.getByRole("button", { name, exact: true });
+      await expect(control).toBeVisible();
+      const bounds = await control.boundingBox();
+      if (!bounds) throw new Error(`Missing mobile control: ${name}`);
+      expect(bounds.height).toBeGreaterThanOrEqual(44);
+      expect(bounds.x).toBeGreaterThanOrEqual(0);
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+    }
+  }
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(trigger).toBeVisible();
   await expect(trigger).toContainText("Comparison");

@@ -768,7 +768,7 @@
 
 /* Enlarge app chrome, never Pierre's measured header or code-row slots. */
 @media (max-width: 767px), (pointer: coarse) {
-  .topbar [data-slot="button"],
+  .topbar button,
   [data-slot="button"][data-size="icon"]:not(.tree-control),
   .copy-comments-actions [data-slot="button"],
   .webmcp-instruction-button,
@@ -790,11 +790,12 @@
   }
   #view-options,
   #toggle-all-files {
-    width: var(--control-height);
-    height: var(--control-height);
-    min-width: var(--control-height);
-    min-height: var(--control-height);
+    width: var(--touch-target);
+    height: var(--touch-target);
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
   }
+  .topbar button[data-size="icon"],
   [data-slot="button"][data-size="icon"]:not(.tree-control),
   #refresh {
     min-width: var(--touch-target);

@@ -1251,6 +1251,10 @@ test("header icons and sidebar tab indicator use design-system sizes", async ({
       viewOptions: size("#view-options svg"),
       refresh: size("#refresh svg"),
       theme: size("#theme svg"),
+      chromeStrokes: Array.from(
+        document.querySelectorAll(".topbar button svg, .toolbar button svg"),
+        (element) => getComputedStyle(element).strokeWidth,
+      ),
       tabBorderWidth: getComputedStyle(tab).borderBottomWidth,
       indicatorColor: indicator.backgroundColor,
       indicatorOpacity: indicator.opacity,
@@ -1260,19 +1264,22 @@ test("header icons and sidebar tab indicator use design-system sizes", async ({
           (dividerBox.top + dividerBox.height / 2),
       ),
       dividerHeight: dividerBox.height,
+      headerHeight: topbarBox.height,
       accent,
     };
   });
 
   expect(styles).toMatchObject({
-    sidebar: "20px",
+    sidebar: "16px",
     refresh: "16px",
-    theme: "20px",
+    theme: "16px",
     tabBorderWidth: "1px",
     indicatorOpacity: "1",
-    dividerHeight: 24,
+    dividerHeight: 16,
+    headerHeight: 40,
   });
   expect(styles.branch).toBe(styles.viewOptions);
+  expect(styles.chromeStrokes.every((stroke) => stroke === "1.7px")).toBe(true);
   expect(styles.dividerCenterOffset).toBeLessThanOrEqual(0.5);
   expect(styles.indicatorColor).toBe(styles.accent);
 });
@@ -1614,9 +1621,18 @@ test("drawer aligns its header and retains desktop navigation density", async ({
       const toolbar = await page.locator(".toolbar").boundingBox();
       const theme = await page.locator("#theme").boundingBox();
       const options = await page.locator("#view-options").boundingBox();
+      const remove = await page
+        .getByRole("button", { name: "Delete snapshot", exact: true })
+        .boundingBox();
+      const collapse = await page.locator("#toggle-all-files").boundingBox();
+      expect(header.height).toBe(44);
       expect(toolbar?.height).toBe(header.height);
+      expect(theme?.width).toBe(44);
+      expect(theme?.height).toBe(44);
       expect(options?.width).toBe(theme?.width);
       expect(options?.height).toBe(theme?.height);
+      expect(options?.x).toBe(remove?.x);
+      expect(collapse?.x).toBe(theme?.x);
     }
     await page
       .locator("#sidebar")

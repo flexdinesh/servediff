@@ -59,12 +59,21 @@ export function DiffToolbar() {
         }}
       >
         {scopes.values.map((value) => (
-          <ToggleGroupItem key={value} value={value} data-mode={value}>
-            {value === "all"
-              ? "All changes"
-              : value === "staged"
-                ? "Staged"
-                : "Unstaged"}
+          <ToggleGroupItem
+            key={value}
+            value={value}
+            data-mode={value}
+            aria-label={value === "all" ? "All changes" : undefined}
+          >
+            {value === "all" ? (
+              <>
+                All<span className="scope-label-detail"> changes</span>
+              </>
+            ) : value === "staged" ? (
+              "Staged"
+            ) : (
+              "Unstaged"
+            )}
           </ToggleGroupItem>
         ))}
       </ToggleGroup>
@@ -94,7 +103,7 @@ export function DiffToolbar() {
             <Button
               type="button"
               id="view-options"
-              variant="outline-muted"
+              variant="ghost"
               size="icon-sm"
               aria-label="View options"
               title="View options"
@@ -153,7 +162,7 @@ export function DiffToolbar() {
       <Button
         type="button"
         id="toggle-all-files"
-        variant="outline-muted"
+        variant="ghost"
         size="icon-sm"
         disabled={files.length === 0}
         aria-label={allCollapsed ? "Expand all files" : "Collapse all files"}

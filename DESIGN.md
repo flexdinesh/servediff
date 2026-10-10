@@ -193,9 +193,17 @@ such detail into a token. New layout spacing must use the scale.
 
 - Use a full-width application shell, not a centered marketing container.
   The diff receives all width remaining after navigation.
-- Header: `--topbar-height` (56 desktop, 48 narrow). Toolbar and sidebar tabs: `--toolbar-height`
-  (44) as the desktop baseline. The narrow toolbar matches the 48px page header;
-  its icon buttons match the header theme button's 32px control height.
+- Header: `--topbar-height` (40 desktop, 44 narrow or coarse pointer). Keep
+  desktop controls at 32px, header icons at 16px, the divider at 16px, and group
+  spacing at 8px so the header recedes into the editor chrome. Toolbar and sidebar tabs: `--toolbar-height`
+  (44) as the desktop baseline. The narrow toolbar matches the 44px page header;
+  its icon buttons match the header's 44px touch targets and 16px icons. Scope
+  controls fill the row without adding border/padding height; abbreviate the
+  visible “All changes” label to “All”, retaining its full accessible name.
+- Header and display-toolbar icon actions share borderless ghost buttons,
+  16px icons, and 1.7px strokes, including menu and dialog triggers. Hover and
+  expanded states use the same neutral surface feedback. On mobile, both rows
+  use 8px action gaps and the same trailing inset so icon columns align.
 - Header uses `--panel`, a quiet brand, and the review trigger as its primary
   context. Keep the secondary scope heading and muted monospace path inline;
   hide the path at 768–1011px and both below 768px. Group ghost Refresh/theme
@@ -253,7 +261,7 @@ such detail into a token. New layout spacing must use the scale.
 ## Borders, radii, and shadows
 
 - Use the shared `outline-muted` Button variant (`--border-muted`) for compact
-  diff actions and reset reviewed. Segmented layout controls and the grouped
+  file-level diff actions and reset reviewed. Segmented layout controls and the grouped
   file-filter field share this token.
   Text, icons, hover and focus identify these actions; avoid per-button colors.
 - Use 1px `--border-muted` for separators and `--border-control` for interactive
@@ -345,7 +353,7 @@ such detail into a token. New layout spacing must use the scale.
   branch, worktree, and directory identity.
   Use a search icon and shortcut hint, never a dropdown chevron. Click and
   Cmd/Ctrl+K open the same searchable “Switch review” dialog. Position it at
-  `--topbar-height` plus `--space-6` on desktop (80px default), `--space-4` on
+  `--topbar-height` plus `--space-6` on desktop (64px default), `--space-4` on
   mobile (16px default). Bound picker width to 35rem and viewport gutters. The
   picker owns focus and stays available during context errors.
 - Search leads the picker; keep “Switch review” as its screen-reader title.
@@ -410,6 +418,7 @@ Do not add motion for decoration. New animation must honor
 - Mobile retains the review trigger's repository/branch or Piped/time context; truncate long
   labels and hide its shortcut hint. Hide the secondary heading/path and refresh
   text, preserving accessible labels and theme/sidebar controls.
+  Keep the linked-worktree icon visible when its text label is hidden.
 - Collapse navigation to the toggle-controlled modal drawer; its width is
   `min(320px, 88vw)`. Keep file selection, comments, and export reachable there.
   Its tab strip matches `--topbar-height`, including the tablet header height.
@@ -422,7 +431,7 @@ Do not add motion for decoration. New animation must honor
 - At mobile widths or coarse pointers, app-owned controls target 44px hit heights;
   icon controls also reach 44px width. Text-input sizing uses `--text-input-touch`.
   The compact View options and collapse/expand icons match the theme control's
-  32px size within the narrow 48px toolbar, per the workspace alignment brief.
+  44px size within the narrow 44px toolbar, matching the header touch targets.
   Drawer navigation and summary controls retain desktop density, per the same brief.
 - Pierre code rows and header slots retain measured geometry. Larger library
   gutter/header targets need a coordinated renderer-metric change, not a CSS override.
