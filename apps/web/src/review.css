@@ -745,7 +745,7 @@
 
 @media (max-width: 767px) {
   .sidebar-bottom .summary-label,
-  .sidebar-bottom .summary-row,
+  .sidebar-bottom .summary-row:not(.summary-files-row),
   .sidebar-bottom .change-bar {
     display: none;
   }

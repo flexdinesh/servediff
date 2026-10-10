@@ -17,6 +17,42 @@ async function resolvedRadius(
 
 test.beforeEach(async ({ request }) => resetFixtureState(request));
 
+test("file summary counts change types across filtering and mobile", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const summary = page.getByRole("region", { name: "Summary", exact: true });
+  await expect(summary.locator("#summary-files")).toHaveText("12");
+  for (const label of [
+    "4 files added",
+    "2 files deleted",
+    "5 files modified",
+    "1 file renamed",
+  ]) {
+    await expect(summary.getByRole("img", { name: label })).toBeVisible();
+  }
+  await page.getByRole("searchbox", { name: "Filter files" }).fill("value.ts");
+  await expect(page.locator("#file-tree [data-path]")).toHaveCount(1);
+  await expect(summary.locator("#summary-files")).toHaveText("12");
+  await expect(
+    summary.getByRole("img", { name: "1 file renamed" }),
+  ).toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Show file sidebar" }).click();
+  await expect(summary.locator("#summary-files")).toBeVisible();
+  await expect(
+    summary.getByRole("img", { name: "4 files added" }),
+  ).toBeVisible();
+  await expect(
+    summary.getByRole("img", { name: "1 file renamed" }),
+  ).toBeVisible();
+  const row = summary.locator(".summary-files-row");
+  expect(
+    await row.evaluate((element) => element.scrollWidth <= element.clientWidth),
+  ).toBe(true);
+});
+
 test("disabled comments issue no requests and expose no comment UI", async ({
   page,
 }) => {
