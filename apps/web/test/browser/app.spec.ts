@@ -216,6 +216,7 @@ test("renders and filters a piped diff", async ({ page }) => {
 test("file navigation scrolls to and retriggers a destination cue", async ({
   page,
 }) => {
+  await page.clock.install({ time: new Date("2026-01-01T00:00:00Z") });
   await page.setViewportSize({ width: 1280, height: 420 });
   await page.goto("/");
 
@@ -227,8 +228,11 @@ test("file navigation scrolls to and retriggers a destination cue", async ({
     .filter({ hasText: "src/components/Badge.tsx" });
   const header = target.locator("[data-diffs-header]");
   await expect(header).toContainText("src/components/Badge.tsx");
+  // Host round trips must not consume the cue's one-second lifetime.
+  await page.clock.pauseAt(new Date("2026-01-01T01:00:00Z"));
 
   await file.click();
+  await page.clock.runFor(100);
   await expect(file).toHaveAttribute("aria-current", "true");
   await expect(
     target.locator("[data-diffs-header][data-navigation-target]"),
@@ -244,12 +248,13 @@ test("file navigation scrolls to and retriggers a destination cue", async ({
     })
     .toBeLessThanOrEqual(1);
 
-  await page.waitForTimeout(700);
+  await page.clock.runFor(700);
   await file.click();
-  await page.waitForTimeout(400);
+  await page.clock.runFor(400);
   const cue = target.locator("[data-diffs-header][data-navigation-target]");
   await expect(cue).toHaveCount(1);
-  await expect(cue).toHaveCount(0, { timeout: 1_000 });
+  await page.clock.runFor(700);
+  await expect(cue).toHaveCount(0);
 });
 
 test("file frames preserve measured gutters, gaps, and virtual geometry", async ({

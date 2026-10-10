@@ -48,6 +48,8 @@ List available tasks with `mise tasks`. Keep personal overrides in
 | Run web unit and browser tests                             | `pnpm test:web`                  |
 | Run Go tests                                               | `mise run test:go`               |
 | Run boundary and shared-rule contracts                     | `mise run test:contracts`        |
+| Check production package dependencies                      | `mise run check:boundaries`      |
+| Check frontend design-token use                            | `mise run check:design`          |
 | Run distribution API conformance tests                     | `mise run test:conformance`      |
 | Run TypeScript checks                                      | `pnpm typecheck`                 |
 | Run JavaScript linting                                     | `pnpm lint`                      |
@@ -67,8 +69,13 @@ local platform.
 
 Both CI and release verification run `mise run check:ci`: static checks, web and
 CLI builds, generated-file consistency, and the distribution API smoke test.
-Unit, browser, release-tool, and Go
-race suites run locally before pushing. CI does not run a native OS test matrix.
+Local `mise run check` adds dependency/design guards, behavioral contracts,
+JavaScript unit/browser suites, release-tool tests and all Go tests; pre-push
+adds Go race tests. Keep these full suites and guards local. Chromium is installed
+by local setup, not CI/release workflows. CI does not run a native OS test matrix.
+GitHub's `ci-required` ruleset requires the lightweight `checks` status on an
+up-to-date `main` change, including administrators; it is configured in GitHub,
+not by mise. PR evidence records full local validation.
 
 `mise run install` embeds the current web build and installs `servediff` into
 `$GOBIN`, or `$GOPATH/bin` when `GOBIN` is unset. Ensure that directory is on

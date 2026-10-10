@@ -463,6 +463,32 @@ Before adding a value or visual pattern:
 7. Are keyboard focus, contrast, labels, and hit areas correct?
 8. Does this follow `DESIGN.md`? If a new role is necessary, update it here.
 
+## Enforcement
+
+`mise run check:design` scans CSS, TypeScript and TSX under `apps/web/src`,
+including new nested files, static utilities, inline style objects, SVG colors
+and Pierre's `unsafeCSS`. Local `mise run check` and pre-push run the guard
+and its contracts. It rejects literal palettes outside `tokens.css` definitions,
+independent typography, literal radii/elevation, and arbitrary padding/margin/gap
+lengths. Existing ordinary Tailwind numeric spacing utilities remain allowed;
+their relationship to the spacing scale needs review. Compose authored values
+from the canonical tokens. Zero, automatic spacing
+and 1px optical insets remain valid; dimensions, breakpoints and dynamic measured
+geometry require review rather than a blanket literal-value ban.
+
+The guard has exact exceptions for status circles, SVG monogram units, icon line
+boxes, compact comment counts, the overlapping sidebar resizer, and Pierre's
+line-surface mixes/inset strokes. Existing generated tabs' 3px inset and active
+shadow, and the dialog title's unit line-height, are bounded legacy exceptions;
+do not copy them into new controls. Changes to exceptions need a concrete role,
+rationale and contract test in the same PR. Do not exempt entire components.
+
+Static checks cannot prove responsive behavior, accessibility, visual hierarchy
+or correctness of styles assembled at runtime. Use existing browser tests and
+review affected themes, narrow layouts and keyboard interaction. Changes to
+Pierre geometry also require selection, annotation, expansion, wrapping and
+scrolling checks. Record this evidence in the PR template.
+
 ## Audit baseline and consolidation
 
 This audit records the starting points, not permission to reuse legacy values.
