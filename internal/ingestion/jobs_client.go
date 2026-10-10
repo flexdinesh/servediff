@@ -68,7 +68,7 @@ func (client *Client) jobRequest(ctx context.Context, method, path string, raw [
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Authorization", "Bearer "+client.token)
-	request.Header.Set("X-Servediff-State", stateID)
+	request.Header.Set("X-Diffx-State", stateID)
 	response, err := client.http.Do(request)
 	if err != nil {
 		return Job{}, err

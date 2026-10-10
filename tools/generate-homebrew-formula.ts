@@ -2,9 +2,9 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 const owner = "flexdinesh";
-const repo = "servediff";
-const formulaName = "servediff";
-const homepage = "https://github.com/flexdinesh/servediff";
+const repo = "diffx";
+const formulaName = "diffx";
+const homepage = "https://github.com/flexdinesh/diffx";
 const description = "Review local Git changes in your browser";
 
 interface Target {
@@ -112,7 +112,7 @@ async function generateFormula({
   const linuxIntel = requireArchive(archiveByKey, "linux/intel");
   const linuxArm = requireArchive(archiveByKey, "linux/arm");
 
-  return `class Servediff < Formula
+  return `class Diffx < Formula
   desc "${description}"
   homepage "${homepage}"
   license "MIT"
@@ -142,11 +142,11 @@ async function generateFormula({
   end
 
   def install
-    bin.install "servediff"
+    bin.install "diffx"
   end
 
   test do
-    assert_match "servediff #{version}", shell_output("#{bin}/servediff --version")
+    assert_match "diffx #{version}", shell_output("#{bin}/diffx --version")
   end
 end
 `;

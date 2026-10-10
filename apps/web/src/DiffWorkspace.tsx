@@ -11,8 +11,8 @@ import {
   useWorkerPool,
 } from "@pierre/diffs/react";
 import { MessageSquareIcon } from "lucide-react";
-import { api, errorDetail } from "@servediff/api";
-import type { RepositoryDiff } from "@servediff/shared";
+import { api, errorDetail } from "@diffx/api";
+import type { RepositoryDiff } from "@diffx/shared";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -629,10 +629,10 @@ export function DiffWorkspace() {
     : filter
       ? "Try a different filename or clear the filter."
       : piped
-        ? "Run a command that emits a Git patch, then pipe it into servediff."
+        ? "Run a command that emits a Git patch, then pipe it into diffx."
         : mode === "staged"
           ? "No staged changes were collected in this snapshot."
-          : "No changes in this snapshot. Collect another snapshot with servediff or servediff sync.";
+          : "No changes in this snapshot. Collect another snapshot with diffx or diffx sync.";
   return (
     <main>
       <DiffToolbar />

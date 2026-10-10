@@ -27,25 +27,18 @@ depends = ["web:build"]
 run = "go run ./tools/stage-web apps/web/dist internal/webui/dist"
 
 [tasks.build]
-description = "Build the standalone CLI at dist/servediff"
+description = "Build the standalone CLI at dist/diffx"
 depends = ["web:stage"]
 run = [
   "node -e \"require('node:fs').mkdirSync('dist', { recursive: true })\"",
-  "go build -trimpath -o dist/servediff ./cmd/servediff",
-  "go build -trimpath -o dist/servediff-server ./cmd/servediff-server",
+  "go build -trimpath -o dist/diffx ./cmd/diffx",
+  "go build -trimpath -o dist/diffx-server ./cmd/diffx-server",
 ]
 
 [tasks.install]
-description = "Build and install the CLI, removing legacy Node shims"
+description = "Build and install the CLI"
 depends = ["build"]
-shell = "bash -e -o pipefail -c"
-run = '''
-if [ "$(pnpm list --global --depth 0 --parseable servediff-workspace | wc -l)" -gt 1 ]; then
-  pnpm remove --global servediff-workspace
-fi
-go run ./tools/remove-legacy-install
-go install -trimpath ./cmd/servediff
-'''
+run = "go install -trimpath ./cmd/diffx"
 
 [tasks.dev]
 description = "Start Vite HMR and its managed Go fixture server"
@@ -54,12 +47,12 @@ run = "pnpm dev:web"
 
 [tasks."plugins:build"]
 description = "Build self-contained agent plugin adapters"
-run = "pnpm --recursive --filter '@servediff/plugin-*' --if-present build"
+run = "pnpm --recursive --filter '@diffx/plugin-*' --if-present build"
 
 [tasks."dev:server"]
 description = "Start a standalone Go fixture server"
 depends = ["web:build"]
-run = "go run ./cmd/servediff dev --fixture test/fixtures/sample.diff --state memory --web-dir apps/web/dist"
+run = "go run ./cmd/diffx dev --fixture test/fixtures/sample.diff --state memory --web-dir apps/web/dist"
 
 [tasks."test:go"]
 description = "Run Go tests"
@@ -167,9 +160,9 @@ run = "goreleaser release --clean"
 
 [tasks."release:homebrew:check"]
 description = "Validate the generated Homebrew formula syntax"
-run = "ruby -c homebrew-tap/Formula/servediff.rb"
+run = "ruby -c homebrew-tap/Formula/diffx.rb"
 
 
 [tasks."docker:build"]
 description = "Build the remote server image using committed embedded assets"
-run = "docker build --tag servediff-server:local ."
+run = "docker build --tag diffx-server:local ."

@@ -10,7 +10,7 @@ import (
 
 func TestFirstUseOverridesAndRemoval(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
-	t.Setenv("SERVEDIFF_CONFIG_PATH", path)
+	t.Setenv("DIFFX_CONFIG_PATH", path)
 	defaults, err := Load()
 	if err != nil {
 		t.Fatal(err)
@@ -49,7 +49,7 @@ func TestFirstUseOverridesAndRemoval(t *testing.T) {
 
 func TestRuntimeEnvironmentOverridesFileWithoutPersisting(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "private", "config.json")
-	t.Setenv("SERVEDIFF_CONFIG_PATH", filepath.Join(t.TempDir(), "unused.json"))
+	t.Setenv("DIFFX_CONFIG_PATH", filepath.Join(t.TempDir(), "unused.json"))
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -57,10 +57,10 @@ func TestRuntimeEnvironmentOverridesFileWithoutPersisting(t *testing.T) {
 	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("SERVEDIFF_HOST", "::1")
-	t.Setenv("SERVEDIFF_PORT", "5123")
-	t.Setenv("SERVEDIFF_STATE", "memory")
-	t.Setenv("SERVEDIFF_WEB_DIR", "")
+	t.Setenv("DIFFX_HOST", "::1")
+	t.Setenv("DIFFX_PORT", "5123")
+	t.Setenv("DIFFX_STATE", "memory")
+	t.Setenv("DIFFX_WEB_DIR", "")
 	values, err := LoadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -78,7 +78,7 @@ func TestRuntimeEnvironmentOverridesFileWithoutPersisting(t *testing.T) {
 	if saved.Host != "127.0.0.1" || saved.Port == nil || *saved.Port != 4123 || saved.State != "file.db" || saved.WebDir != "file-assets" {
 		t.Fatalf("environment persisted during edit: %#v", saved)
 	}
-	if _, err := os.Stat(os.Getenv("SERVEDIFF_CONFIG_PATH")); !os.IsNotExist(err) {
+	if _, err := os.Stat(os.Getenv("DIFFX_CONFIG_PATH")); !os.IsNotExist(err) {
 		t.Fatalf("explicit file touched default: %v", err)
 	}
 }
@@ -104,17 +104,17 @@ func TestMissingRuntimeFileCreatesPrivateDefaults(t *testing.T) {
 
 func TestInvalidEnvironmentAndFileFail(t *testing.T) {
 	for _, field := range []struct{ name, value string }{
-		{"SERVEDIFF_HOST", "localhost"},
-		{"SERVEDIFF_PORT", ""},
-		{"SERVEDIFF_PORT", "65536"},
-		{"SERVEDIFF_PORT", "-1"},
-		{"SERVEDIFF_STATE", ""},
-		{"SERVEDIFF_SERVER_URL", "ftp://example.com"},
-		{"SERVEDIFF_SERVER_URL", "https://example.com/api"},
-		{"SERVEDIFF_RETENTION_DAYS", ""},
-		{"SERVEDIFF_RETENTION_DAYS", "0"},
-		{"SERVEDIFF_RETENTION_DAYS", "-1"},
-		{"SERVEDIFF_RETENTION_DAYS", "106752"},
+		{"DIFFX_HOST", "localhost"},
+		{"DIFFX_PORT", ""},
+		{"DIFFX_PORT", "65536"},
+		{"DIFFX_PORT", "-1"},
+		{"DIFFX_STATE", ""},
+		{"DIFFX_SERVER_URL", "ftp://example.com"},
+		{"DIFFX_SERVER_URL", "https://example.com/api"},
+		{"DIFFX_RETENTION_DAYS", ""},
+		{"DIFFX_RETENTION_DAYS", "0"},
+		{"DIFFX_RETENTION_DAYS", "-1"},
+		{"DIFFX_RETENTION_DAYS", "106752"},
 	} {
 		t.Run(field.name+"/"+field.value, func(t *testing.T) {
 			t.Setenv(field.name, field.value)
@@ -139,9 +139,9 @@ func TestDestinationAndRetentionPrecedence(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	t.Setenv("SERVEDIFF_SERVER_URL", "http://127.0.0.1:9000")
-	t.Setenv("SERVEDIFF_TOKEN", "env-token")
-	t.Setenv("SERVEDIFF_RETENTION_DAYS", "3")
+	t.Setenv("DIFFX_SERVER_URL", "http://127.0.0.1:9000")
+	t.Setenv("DIFFX_TOKEN", "env-token")
+	t.Setenv("DIFFX_RETENTION_DAYS", "3")
 	values, err := LoadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -196,7 +196,7 @@ func TestLegacyConfigAndInvalidCollectorSettings(t *testing.T) {
 
 func TestInvalidConfigNeverChangesSavedSettings(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
-	t.Setenv("SERVEDIFF_CONFIG_PATH", path)
+	t.Setenv("DIFFX_CONFIG_PATH", path)
 	values, err := Load()
 	if err != nil {
 		t.Fatal(err)

@@ -1,8 +1,8 @@
 {
-  "name": "servediff",
+  "name": "diffx",
   "plugins": [
     {
-      "name": "servediff",
+      "name": "diffx",
       "source": {
         "source": "local",
         "path": "./packages/plugin-codex"

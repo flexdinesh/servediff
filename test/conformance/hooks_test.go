@@ -15,12 +15,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/contextservice"
-	"github.com/flexdinesh/servediff/internal/hooks"
-	"github.com/flexdinesh/servediff/internal/ingestion"
-	"github.com/flexdinesh/servediff/internal/review"
-	"github.com/flexdinesh/servediff/internal/reviewstore"
-	"github.com/flexdinesh/servediff/internal/testsupport"
+	"github.com/flexdinesh/diffx/internal/contextservice"
+	"github.com/flexdinesh/diffx/internal/hooks"
+	"github.com/flexdinesh/diffx/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/review"
+	"github.com/flexdinesh/diffx/internal/reviewstore"
+	"github.com/flexdinesh/diffx/internal/testsupport"
 )
 
 func hookInput(t *testing.T, path string) []byte {
@@ -48,8 +48,8 @@ func waitHookCatalog(t *testing.T, harness serviceHarness, count int) (serviceSt
 	t.Helper()
 	endpoint := ""
 	for _, value := range harness.environment {
-		if strings.HasPrefix(value, "SERVEDIFF_SERVER_URL=") {
-			endpoint = strings.TrimPrefix(value, "SERVEDIFF_SERVER_URL=")
+		if strings.HasPrefix(value, "DIFFX_SERVER_URL=") {
+			endpoint = strings.TrimPrefix(value, "DIFFX_SERVER_URL=")
 		}
 	}
 	client := http.Client{Timeout: 2 * time.Second}
@@ -66,7 +66,7 @@ func waitHookCatalog(t *testing.T, harness serviceHarness, count int) (serviceSt
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	log, _ := os.ReadFile(filepath.Join(harness.runtimeDir, "hooks-v3", "hooks.log"))
+	log, _ := os.ReadFile(filepath.Join(harness.runtimeDir, "hooks-v4", "hooks.log"))
 	t.Fatalf("hook did not publish %d contexts: %s", count, log)
 	return serviceStatus{}, nil
 }
@@ -86,7 +86,7 @@ func TestAgentHooksPublishLatestCheckoutAndCompleteFileContents(t *testing.T) {
 	defer service.Close()
 	server := testsupport.Server(t, service, store)
 	defer server.Close()
-	harness.environment = append(harness.environment, "SERVEDIFF_SERVER_URL="+server.URL, "SERVEDIFF_TOKEN=test-token")
+	harness.environment = append(harness.environment, "DIFFX_SERVER_URL="+server.URL, "DIFFX_TOKEN=test-token")
 
 	harness.environment = append(harness.environment, "XDG_CONFIG_HOME="+filepath.Join(t.TempDir(), "config"))
 	configFile := filepath.Join(t.TempDir(), "machine.json")
@@ -178,7 +178,7 @@ func TestHookReturnsBeforeRemoteIngestionAndSkipsUnchangedUploads(t *testing.T) 
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": "context", "kind": "observation", "availability": "available", "stale": false, "expiresAt": time.Now().Add(time.Hour).UnixMilli()})
 			return
 		}
-		if r.URL.Path != "/api/v2/ingestion-jobs" || r.Header.Get("X-Servediff-State") != "test-database" {
+		if r.URL.Path != "/api/v2/ingestion-jobs" || r.Header.Get("X-Diffx-State") != "test-database" {
 			http.NotFound(w, r)
 			return
 		}
@@ -199,7 +199,7 @@ func TestHookReturnsBeforeRemoteIngestionAndSkipsUnchangedUploads(t *testing.T) 
 		once.Do(func() { close(release) })
 		server.Close()
 	}()
-	harness.environment = append(harness.environment, "SERVEDIFF_SERVER_URL="+server.URL, "SERVEDIFF_TOKEN=test-token", "XDG_CONFIG_HOME="+t.TempDir())
+	harness.environment = append(harness.environment, "DIFFX_SERVER_URL="+server.URL, "DIFFX_TOKEN=test-token", "XDG_CONFIG_HOME="+t.TempDir())
 	promptHook(t, harness, hookInput(t, path), "--harness", "claude")
 	select {
 	case input := <-requests:
@@ -217,7 +217,7 @@ func TestHookReturnsBeforeRemoteIngestionAndSkipsUnchangedUploads(t *testing.T) 
 			_ = json.NewEncoder(w).Encode(ingestion.Health{StateID: "other-database", ProtocolVersion: ingestion.ProtocolVersion, QueuedIngestion: true, IngestionEnabled: true})
 			return
 		}
-		if r.URL.Path != "/api/v2/ingestion-jobs" || r.Header.Get("X-Servediff-State") != "other-database" {
+		if r.URL.Path != "/api/v2/ingestion-jobs" || r.Header.Get("X-Diffx-State") != "other-database" {
 			http.NotFound(w, r)
 			return
 		}
@@ -231,7 +231,7 @@ func TestHookReturnsBeforeRemoteIngestionAndSkipsUnchangedUploads(t *testing.T) 
 	}))
 	defer other.Close()
 	otherHarness := harness
-	otherHarness.environment = append(append([]string(nil), harness.environment...), "SERVEDIFF_SERVER_URL="+other.URL)
+	otherHarness.environment = append(append([]string(nil), harness.environment...), "DIFFX_SERVER_URL="+other.URL)
 	promptHook(t, otherHarness, nil, "--harness", "pi", "--path", path)
 	select {
 	case <-otherRequests:
@@ -242,7 +242,7 @@ func TestHookReturnsBeforeRemoteIngestionAndSkipsUnchangedUploads(t *testing.T) 
 	once.Do(func() { close(release) })
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		acks, _ := filepath.Glob(filepath.Join(harness.runtimeDir, "hooks-v3", "jobs", "*", "*.ack.json"))
+		acks, _ := filepath.Glob(filepath.Join(harness.runtimeDir, "hooks-v4", "jobs", "*", "*.ack.json"))
 		if len(acks) >= 2 {
 			break
 		}
@@ -281,7 +281,7 @@ func isolatedCollectorHarness(t *testing.T) serviceHarness {
 	t.Helper()
 	harness := newServiceHarness(t)
 	harness.environment = append(harness.environment,
-		"SERVEDIFF_SERVER_URL=", "SERVEDIFF_TOKEN=", "SERVEDIFF_SOURCE_ID=conformance-source",
+		"DIFFX_SERVER_URL=", "DIFFX_TOKEN=", "DIFFX_SOURCE_ID=conformance-source",
 		"XDG_CONFIG_HOME="+t.TempDir(),
 	)
 	return harness
@@ -315,14 +315,14 @@ func waitCollectorStatus(t *testing.T, harness serviceHarness, matches func(hook
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	log, _ := os.ReadFile(filepath.Join(harness.runtimeDir, "hooks-v3", "hooks.log"))
+	log, _ := os.ReadFile(filepath.Join(harness.runtimeDir, "hooks-v4", "hooks.log"))
 	t.Fatalf("collector status never matched: %s\n%s", output, log)
 	return hooks.Activity{}
 }
 
 func collectorActivities(t *testing.T, harness serviceHarness) []hooks.Activity {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(harness.runtimeDir, "hooks-v3", "hooks.log"))
+	data, err := os.ReadFile(filepath.Join(harness.runtimeDir, "hooks-v4", "hooks.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -352,7 +352,7 @@ func TestHookIgnoresParentWorkspaceAndReviewRecoversExplicitBranch(t *testing.T)
 	defer service.Close()
 	server := testsupport.Server(t, service, store)
 	defer server.Close()
-	harness.environment = append(harness.environment, "SERVEDIFF_SERVER_URL="+server.URL, "SERVEDIFF_TOKEN=test-token")
+	harness.environment = append(harness.environment, "DIFFX_SERVER_URL="+server.URL, "DIFFX_TOKEN=test-token")
 	root := createWorktree(t, "renamed-repository")
 	collectorGit(t, root, "checkout", "--", "value.txt")
 	collectorGit(t, root, "branch", "-M", "main")
@@ -385,7 +385,7 @@ func TestHookIgnoresParentWorkspaceAndReviewRecoversExplicitBranch(t *testing.T)
 		t.Fatalf("non-Git hook discovered child repositories: %+v", status)
 	}
 
-	captures, err := filepath.Glob(filepath.Join(harness.runtimeDir, "hooks-v3", "jobs", "*", "capture.pending.json"))
+	captures, err := filepath.Glob(filepath.Join(harness.runtimeDir, "hooks-v4", "jobs", "*", "capture.pending.json"))
 	if err != nil || len(captures) != 0 {
 		t.Fatalf("non-Git hook captured child repositories: %v %v", captures, err)
 	}
@@ -428,7 +428,7 @@ func TestCollectorRetryDeliversCaptureAfterHealthOutageAndCheckoutRemoval(t *tes
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v2/health" {
 			if !available.Load() {
-				paths, err := filepath.Glob(filepath.Join(harness.runtimeDir, "hooks-v3", "jobs", "*", "capture.pending.json"))
+				paths, err := filepath.Glob(filepath.Join(harness.runtimeDir, "hooks-v4", "jobs", "*", "capture.pending.json"))
 				if err != nil || len(paths) != 1 {
 					t.Errorf("health contacted before capture persisted: %v %v", paths, err)
 				} else {
@@ -446,7 +446,7 @@ func TestCollectorRetryDeliversCaptureAfterHealthOutageAndCheckoutRemoval(t *tes
 			_ = json.NewEncoder(w).Encode(ingestion.Health{StateID: "recovered-database", ProtocolVersion: ingestion.ProtocolVersion, QueuedIngestion: true, IngestionEnabled: true})
 			return
 		}
-		if r.URL.Path != "/api/v2/ingestion-jobs" || r.Header.Get("X-Servediff-State") != "recovered-database" {
+		if r.URL.Path != "/api/v2/ingestion-jobs" || r.Header.Get("X-Diffx-State") != "recovered-database" {
 			http.NotFound(w, r)
 			return
 		}
@@ -459,10 +459,10 @@ func TestCollectorRetryDeliversCaptureAfterHealthOutageAndCheckoutRemoval(t *tes
 		_ = json.NewEncoder(w).Encode(ingestion.Job{ID: input.SubmissionID, SubmissionID: input.SubmissionID, State: "succeeded", ContextID: "recovered-context"})
 	}))
 	defer server.Close()
-	harness.environment = append(harness.environment, "SERVEDIFF_SERVER_URL="+server.URL, "SERVEDIFF_TOKEN=isolated-token")
+	harness.environment = append(harness.environment, "DIFFX_SERVER_URL="+server.URL, "DIFFX_TOKEN=isolated-token")
 	promptHook(t, harness, hookInput(t, root), "--harness", "codex")
 	waitCollectorStatus(t, harness, func(activity hooks.Activity) bool { return activity.Status == "waiting" })
-	paths, err := filepath.Glob(filepath.Join(harness.runtimeDir, "hooks-v3", "jobs", "*", "*.pending.json"))
+	paths, err := filepath.Glob(filepath.Join(harness.runtimeDir, "hooks-v4", "jobs", "*", "*.pending.json"))
 	if err != nil || len(paths) != 1 {
 		t.Fatalf("capture not persisted before health: %v %v", paths, err)
 	}
@@ -493,7 +493,7 @@ func TestCollectorRetryDeliversCaptureAfterHealthOutageAndCheckoutRemoval(t *tes
 	}))
 	defer other.Close()
 	wrong := harness
-	wrong.environment = append(append([]string(nil), harness.environment...), "SERVEDIFF_SERVER_URL="+other.URL)
+	wrong.environment = append(append([]string(nil), harness.environment...), "DIFFX_SERVER_URL="+other.URL)
 	wrong.requireRun(t, nil, "collector", "retry")
 	select {
 	case <-otherRequests:
@@ -506,7 +506,7 @@ func TestCollectorRetryDeliversCaptureAfterHealthOutageAndCheckoutRemoval(t *tes
 	select {
 	case delivered = <-requests:
 	case <-time.After(10 * time.Second):
-		log, _ := os.ReadFile(filepath.Join(harness.runtimeDir, "hooks-v3", "hooks.log"))
+		log, _ := os.ReadFile(filepath.Join(harness.runtimeDir, "hooks-v4", "hooks.log"))
 		t.Fatalf("retry lost removed checkout's capture: %s", log)
 	}
 	before, _ := json.Marshal(captured.Request)

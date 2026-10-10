@@ -3,12 +3,12 @@ package mcpapi
 import (
 	"context"
 	"fmt"
-	"github.com/flexdinesh/servediff/internal/contextservice"
-	"github.com/flexdinesh/servediff/internal/ingestion"
-	"github.com/flexdinesh/servediff/internal/review"
+	"github.com/flexdinesh/diffx/internal/contextservice"
+	"github.com/flexdinesh/diffx/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/review"
 	"net/http"
 
-	"github.com/flexdinesh/servediff/internal/reviewservice"
+	"github.com/flexdinesh/diffx/internal/reviewservice"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -44,8 +44,8 @@ func NewCatalog(catalog *reviewservice.Catalog, scopedID, version string) http.H
 
 func newHandler(service ReviewService, commentsEnabled bool, catalog *reviewservice.Catalog, scopedID, version string) http.Handler {
 	server := mcp.NewServer(&mcp.Implementation{
-		Name:        "servediff",
-		Title:       "ServeDiff",
+		Name:        "diffx",
+		Title:       "Diffx",
 		Description: "Review local code changes and manage review comments.",
 		Version:     version,
 	}, &mcp.ServerOptions{

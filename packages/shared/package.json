@@ -1,5 +1,5 @@
 {
-  "name": "@servediff/shared",
+  "name": "@diffx/shared",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@pierre/diffs": "catalog:",
-    "@servediff/api": "workspace:*"
+    "@diffx/api": "workspace:*",
+    "@pierre/diffs": "catalog:"
   }
 }

@@ -5,12 +5,12 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/flexdinesh/servediff/internal/contextservice"
-	"github.com/flexdinesh/servediff/internal/ingestion"
-	"github.com/flexdinesh/servediff/internal/ingestionqueue"
-	"github.com/flexdinesh/servediff/internal/reviewstore"
-	"github.com/flexdinesh/servediff/internal/serverapp"
-	"github.com/flexdinesh/servediff/internal/webui"
+	"github.com/flexdinesh/diffx/internal/contextservice"
+	"github.com/flexdinesh/diffx/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/ingestionqueue"
+	"github.com/flexdinesh/diffx/internal/reviewstore"
+	"github.com/flexdinesh/diffx/internal/serverapp"
+	"github.com/flexdinesh/diffx/internal/webui"
 )
 
 type TestServer struct {

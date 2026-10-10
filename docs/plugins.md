@@ -1,7 +1,7 @@
 # Agent plugins
 
-Plugins target the remote server only. Configure `servediff config set server URL`
-and `servediff config set token -` before enabling hooks.
+Plugins target the remote server only. Configure `diffx config set server URL`
+and `diffx config set token -` before enabling hooks.
 
 Install a plugin to synchronize the latest checkout after an agent finishes.
 Collection and ingestion run in a detached Go worker; the agent only schedules
@@ -9,15 +9,15 @@ work. The web UI's existing latest/stale filters cover all submitted worktrees.
 
 ## Install and remove
 
-Install the servediff executable separately. For the current plugin contract,
+Install the diffx executable separately. For the current plugin contract,
 use the latest development version:
 
 ```sh
-go install github.com/flexdinesh/servediff/cmd/servediff@main
+go install github.com/flexdinesh/diffx/cmd/diffx@main
 ```
 
-For CLI development, use `mise run install` instead. Ensure `servediff` is on
-the harness's PATH, including GUI sessions, or set `SERVEDIFF_BINARY` to its
+For CLI development, use `mise run install` instead. Ensure `diffx` is on
+the harness's PATH, including GUI sessions, or set `DIFFX_BINARY` to its
 absolute path in the harness environment. All four adapters read that override
 at runtime; they do not capture an executable path during installation.
 
@@ -27,38 +27,38 @@ restart active sessions after installing or updating.
 Update the remote server alongside the collector to enable durable ingestion jobs.
 
 CLI harness selection uses `--harness`; `--agent` is no longer accepted. Update
-existing plugins and scripts alongside the servediff executable.
+existing plugins and scripts alongside the diffx executable.
 
 ### Codex
 
 Register the repository marketplace, then install its plugin:
 
 ```sh
-codex plugin marketplace add /absolute/path/to/servediff
-codex plugin add servediff@servediff
+codex plugin marketplace add /absolute/path/to/diffx
+codex plugin add diffx@diffx
 ```
 
 For a remote marketplace, replace the first command's path with
-`flexdinesh/servediff`. The marketplace manifest is
+`flexdinesh/diffx`. The marketplace manifest is
 `.agents/plugins/marketplace.json`. Remove the plugin with:
 
 ```sh
-codex plugin remove servediff@servediff
+codex plugin remove diffx@diffx
 ```
 
 ### Claude Code
 
 ```sh
-claude plugin marketplace add /absolute/path/to/servediff
-claude plugin install servediff@servediff
+claude plugin marketplace add /absolute/path/to/diffx
+claude plugin install diffx@diffx
 ```
 
 For a remote marketplace, replace the first command's path with
-`flexdinesh/servediff`. The marketplace manifest is
+`flexdinesh/diffx`. The marketplace manifest is
 `.claude-plugin/marketplace.json`. Remove the plugin with:
 
 ```sh
-claude plugin uninstall servediff@servediff
+claude plugin uninstall diffx@diffx
 ```
 
 ### Pi
@@ -66,14 +66,14 @@ claude plugin uninstall servediff@servediff
 Install the ready-built package from a checkout:
 
 ```sh
-pi install /absolute/path/to/servediff/packages/plugin-pi
+pi install /absolute/path/to/diffx/packages/plugin-pi
 ```
 
 Keep that checkout at the same path: Pi loads the local package there. Remove
 using the same source passed to install:
 
 ```sh
-pi remove /absolute/path/to/servediff/packages/plugin-pi
+pi remove /absolute/path/to/diffx/packages/plugin-pi
 ```
 
 ### OpenCode
@@ -82,13 +82,13 @@ OpenCode's native installer accepts npm and Git package specs. Install the
 package from this repository's `main` branch:
 
 ```sh
-opencode plugin add 'github:flexdinesh/servediff#main::path:packages/plugin-opencode'
+opencode plugin add 'github:flexdinesh/diffx#main::path:packages/plugin-opencode'
 ```
 
 Remove that registration with:
 
 ```sh
-opencode plugin remove 'github:flexdinesh/servediff#main::path:packages/plugin-opencode'
+opencode plugin remove 'github:flexdinesh/diffx#main::path:packages/plugin-opencode'
 ```
 
 For a local checkout, add the absolute package directory to the `plugins` array
@@ -96,7 +96,7 @@ in your `opencode.jsonc` instead; the CLI does not accept local paths:
 
 ```jsonc
 {
-  "plugins": ["/absolute/path/to/servediff/packages/plugin-opencode"],
+  "plugins": ["/absolute/path/to/diffx/packages/plugin-opencode"],
 }
 ```
 
@@ -116,37 +116,18 @@ Claude hooks must also be enabled. OpenCode V1 plugin APIs are not supported.
 Harness installers own plugin registration, updates and removal; their native
 configuration variables and installation scopes apply.
 
-### Migrating from the repository installer
-
-Remove old registration before installing the native packages to avoid duplicate
-completion triggers:
-
-- Codex: run `codex plugin remove servediff@servediff-local`, then
-  `codex plugin marketplace remove servediff-local`.
-- Pi: use `pi list` to find the old private servediff package source, then
-  `pi remove` with that source.
-- Claude Code: remove the old `~/.claude/skills/servediff` directory only if its
-  `.servediff-local-install` marker identifies it as servediff's managed install.
-  Respect `CLAUDE_CONFIG_DIR` if set.
-- OpenCode: remove the old `~/.config/opencode/plugins/servediff.js` only if its
-  `// servediff managed local plugin` header identifies the old installer output.
-  Respect `XDG_CONFIG_HOME` if set.
-
-Leave other host files and plugins intact. The old `plugins:install` and
-`plugins:remove` mise tasks are no longer used.
-
 ## Configuration
 
 Server and collector settings resolve in this order:
 
 1. Code defaults.
-2. JSON config at `~/.config/servediff/config.json`.
-3. Environment: `SERVEDIFF_HOST`, `SERVEDIFF_PORT`, `SERVEDIFF_STATE`,
-   `SERVEDIFF_WEB_DIR`, `SERVEDIFF_SERVER_URL`, `SERVEDIFF_TOKEN`,
-   `SERVEDIFF_RETENTION_DAYS`.
+2. JSON config at `~/.config/diffx/config.json`.
+3. Environment: `DIFFX_HOST`, `DIFFX_PORT`, `DIFFX_STATE`,
+   `DIFFX_WEB_DIR`, `DIFFX_SERVER_URL`, `DIFFX_TOKEN`,
+   `DIFFX_RETENTION_DAYS`.
 4. Explicit command flags or start/restart inline JSON overrides.
 
-`SERVEDIFF_CONFIG_PATH` or `--config-file FILE` selects another JSON file.
+`DIFFX_CONFIG_PATH` or `--config-file FILE` selects another JSON file.
 Missing files receive defaults; invalid JSON or environment values fail clearly.
 No `.env` file is loaded automatically. Config commands edit file values without
 persisting environment overrides. Restart the local server after changing its
@@ -154,9 +135,9 @@ settings; workers read effective settings each invocation but reuse the running
 server until restarted.
 
 ```sh
-servediff config set port 7981 --config-file /path/to/config.json
-servediff config set server https://reviews.example.com
-servediff config set retentionDays 14
+diffx config set port 7981 --config-file /path/to/config.json
+diffx config set server https://reviews.example.com
+diffx config set retentionDays 14
 # Remote config is read by each finite invocation.
 ```
 
@@ -221,8 +202,8 @@ triggers or explicit retry commands, without a perpetual background loop.
 Server/database identity prevents ambiguous requests from being replayed into a
 replacement database.
 
-Private hook state defaults to `~/.local/state/servediff/hooks`; `XDG_STATE_HOME`
-and isolated `SERVEDIFF_RUNTIME_DIR` are respected. Pending data expires after
+Private hook state defaults to `~/.local/state/diffx/hooks-v4`; `XDG_STATE_HOME`
+and isolated `DIFFX_RUNTIME_DIR` are respected. Pending data expires after
 seven days independently of server retention and is pruned toward a 256 MiB budget; active uploads are protected.
 Acknowledgements refresh after 24 hours so unchanged observations retain their
 server availability. Diagnostics stay in `hooks.log`, bounded to approximately
@@ -236,10 +217,10 @@ browser or write diagnostics into the conversation.
 Inspect and recover queued work:
 
 ```sh
-servediff collector status
-servediff collector retry
-tail -n 50 ~/.local/state/servediff/hooks/hooks.log
-servediff hook --harness codex --retry
+diffx collector status
+diffx collector retry
+tail -n 50 ~/.local/state/diffx/hooks-v4/hooks.log
+diffx hook --harness codex --retry
 ```
 
 Status prints JSON. Retry schedules a finite pass over incomplete work for the
@@ -252,8 +233,8 @@ server context. Manual-command logs use `acknowledged` for the same outcome.
 Manually recover committed changes even when another branch is checked out:
 
 ```sh
-servediff sync --path /path/to/repository --branch feature --base main --no-browser
-servediff sync --path /path/to/checkout --base HEAD --no-browser
+diffx sync --path /path/to/repository --branch feature --base main --no-browser
+diffx sync --path /path/to/checkout --base HEAD --no-browser
 ```
 
 Manual sync defaults to auto and collects all registered worktrees, returning
@@ -266,8 +247,8 @@ refs also require surviving commits or a previously saved payload.
 Manually invoke the hook handler for any supported harness:
 
 ```sh
-servediff hook --harness codex --path /path/to/checkout
-servediff hook --harness pi --path /path/to/checkout --run-id session-id --session-name 'Feature work'
+diffx hook --harness codex --path /path/to/checkout
+diffx hook --harness pi --path /path/to/checkout --run-id session-id --session-name 'Feature work'
 ```
 
 Supported harnesses are `codex`, `claude`, `opencode`, and `pi`. `--run-id` is
@@ -285,11 +266,11 @@ Without `--path`, Codex/Claude command hooks provide a JSON event with `cwd` and
 `--run-id`/`--session-name` override the event. To simulate that input:
 
 ```sh
-printf '%s\n' '{"cwd":"/path/to/checkout","session_id":"session-id","session_name":"Feature work"}' | servediff hook --harness codex
+printf '%s\n' '{"cwd":"/path/to/checkout","session_id":"session-id","session_name":"Feature work"}' | diffx hook --harness codex
 ```
 
 Hooks default to `--base auto`, never open a browser, and return after scheduling.
 Scheduling success does not confirm ingestion; hooks log failures and exit
 successfully. Inspect the dashboard or hook log for delivery state. Manual
-`servediff sync` always submits, waits for receipts and reports failures
+`diffx sync` always submits, waits for receipts and reports failures
 directly. Manual and hook collection use the same auto baseline.

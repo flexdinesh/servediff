@@ -116,7 +116,7 @@ test("registers current WebMCP review tools and unregisters both", async () => {
           comment_id: {
             type: "string",
             minLength: 1,
-            description: "Stable ServeDiff comment ID.",
+            description: "Stable Diffx comment ID.",
           },
         },
         required: ["comment_id"],

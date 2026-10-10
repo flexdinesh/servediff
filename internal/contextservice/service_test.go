@@ -9,10 +9,10 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/flexdinesh/servediff/internal/collector"
-	"github.com/flexdinesh/servediff/internal/diffsource"
-	"github.com/flexdinesh/servediff/internal/review"
-	"github.com/flexdinesh/servediff/internal/reviewstore"
+	"github.com/flexdinesh/diffx/internal/collector"
+	"github.com/flexdinesh/diffx/internal/diffsource"
+	"github.com/flexdinesh/diffx/internal/review"
+	"github.com/flexdinesh/diffx/internal/reviewstore"
 )
 
 const testPatch = "diff --git a/file b/file\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n"

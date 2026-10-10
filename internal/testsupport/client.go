@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/flexdinesh/servediff/internal/ingestion"
-	"github.com/flexdinesh/servediff/internal/review"
+	"github.com/flexdinesh/diffx/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/review"
 )
 
 type Client struct {

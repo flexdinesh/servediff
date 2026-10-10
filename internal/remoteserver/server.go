@@ -14,13 +14,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/contextservice"
-	"github.com/flexdinesh/servediff/internal/ingestion"
-	"github.com/flexdinesh/servediff/internal/ingestionqueue"
-	"github.com/flexdinesh/servediff/internal/review"
-	"github.com/flexdinesh/servediff/internal/reviewstore"
-	"github.com/flexdinesh/servediff/internal/serverapp"
-	"github.com/flexdinesh/servediff/internal/webui"
+	"github.com/flexdinesh/diffx/internal/contextservice"
+	"github.com/flexdinesh/diffx/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/ingestionqueue"
+	"github.com/flexdinesh/diffx/internal/review"
+	"github.com/flexdinesh/diffx/internal/reviewstore"
+	"github.com/flexdinesh/diffx/internal/serverapp"
+	"github.com/flexdinesh/diffx/internal/webui"
 )
 
 type Settings struct {
@@ -119,7 +119,7 @@ func securityHeaders(w http.ResponseWriter) {
 }
 
 func unauthorized(w http.ResponseWriter) {
-	w.Header().Set("WWW-Authenticate", `Basic realm="servediff", charset="UTF-8"`)
+	w.Header().Set("WWW-Authenticate", `Basic realm="diffx", charset="UTF-8"`)
 	http.Error(w, "Authentication required", http.StatusUnauthorized)
 }
 
@@ -203,7 +203,7 @@ func bootstrap(store *reviewstore.Store, settings Settings) error {
 		}
 	}
 	if settings.State == "" || settings.State == ":memory:" || settings.State == "memory" {
-		return errors.New("in-memory remote server requires SERVEDIFF_TOKEN")
+		return errors.New("in-memory remote server requires DIFFX_TOKEN")
 	}
 	path := settings.State + ".admin-token"
 	raw, err := os.ReadFile(path)

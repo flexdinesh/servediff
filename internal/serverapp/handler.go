@@ -12,14 +12,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/contextservice"
-	"github.com/flexdinesh/servediff/internal/httpapi"
-	"github.com/flexdinesh/servediff/internal/ingestion"
-	"github.com/flexdinesh/servediff/internal/ingestionqueue"
-	"github.com/flexdinesh/servediff/internal/mcpapi"
-	"github.com/flexdinesh/servediff/internal/review"
-	"github.com/flexdinesh/servediff/internal/reviewservice"
-	buildversion "github.com/flexdinesh/servediff/internal/version"
+	"github.com/flexdinesh/diffx/internal/contextservice"
+	"github.com/flexdinesh/diffx/internal/httpapi"
+	"github.com/flexdinesh/diffx/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/ingestionqueue"
+	"github.com/flexdinesh/diffx/internal/mcpapi"
+	"github.com/flexdinesh/diffx/internal/review"
+	"github.com/flexdinesh/diffx/internal/reviewservice"
+	buildversion "github.com/flexdinesh/diffx/internal/version"
 )
 
 type Options struct {
@@ -96,7 +96,7 @@ func decodeIngestion(service *contextservice.Service, w http.ResponseWriter, r *
 		problem(w, 415, "Expected application/json")
 		return ingestion.Request{}, false
 	}
-	if expected := r.Header.Get("X-Servediff-State"); expected != "" && expected != service.UserID() {
+	if expected := r.Header.Get("X-Diffx-State"); expected != "" && expected != service.UserID() {
 		problem(w, 409, "Server database identity changed; snapshot was not submitted")
 		return ingestion.Request{}, false
 	}

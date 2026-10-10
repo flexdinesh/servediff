@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/flexdinesh/servediff/internal/review"
+	"github.com/flexdinesh/diffx/internal/review"
 )
 
 // ContentHash identifies complete Git contents independently of filesystem

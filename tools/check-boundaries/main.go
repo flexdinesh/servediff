@@ -12,17 +12,17 @@ import (
 	"strings"
 )
 
-const modulePrefix = "github.com/flexdinesh/servediff/"
+const modulePrefix = "github.com/flexdinesh/diffx/"
 
 // Exact package paths make new packages, including nested ones, require an explicit
 // architectural role. Command/composition roots wire concrete adapters.
 var allowed = map[string][]string{
-	"cmd/servediff": {
+	"cmd/diffx": {
 		"internal/browser", "internal/collector", "internal/config", "internal/contextservice",
 		"internal/daemon", "internal/diffsource", "internal/hooks", "internal/ingestion",
 		"internal/review", "internal/reviewstore", "internal/submission", "internal/version",
 	},
-	"cmd/servediff-server":    {"internal/config", "internal/remoteserver", "internal/reviewstore", "internal/version"},
+	"cmd/diffx-server":        {"internal/config", "internal/remoteserver", "internal/reviewstore", "internal/version"},
 	"internal/browser":        {},
 	"internal/collector":      {"internal/diffsource", "internal/ingestion", "internal/review"},
 	"internal/config":         {"internal/processlock", "internal/reviewstore"},

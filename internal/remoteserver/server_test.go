@@ -15,10 +15,10 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/collector"
-	"github.com/flexdinesh/servediff/internal/ingestion"
-	"github.com/flexdinesh/servediff/internal/reviewstore"
-	"github.com/flexdinesh/servediff/internal/testsupport"
+	"github.com/flexdinesh/diffx/internal/collector"
+	"github.com/flexdinesh/diffx/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/reviewstore"
+	"github.com/flexdinesh/diffx/internal/testsupport"
 )
 
 const testToken = "remote-test-credential-at-least-thirty-two-bytes"
@@ -165,7 +165,7 @@ func TestMultiUserRESTMCPAndEventIsolation(t *testing.T) {
 	}
 	stale := httptest.NewRequest("GET", "/api/v2/ingestion-jobs/"+job.ID, nil)
 	stale.Header.Set("Authorization", "Bearer "+testToken)
-	stale.Header.Set("X-Servediff-State", "replaced-database")
+	stale.Header.Set("X-Diffx-State", "replaced-database")
 	staleResult := httptest.NewRecorder()
 	handler.ServeHTTP(staleResult, stale)
 	if staleResult.Code != http.StatusConflict {

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/processlock"
+	"github.com/flexdinesh/diffx/internal/processlock"
 	"github.com/google/uuid"
 )
 
@@ -40,7 +40,7 @@ func StableIdentity(ctx context.Context, root, sourceID, branch string) (StableR
 	if err != nil {
 		return StableRepositoryIdentity{}, err
 	}
-	directory := filepath.Join(facts.CommonDir, "servediff")
+	directory := filepath.Join(facts.CommonDir, "diffx")
 	lock, err := identityLock(ctx, filepath.Join(directory, "identity.lock"))
 	if err != nil {
 		return StableRepositoryIdentity{}, err
@@ -55,7 +55,7 @@ func StableIdentity(ctx context.Context, root, sourceID, branch string) (StableR
 	if err != nil {
 		return StableRepositoryIdentity{}, err
 	}
-	checkoutPath := filepath.Join(facts.GitDir, "servediff", "checkout.json")
+	checkoutPath := filepath.Join(facts.GitDir, "diffx", "checkout.json")
 	checkout, err := readSavedIdentity(checkoutPath, sourceID, identityHash("checkout", sourceID, facts.GitDir))
 	if err != nil {
 		return StableRepositoryIdentity{}, err
@@ -166,8 +166,8 @@ func stableBranchID(ctx context.Context, root, branch string, repository *savedI
 	if _, err := runGit(ctx, root, 4096, "check-ref-format", "refs/heads/"+branch); err != nil {
 		return "", fmt.Errorf("invalid branch identity label %q: %w", branch, err)
 	}
-	key := "branch." + branch + ".servediff-id"
-	raw, err := runGit(ctx, root, 1<<20, "config", "--local", "--get-regexp", `^branch\..*\.servediff-id$`)
+	key := "branch." + branch + ".diffx-id"
+	raw, err := runGit(ctx, root, 1<<20, "config", "--local", "--get-regexp", `^branch\..*\.diffx-id$`)
 	if err != nil && !stableGitExitCode(err, 1) {
 		return "", err
 	}
@@ -177,7 +177,7 @@ func stableBranchID(ctx context.Context, root, branch string, repository *savedI
 		if !found {
 			continue
 		}
-		name = strings.TrimSuffix(strings.TrimPrefix(name, "branch."), ".servediff-id")
+		name = strings.TrimSuffix(strings.TrimPrefix(name, "branch."), ".diffx-id")
 		if _, err := uuid.Parse(id); err != nil {
 			return "", fmt.Errorf("invalid collector branch identity for %q", name)
 		}

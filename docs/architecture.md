@@ -1,13 +1,13 @@
 # Architecture
 
-ServeDiff has one stored-data application with two compositions. This is the
+Diffx has one stored-data application with two compositions. This is the
 canonical record of package boundaries and architectural decisions.
 [System semantics](system.md) covers identities and durability;
 [development](development.md) covers commands and checks.
 
 ## Modes are compositions
 
-| Concern    | Local `servediff [PATH]`                        | Remote `servediff-server`                |
+| Concern    | Local `diffx [PATH]`                            | Remote `diffx-server`                    |
 | ---------- | ----------------------------------------------- | ---------------------------------------- |
 | Collection | Selected checkout or stdin, once                | Separate finite sync or hook producer    |
 | Admission  | Direct application call before serving          | Authenticated durable queue and worker   |
@@ -23,7 +23,7 @@ Stored observations cannot refresh from Git.
 
 Private local control supports authenticated status/shutdown only. Replacement
 uses lifecycle locking, a validated descriptor and graceful shutdown; a PID
-alone is never authority. `servediff dev --fixture FILE` is isolated from
+alone is never authority. `diffx dev --fixture FILE` is isolated from
 personal lifecycle discovery.
 
 ## Modules own behavior
@@ -118,9 +118,15 @@ lease fencing and commit-before-ack recovery. External brokers require atomic
 scheduling intent (an outbox). Multiple server processes need a storage backend
 designed for that concurrency; SQLite retains one owning process.
 
-Only public v2 routes and ingestion protocol 3 remain. Retired: `review`,
+Only public v2 routes and ingestion protocol 4 remain. Retired: `review`,
 `service`, `serve`, `capture`, background daemon startup, public v1,
 synchronous ingestion and legacy capture/worktree storage.
+
+Diffx starts with fresh configuration, state and producer identities under its
+own directories. There are no aliases or migration paths. Ingestion protocol 4
+uses `X-Diffx-State` to pin submission and polling to the destination identity;
+older protocols are rejected. Release artifacts use the explicit `diffx` project
+name, independent of the checkout directory.
 
 Schema 9 intentionally resets older versioned databases in one transaction under
 the ownership lock. Current state survives subsequent starts; future or

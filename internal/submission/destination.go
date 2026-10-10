@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/ingestion"
 )
 
 type Target struct{ Destination, Identity, SourceID string }

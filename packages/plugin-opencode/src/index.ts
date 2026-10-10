@@ -56,7 +56,7 @@ export async function consume(
 }
 
 export default {
-  id: "servediff",
+  id: "diffx",
   setup(context: Context) {
     const controller = new AbortController();
     void consume(
@@ -84,7 +84,7 @@ function requestSync(
       sessionID,
     ];
     if (sessionName) args.push("--session-name", sessionName);
-    const child = spawn(process.env.SERVEDIFF_BINARY ?? "servediff", args, {
+    const child = spawn(process.env.DIFFX_BINARY ?? "diffx", args, {
       detached: true,
       stdio: "ignore",
       shell: false,

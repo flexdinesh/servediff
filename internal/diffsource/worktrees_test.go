@@ -11,13 +11,13 @@ func TestRepositoryWorktreesUsesRemoteNameAndExternalPaths(t *testing.T) {
 	root := t.TempDir()
 	testGit(t, root, "init", "-q", "-b", "main")
 	testGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-qm", "initial")
-	testGit(t, root, "remote", "add", "origin", "git@github.com:owner/servediff.git")
+	testGit(t, root, "remote", "add", "origin", "git@github.com:owner/diffx.git")
 	linked := filepath.Join(t.TempDir(), "work tree")
 	testGit(t, root, "worktree", "add", "-qb", "feature/picker", linked)
 	detached := filepath.Join(t.TempDir(), "detached")
 	testGit(t, root, "worktree", "add", "-q", "--detach", detached)
 	name, worktrees, err := RepositoryWorktrees(context.Background(), linked)
-	if err != nil || name != "servediff" || len(worktrees) != 3 {
+	if err != nil || name != "diffx" || len(worktrees) != 3 {
 		t.Fatalf("worktrees: %q %#v, %v", name, worktrees, err)
 	}
 	for _, item := range worktrees {

@@ -6,8 +6,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/ingestion"
-	"github.com/flexdinesh/servediff/internal/reviewdata"
+	"github.com/flexdinesh/diffx/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/reviewdata"
 )
 
 var (

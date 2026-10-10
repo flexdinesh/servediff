@@ -121,9 +121,9 @@ for (const agent of ["codex", "claude"]) {
     assert.equal(hooks[0].type, "command");
     assert.ok(typeof command === "string");
 
-    const temp = await mkdtemp(join(tmpdir(), "servediff-stop-"));
+    const temp = await mkdtemp(join(tmpdir(), "diffx-stop-"));
     const output = join(temp, "capture.json");
-    const binary = join(temp, "servediff '$ with spaces");
+    const binary = join(temp, "diffx '$ with spaces");
     const event = JSON.stringify({
       cwd: "/checkout with spaces",
       session_id: "s",
@@ -133,7 +133,7 @@ for (const agent of ["codex", "claude"]) {
 import { readFileSync, writeFileSync } from 'node:fs';
 writeFileSync(${JSON.stringify(output)}, JSON.stringify({
   args: process.argv.slice(2), stdin: readFileSync(0, 'utf8'),
-  config: process.env.SERVEDIFF_CONFIG_PATH,
+  config: process.env.DIFFX_CONFIG_PATH,
 }));
 console.log('suppressed stdout');
 console.error('suppressed stderr');
@@ -142,15 +142,15 @@ process.exit(37);
     try {
       await writeFile(binary, script);
       await chmod(binary, 0o700);
-      await writeFile(join(temp, "servediff"), script);
-      await chmod(join(temp, "servediff"), 0o700);
+      await writeFile(join(temp, "diffx"), script);
+      await chmod(join(temp, "diffx"), 0o700);
       for (const override of [undefined, binary]) {
         const env: NodeJS.ProcessEnv = {
           ...process.env,
-          SERVEDIFF_CONFIG_PATH: configFile,
+          DIFFX_CONFIG_PATH: configFile,
         };
-        delete env.SERVEDIFF_BINARY;
-        if (override !== undefined) env.SERVEDIFF_BINARY = override;
+        delete env.DIFFX_BINARY;
+        if (override !== undefined) env.DIFFX_BINARY = override;
         env.PATH = `${temp}:${process.env.PATH ?? ""}`;
         const result = await new Promise<{ stdout: string; stderr: string }>(
           (resolve, reject) => {
@@ -176,7 +176,7 @@ process.exit(37);
         "sh",
         ["-c", command],
         {
-          env: { ...process.env, SERVEDIFF_BINARY: "/missing/servediff" },
+          env: { ...process.env, DIFFX_BINARY: "/missing/diffx" },
         },
       );
       assert.equal(stdout, "");

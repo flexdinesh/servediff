@@ -26,9 +26,9 @@ import type { components } from "../../packages/api/src/schema.d.ts";
 const fixture = fileURLToPath(
   new URL("../fixtures/sample.diff", import.meta.url),
 );
-const binary = fileURLToPath(new URL("../../dist/servediff", import.meta.url));
+const binary = fileURLToPath(new URL("../../dist/diffx", import.meta.url));
 const remoteBinary = fileURLToPath(
-  new URL("../../dist/servediff-server", import.meta.url),
+  new URL("../../dist/diffx-server", import.meta.url),
 );
 const apiValues = { allScope: "all" } satisfies { allScope: "all" };
 
@@ -198,7 +198,7 @@ test("Go distribution implements the API contract", async (t) => {
     patches[observedFile.id] = result.data;
   }
   const body = {
-    protocolVersion: 3,
+    protocolVersion: 4,
     submissionId: "contract-observation",
     metadata: {
       sourceId: "sandbox-contract-source",
@@ -234,11 +234,11 @@ test("Go distribution implements the API contract", async (t) => {
   assert.equal(localJob.response.status, 404);
 
   const remotePort = await freePort();
-  const token = "servediff-contract-test-token-000001";
+  const token = "diffx-contract-test-token-000001";
   const remoteServer = spawn(
     remoteBinary,
     ["--listen", `127.0.0.1:${remotePort}`, "--state", "memory"],
-    { stdio: "ignore", env: { ...process.env, SERVEDIFF_TOKEN: token } },
+    { stdio: "ignore", env: { ...process.env, DIFFX_TOKEN: token } },
   );
   t.after(() => remoteServer.kill("SIGTERM"));
   const remoteUrl = `http://127.0.0.1:${remotePort}`;

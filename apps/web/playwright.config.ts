@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const port = Number(process.env.SERVEDIFF_TEST_PORT ?? 4173);
+const port = Number(process.env.DIFFX_TEST_PORT ?? 4173);
 
 export default defineConfig({
   workers: 1,

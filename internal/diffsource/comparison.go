@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/flexdinesh/servediff/internal/review"
+	"github.com/flexdinesh/diffx/internal/review"
 )
 
 // ErrNoDefaultBranch means no existing local default branch can be resolved.

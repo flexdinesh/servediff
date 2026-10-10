@@ -8,9 +8,9 @@ import (
 	"log"
 	"os"
 
-	"github.com/flexdinesh/servediff/internal/contextservice"
-	"github.com/flexdinesh/servediff/internal/ingestion"
-	"github.com/flexdinesh/servediff/internal/processlock"
+	"github.com/flexdinesh/diffx/internal/contextservice"
+	"github.com/flexdinesh/diffx/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/processlock"
 )
 
 // RunForeground serializes discovery, replacement and publication. Shutdown
@@ -55,5 +55,5 @@ func RunForeground(ctx context.Context, settings Settings, input ingestion.Reque
 		if ready != nil {
 			ready(status, submitted)
 		}
-	}, log.New(os.Stderr, "servediff: ", log.LstdFlags))
+	}, log.New(os.Stderr, "diffx: ", log.LstdFlags))
 }

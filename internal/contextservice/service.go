@@ -8,10 +8,10 @@ import (
 	"errors"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/ingestion"
-	"github.com/flexdinesh/servediff/internal/review"
-	"github.com/flexdinesh/servediff/internal/reviewdata"
-	"github.com/flexdinesh/servediff/internal/session"
+	"github.com/flexdinesh/diffx/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/review"
+	"github.com/flexdinesh/diffx/internal/reviewdata"
+	"github.com/flexdinesh/diffx/internal/session"
 )
 
 type Context struct {

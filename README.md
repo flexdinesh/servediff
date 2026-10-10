@@ -1,4 +1,4 @@
-# servediff
+# diffx
 
 Review local Git changes in your browser without modifying your working tree or
 index.
@@ -8,25 +8,25 @@ index.
 With Homebrew:
 
 ```sh
-brew install flexdinesh/tap/servediff
+brew install flexdinesh/tap/diffx
 ```
 
 Latest stable release with Go 1.25 or later:
 
 ```sh
-go install github.com/flexdinesh/servediff/cmd/servediff@latest
+go install github.com/flexdinesh/diffx/cmd/diffx@latest
 ```
 
 Or install a specific stable version:
 
 ```sh
-go install github.com/flexdinesh/servediff/cmd/servediff@v0.1.1
+go install github.com/flexdinesh/diffx/cmd/diffx@v0.2.0
 ```
 
 Or install the latest development changes from `main`:
 
 ```sh
-go install github.com/flexdinesh/servediff/cmd/servediff@main
+go install github.com/flexdinesh/diffx/cmd/diffx@main
 ```
 
 ## Usage
@@ -34,11 +34,11 @@ go install github.com/flexdinesh/servediff/cmd/servediff@main
 Capture the selected checkout once in one foreground process:
 
 ```sh
-servediff
-servediff .
-servediff /path/to/repo --host 0.0.0.0
-servediff . --replace
-servediff . --base HEAD --no-browser
+diffx
+diffx .
+diffx /path/to/repo --host 0.0.0.0
+diffx . --replace
+diffx . --base HEAD --no-browser
 ```
 
 Collection and ingestion run in-process. The same process serves the web UI,
@@ -57,12 +57,12 @@ using an unverified PID.
 Publish once to a remote server, including every registered worktree:
 
 ```sh
-servediff config set server https://reviews.example.com
-servediff config set token - < /path/to/private-token
-servediff sync
-servediff sync --print
-servediff sync --debug
-servediff sync --retry
+diffx config set server https://reviews.example.com
+diffx config set token - < /path/to/private-token
+diffx sync
+diffx sync --print
+diffx sync --debug
+diffx sync --retry
 ```
 
 Sync waits for all observations to commit. `--print` prints only the configured
@@ -71,7 +71,7 @@ terminal line, or plain lines when redirected. Failed uploads remain private,
 immutable pending submissions; `sync --retry` recovers them without the checkout.
 Cancelling a wait does not cancel an accepted server job.
 
-`servediff .` and piped diffs always run locally, even with remote config. Sync
+`diffx .` and piped diffs always run locally, even with remote config. Sync
 and plugins require a remote URL and bearer token; they never bootstrap a local
 server.
 
@@ -81,17 +81,17 @@ plus working changes. Staged/unstaged retain HEAD/index semantics.
 Matching captures reuse review state. Retention defaults to seven days after the
 last fresh submission; retries do not extend it.
 
-Defaults live in `~/.config/servediff/config.json`; `--config-file` or
-`SERVEDIFF_CONFIG_PATH` overrides the location. Precedence: defaults, JSON,
-environment, explicit flags. `servediff config {set|get|remove}` edits persisted
+Defaults live in `~/.config/diffx/config.json`; `--config-file` or
+`DIFFX_CONFIG_PATH` overrides the location. Precedence: defaults, JSON,
+environment, explicit flags. `diffx config {set|get|remove}` edits persisted
 settings. Token reads are masked; `set token -` reads stdin.
 
 The default listener binds to `127.0.0.1` on an available port from 7981–7990.
 `--port 0` chooses an OS-assigned port. A non-loopback listener exposes local
 reviews to reachable clients. The browser opens a loopback URL for wildcard binds.
 
-Use `servediff --help` for usage. Legacy `review`, `serve`, `service` and
-`capture` commands are removed. Development fixtures use `servediff dev --fixture`.
+Use `diffx --help` for usage. Legacy `review`, `serve`, `service` and
+`capture` commands are removed. Development fixtures use `diffx dev --fixture`.
 
 ## Agent hooks and remote ingestion
 
@@ -99,8 +99,8 @@ Install Codex, Claude Code, OpenCode or Pi plugins to synchronize each
 worktree automatically after agent completion:
 
 ```sh
-codex plugin marketplace add flexdinesh/servediff
-codex plugin add servediff@servediff
+codex plugin marketplace add flexdinesh/diffx
+codex plugin add diffx@diffx
 ```
 
 Configure a remote server and token first. Plugins are remote-only.
@@ -114,28 +114,28 @@ new session associations are submitted. Unchanged uploads are skipped, overlappi
 coalesce, and failures stay outside the agent conversation. See
 [plugin setup](docs/plugins.md) for native installation on all hosts,
 configuration and removal. Plugins are ready to install from the repository;
-the servediff executable is installed separately and must be available to the
-harness through PATH or `SERVEDIFF_BINARY`.
+the diffx executable is installed separately and must be available to the
+harness through PATH or `DIFFX_BINARY`.
 
 Inspect collection/delivery activity and retry waiting payloads:
 
 ```sh
-servediff collector status
-servediff collector retry
-tail -n 50 ~/.local/state/servediff/hooks/hooks.log
-servediff sync --branch feature --base main --no-browser
+diffx collector status
+diffx collector retry
+tail -n 50 ~/.local/state/diffx/hooks-v4/hooks.log
+diffx sync --branch feature --base main --no-browser
 ```
 
 Manually schedule the same detached collection used by harness plugins:
 
 ```sh
-servediff hook --harness codex --path /path/to/repo
+diffx hook --harness codex --path /path/to/repo
 ```
 
 To collect synchronously with harness metadata:
 
 ```sh
-servediff sync --trigger agent-hook --harness codex --run-id run-123 --session-name 'Feature work' --no-browser
+diffx sync --trigger agent-hook --harness codex --run-id run-123 --session-name 'Feature work' --no-browser
 ```
 
 Use `--source-id` to supply a stable source/container identity. Hostnames,
@@ -150,13 +150,13 @@ Build and run the Docker server (deploy behind HTTPS):
 
 ```sh
 mise run docker:build
-docker run --name servediff-server -p 127.0.0.1:7981:7981 \
-  --mount source=servediff-data,target=/data servediff-server:local
+docker run --name diffx-server -p 127.0.0.1:7981:7981 \
+  --mount source=diffx-data,target=/data diffx-server:local
 ```
 
 The volume contains observations, jobs, credentials and configuration. First
 startup writes the admin token to `/data/state.db.admin-token`; copy it with
-`docker cp servediff-server:/data/state.db.admin-token ./admin-token`.
+`docker cp diffx-server:/data/state.db.admin-token ./admin-token`.
 The image runs without Git or a repository mount, as an unprivileged user.
 SIGTERM drains HTTP and stops the worker; durable unfinished jobs recover after
 their leases expire. Back up the database while stopped.
@@ -164,8 +164,8 @@ their leases expire. Back up the database while stopped.
 Build/install the remote server with Go:
 
 ```sh
-go install github.com/flexdinesh/servediff/cmd/servediff-server@main
-servediff-server --listen 0.0.0.0:7981 --state /data/state.db
+go install github.com/flexdinesh/diffx/cmd/diffx-server@main
+diffx-server --listen 0.0.0.0:7981 --state /data/state.db
 ```
 
 First startup creates `admin` with a generated token saved privately at
@@ -176,18 +176,18 @@ users share one SQLite database; credentials select and isolate each user's data
 The database stores credential hashes. To add a user, stop the server, run:
 
 ```sh
-servediff-server user create --name alice --state /data/state.db
+diffx-server user create --name alice --state /data/state.db
 ```
 
-Save the printed token, then restart the server. `--account` and `SERVEDIFF_TOKEN`
+Save the printed token, then restart the server. `--account` and `DIFFX_TOKEN`
 can supply initial bootstrap credentials; existing credentials are never replaced.
 Use `--retention-days 14` or config/environment to change server retention.
 
-Collectors select that destination with config `server`, `SERVEDIFF_SERVER_URL`
-or `--server`, and authenticate with config `token`, `SERVEDIFF_TOKEN` or `--token`:
+Collectors select that destination with config `server`, `DIFFX_SERVER_URL`
+or `--server`, and authenticate with config `token`, `DIFFX_TOKEN` or `--token`:
 
 ```sh
-servediff sync --server https://reviews.example.com
+diffx sync --server https://reviews.example.com
 ```
 
 Remote submission does not start a local server. The remote server needs no Git
@@ -213,13 +213,13 @@ stored in SQLite. Display preferences remain in the browser.
 Review a fixed patch in a foreground local process:
 
 ```sh
-git diff | servediff
-git show | servediff
-servediff < saved.patch
+git diff | diffx
+git show | diffx
+diffx < saved.patch
 ```
 
 The process serves the UI, REST and MCP until Ctrl-C, without watching a checkout.
-Piped diffs ignore remote configuration. `servediff -` explicitly selects stdin;
+Piped diffs ignore remote configuration. `diffx -` explicitly selects stdin;
 combining redirected stdin with a path argument or `--path` is rejected.
 Collection does not inspect Git or attach repository identity.
 Piped diffs have only the all scope and do not
@@ -234,11 +234,11 @@ validates and atomically commits an observation; acknowledgement means commit,
 not collection scheduled. Replaying the same source/submission identity and
 payload returns its original receipt. Reusing it with different payload fails.
 Hooks persist bounded immutable payloads before delivery and retry after later
-triggers or `servediff collector retry`. Their pending-data retention remains
+triggers or `diffx collector retry`. Their pending-data retention remains
 seven days independently of server retention. Manual commands always submit and
 report failures directly.
 
-Collectors and servers require ingestion protocol 3; upgrade them together.
+Collectors and servers require ingestion protocol 4; upgrade them together.
 Public v1 routes and synchronous ingestion are removed.
 
 `/api/v2/contexts` lists stored observations with `q`, `repository`, `branch`,
@@ -254,8 +254,8 @@ printed `/mcp/contexts/{id}` URL; see
 [docs/mcp.md](docs/mcp.md). A compatible browser can expose the same tools through
 WebMCP while the page is open; see [docs/webmcp.md](docs/webmcp.md).
 
-Local data lives in `$XDG_STATE_HOME/servediff/state.db`, or
-`~/.local/state/servediff/state.db`. `--state memory` disables persistence.
+Local data lives in `$XDG_STATE_HOME/diffx/state.db`, or
+`~/.local/state/diffx/state.db`. `--state memory` disables persistence.
 Schema 9 intentionally resets older versioned databases on first open. Current
 state persists across restarts; newer or unrecognized databases are refused.
 Legacy commands and pending producer payloads are retired.

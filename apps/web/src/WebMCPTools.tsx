@@ -1,4 +1,4 @@
-import { api, errorDetail } from "@servediff/api";
+import { api, errorDetail } from "@diffx/api";
 import { useEffect, useMemo } from "react";
 import { useReviewState } from "./app-state.tsx";
 import { capabilityEnabled, useSession } from "./session-context.tsx";

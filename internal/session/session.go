@@ -3,7 +3,7 @@ package session
 import (
 	"crypto/rand"
 
-	"github.com/flexdinesh/servediff/internal/review"
+	"github.com/flexdinesh/diffx/internal/review"
 )
 
 type State string

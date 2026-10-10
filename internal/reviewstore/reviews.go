@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/review"
-	"github.com/flexdinesh/servediff/internal/reviewdata"
+	"github.com/flexdinesh/diffx/internal/review"
+	"github.com/flexdinesh/diffx/internal/reviewdata"
 )
 
 func (store *Store) reviewFor(transaction *sql.Tx, contextID string, mode review.DiffMode) (string, string, error) {

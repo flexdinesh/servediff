@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/flexdinesh/servediff/internal/review"
+	"github.com/flexdinesh/diffx/internal/review"
 )
 
 func comparisonRepository(t *testing.T) string {
@@ -185,12 +185,12 @@ func TestComparisonProcessFailuresAreNotUnavailable(t *testing.T) {
 case " $* " in
   *" rev-parse --verify "*) exit 7 ;;
 esac
-exec "$SERVEDIFF_TEST_REAL_GIT" "$@"
+exec "$DIFFX_TEST_REAL_GIT" "$@"
 `
 	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("SERVEDIFF_TEST_REAL_GIT", realGit)
+	t.Setenv("DIFFX_TEST_REAL_GIT", realGit)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	for _, base := range []string{"main", "auto"} {
 		if _, err := OpenComparison(t.Context(), root, base, "main"); err == nil || errors.Is(err, ErrComparisonUnavailable) {

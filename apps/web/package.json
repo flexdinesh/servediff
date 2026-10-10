@@ -1,5 +1,5 @@
 {
-  "name": "@servediff/web",
+  "name": "@diffx/web",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -14,10 +14,10 @@
   },
   "dependencies": {
     "@base-ui/react": "catalog:",
+    "@diffx/api": "workspace:*",
+    "@diffx/shared": "workspace:*",
     "@fontsource-variable/jetbrains-mono": "5.3.0",
     "@pierre/diffs": "catalog:",
-    "@servediff/api": "workspace:*",
-    "@servediff/shared": "workspace:*",
     "class-variance-authority": "catalog:",
     "cn": "catalog:",
     "lucide-react": "catalog:",

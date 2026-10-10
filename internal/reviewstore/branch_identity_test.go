@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/ingestion"
 )
 
 func branchIdentityRequest(submission, label, id, content string, collected int64) ingestion.Request {

@@ -84,7 +84,7 @@ jobs:
             --version "${{ steps.version.outputs.number }}" \
             --tag "${{ steps.version.outputs.tag }}" \
             --checksums dist/checksums.txt \
-            --output homebrew-tap/Formula/servediff.rb
+            --output homebrew-tap/Formula/diffx.rb
 
       - name: Validate Homebrew formula syntax
         run: mise run release:homebrew:check

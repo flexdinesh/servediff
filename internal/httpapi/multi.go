@@ -8,14 +8,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/flexdinesh/servediff/internal/contextservice"
-	"github.com/flexdinesh/servediff/internal/ingestion"
-	"github.com/flexdinesh/servediff/internal/processmetrics"
-	"github.com/flexdinesh/servediff/internal/review"
-	"github.com/flexdinesh/servediff/internal/reviewdata"
-	"github.com/flexdinesh/servediff/internal/reviewservice"
-	"github.com/flexdinesh/servediff/internal/session"
-	contract "github.com/flexdinesh/servediff/packages/api"
+	"github.com/flexdinesh/diffx/internal/contextservice"
+	"github.com/flexdinesh/diffx/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/processmetrics"
+	"github.com/flexdinesh/diffx/internal/review"
+	"github.com/flexdinesh/diffx/internal/reviewdata"
+	"github.com/flexdinesh/diffx/internal/reviewservice"
+	"github.com/flexdinesh/diffx/internal/session"
+	contract "github.com/flexdinesh/diffx/packages/api"
 )
 
 // Provider resolves persistent identities into request-local source bindings.

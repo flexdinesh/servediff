@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/review"
+	"github.com/flexdinesh/diffx/internal/review"
 )
 
 func testGit(t *testing.T, root string, arguments ...string) string {
@@ -25,8 +25,8 @@ func testGit(t *testing.T, root string, arguments ...string) string {
 func TestRepositoryIdentityGroupsWorktrees(t *testing.T) {
 	root := t.TempDir()
 	testGit(t, root, "init", "-q")
-	testGit(t, root, "config", "user.email", "servediff@example.com")
-	testGit(t, root, "config", "user.name", "servediff")
+	testGit(t, root, "config", "user.email", "diffx@example.com")
+	testGit(t, root, "config", "user.name", "diffx")
 	if err := os.WriteFile(filepath.Join(root, "value.txt"), []byte("base\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -50,8 +50,8 @@ func TestRepositoryIdentityGroupsWorktrees(t *testing.T) {
 func TestRepositoryFingerprintDetectsSameSizeEditWithRestoredMtime(t *testing.T) {
 	root := t.TempDir()
 	testGit(t, root, "init", "-q")
-	testGit(t, root, "config", "user.email", "servediff@example.com")
-	testGit(t, root, "config", "user.name", "servediff")
+	testGit(t, root, "config", "user.email", "diffx@example.com")
+	testGit(t, root, "config", "user.name", "diffx")
 	path := filepath.Join(root, "value.txt")
 	if err := os.WriteFile(path, []byte("base\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -92,8 +92,8 @@ func TestRepositoryFingerprintDetectsSameSizeEditWithRestoredMtime(t *testing.T)
 func TestRepositorySeparatesDiffScopes(t *testing.T) {
 	root := t.TempDir()
 	testGit(t, root, "init", "-q")
-	testGit(t, root, "config", "user.email", "servediff@example.com")
-	testGit(t, root, "config", "user.name", "servediff")
+	testGit(t, root, "config", "user.email", "diffx@example.com")
+	testGit(t, root, "config", "user.name", "diffx")
 	path := filepath.Join(root, "value.txt")
 	if err := os.WriteFile(path, []byte("one\n"), 0o600); err != nil {
 		t.Fatal(err)

@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/diffsource"
-	"github.com/flexdinesh/servediff/internal/ingestion"
-	"github.com/flexdinesh/servediff/internal/review"
+	"github.com/flexdinesh/diffx/internal/diffsource"
+	"github.com/flexdinesh/diffx/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/review"
 	"github.com/google/uuid"
 )
 
@@ -404,16 +404,16 @@ func isChanged(err error) bool {
 }
 
 // SourceID identifies this installation independently of its hostname/path.
-// Ephemeral environments can provide SERVEDIFF_SOURCE_ID explicitly.
+// Ephemeral environments can provide DIFFX_SOURCE_ID explicitly.
 func SourceID() (string, error) {
-	if id := strings.TrimSpace(os.Getenv("SERVEDIFF_SOURCE_ID")); id != "" {
+	if id := strings.TrimSpace(os.Getenv("DIFFX_SOURCE_ID")); id != "" {
 		return id, nil
 	}
 	config, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
-	directory := filepath.Join(config, "servediff")
+	directory := filepath.Join(config, "diffx")
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return "", err
 	}

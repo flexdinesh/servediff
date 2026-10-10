@@ -1,4 +1,4 @@
-import type { ChangedFile } from "@servediff/shared";
+import type { ChangedFile } from "@diffx/shared";
 
 export type FileKind =
   | "typescript"

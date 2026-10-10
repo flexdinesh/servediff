@@ -1,5 +1,5 @@
-import type { ApiContext } from "@servediff/api";
-import type { DiffMode } from "@servediff/shared";
+import type { ApiContext } from "@diffx/api";
+import type { DiffMode } from "@diffx/shared";
 import { contextIsPiped } from "./project-picker.ts";
 
 export function diffComparison(
@@ -17,7 +17,7 @@ export function diffComparison(
     return {
       summary: "Command output · fixed snapshot",
       description:
-        "The supplied patch is shown as captured. No Git comparison was calculated by servediff.",
+        "The supplied patch is shown as captured. No Git comparison was calculated by diffx.",
       details,
     };
   }

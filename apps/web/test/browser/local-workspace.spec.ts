@@ -1,10 +1,6 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
-import type { ApiContext, ApiRepositoryDiff } from "@servediff/api";
-import {
-  isDiffMode,
-  type DiffMode,
-  type ReviewComment,
-} from "@servediff/shared";
+import type { ApiContext, ApiRepositoryDiff } from "@diffx/api";
+import { isDiffMode, type DiffMode, type ReviewComment } from "@diffx/shared";
 
 async function localWorkspace(page: Page) {
   await page.route("**/api/v2/metrics", (route) =>
@@ -821,7 +817,7 @@ test("empty service explains local review and remote sync", async ({
   ).toBeVisible();
   await expect(
     page.getByText(
-      "Run servediff to review a checkout, or servediff sync to publish remotely.",
+      "Run diffx to review a checkout, or diffx sync to publish remotely.",
     ),
   ).toBeVisible();
 });
@@ -901,7 +897,7 @@ test("Piped history ignores repository filters and switches timestamp rows by ke
   await expect(trigger).toContainText("Piped");
   await expect(trigger).not.toContainText("Invoking project");
   await expect(trigger.locator(".context-switcher-worktree")).toHaveCount(0);
-  await expect(page).toHaveTitle("servediff · Piped");
+  await expect(page).toHaveTitle("diffx · Piped");
   await trigger.click();
   await page.keyboard.press("Enter");
   await expect(

@@ -59,8 +59,8 @@ export function Header() {
           <PanelLeftOpenIcon className="size-(--icon-lg)" />
         )}
       </Button>
-      <a className="brand" href="/" aria-label="servediff home">
-        servediff
+      <a className="brand" href="/" aria-label="diffx home">
+        diffx
       </a>
       <Separator className="header-divider" orientation="vertical" />
       <ContextSwitcher />

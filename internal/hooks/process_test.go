@@ -10,7 +10,7 @@ import (
 
 func TestMain(tests *testing.M) {
 	if len(os.Args) > 1 && os.Args[1] == "__hook-worker" {
-		marker := os.Getenv("SERVEDIFF_TEST_HOOK_MARKER")
+		marker := os.Getenv("DIFFX_TEST_HOOK_MARKER")
 		if marker == "" {
 			os.Exit(2)
 		}
@@ -37,7 +37,7 @@ func TestDetachedWorkerReturnsBeforeFinishing(t *testing.T) {
 	}
 	directory := t.TempDir()
 	marker := filepath.Join(directory, "done")
-	t.Setenv("SERVEDIFF_TEST_HOOK_MARKER", marker)
+	t.Setenv("DIFFX_TEST_HOOK_MARKER", marker)
 	if err := LaunchDetached(executable, directory, key("checkout")); err != nil {
 		t.Fatal(err)
 	}

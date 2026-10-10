@@ -5,7 +5,7 @@ import { defineConfig, type ProxyOptions } from "vite";
 import { startFixtureServer } from "./test/fixture-server.ts";
 
 export default defineConfig(async ({ command }) => {
-  const configuredApiUrl = process.env.SERVEDIFF_API_URL;
+  const configuredApiUrl = process.env.DIFFX_API_URL;
   const fixture =
     command === "serve" && !configuredApiUrl
       ? await startFixtureServer()

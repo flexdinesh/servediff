@@ -9,7 +9,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/flexdinesh/servediff/internal/review"
+	"github.com/flexdinesh/diffx/internal/review"
 )
 
 const (
@@ -91,7 +91,7 @@ func OpenPatch(input string) (Source, error) {
 		}
 	}
 	if len(files) == 0 && strings.TrimSpace(data) != "" && !commitBoundary.MatchString(data) {
-		return nil, Error(400, "No Git patch found on stdin. Pipe git diff or git show output into servediff.")
+		return nil, Error(400, "No Git patch found on stdin. Pipe git diff or git show output into diffx.")
 	}
 	return &patchSource{
 		root: root,

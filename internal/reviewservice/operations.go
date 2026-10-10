@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/review"
-	"github.com/flexdinesh/servediff/internal/reviewdata"
-	"github.com/flexdinesh/servediff/internal/session"
+	"github.com/flexdinesh/diffx/internal/review"
+	"github.com/flexdinesh/diffx/internal/reviewdata"
+	"github.com/flexdinesh/diffx/internal/session"
 )
 
 type MutationStore interface {

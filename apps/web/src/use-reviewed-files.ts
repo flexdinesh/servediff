@@ -1,5 +1,5 @@
-import { api, errorDetail } from "@servediff/api";
-import type { ChangedFile, DiffMode, RepositoryDiff } from "@servediff/shared";
+import { api, errorDetail } from "@diffx/api";
+import type { ChangedFile, DiffMode, RepositoryDiff } from "@diffx/shared";
 import {
   useCallback,
   useEffect,

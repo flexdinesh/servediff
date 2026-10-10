@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/contextservice"
+	"github.com/flexdinesh/diffx/internal/contextservice"
 )
 
 const serverPatch = "diff --git a/value.txt b/value.txt\n--- a/value.txt\n+++ b/value.txt\n@@ -1 +1 @@\n-old\n+new\n"

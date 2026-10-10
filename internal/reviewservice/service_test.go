@@ -6,9 +6,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/flexdinesh/servediff/internal/diffsource"
-	"github.com/flexdinesh/servediff/internal/review"
-	"github.com/flexdinesh/servediff/internal/session"
+	"github.com/flexdinesh/diffx/internal/diffsource"
+	"github.com/flexdinesh/diffx/internal/review"
+	"github.com/flexdinesh/diffx/internal/session"
 )
 
 type sourceStub struct {

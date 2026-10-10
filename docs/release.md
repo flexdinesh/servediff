@@ -16,8 +16,8 @@ is installed only by `mise run release:publish`.
 Install the latest stable release or a specific version:
 
 ```sh
-go install github.com/flexdinesh/servediff/cmd/servediff@latest
-go install github.com/flexdinesh/servediff/cmd/servediff@v0.1.1
+go install github.com/flexdinesh/diffx/cmd/diffx@latest
+go install github.com/flexdinesh/diffx/cmd/diffx@v0.2.0
 ```
 
 Required repository secret:
@@ -29,7 +29,7 @@ Required repository secret:
 2. Run the **Release** workflow with `main` selected. It requires no inputs.
 3. The workflow verifies the repository, creates the tag, and publishes the
    GitHub Release with GoReleaser.
-4. It generates `Formula/servediff.rb` and opens or updates a pull request in
+4. It generates `Formula/diffx.rb` and opens or updates a pull request in
    `flexdinesh/homebrew-tap`.
 5. Merge the tap pull request after its Homebrew checks pass.
 
@@ -41,9 +41,9 @@ runtime.
 Stop running binaries before upgrading. Schema 9 intentionally resets older
 versioned databases on first open; current state survives subsequent starts.
 Future or unrecognized schemas are refused. Upgrade server and collectors
-together for ingestion protocol 3. In-memory state lasts only for one process.
+together for ingestion protocol 4. In-memory state lasts only for one process.
 
-The tap branch is deterministic per version, such as `servediff-v0.1.0`.
+The tap branch is deterministic per version, such as `diffx-v0.2.0`.
 Rerunning a release whose tag still points to current `main` reuses the existing
 GitHub artifacts and updates the same tap pull request. Published artifacts are
 not rebuilt or replaced.
@@ -56,7 +56,7 @@ checks before merge.
 Install the latest code directly from `main`, including unreleased changes:
 
 ```sh
-go install github.com/flexdinesh/servediff/cmd/servediff@main
+go install github.com/flexdinesh/diffx/cmd/diffx@main
 ```
 
 No publishing workflow or release tag is required. Stable `@latest` installs
@@ -67,20 +67,20 @@ refresh is needed.
 
 ## Version series
 
-`.release-version` contains the active `major.minor` release series. It starts
-at `0.1`, so the first release is `v0.1.0`; later releases automatically select
-`v0.1.1`, `v0.1.2`, and so on. A rerun from the same commit reuses its existing
+`.release-version` contains the active `major.minor` release series. It is
+`0.2`, so the first release is `v0.2.0`; later releases automatically select
+`v0.2.1`, `v0.2.2`, and so on. A rerun from the same commit reuses its existing
 tag and release.
 
 To begin a new minor or major series, change `.release-version` in the repo. For
-example, changing it to `0.2` makes the next release `v0.2.0`; changing it to
+example, changing it to `0.3` makes the next release `v0.3.0`; changing it to
 `1.0` makes the next release `v1.0.0`. Later releases continue incrementing that
 series' patch number.
 
 ## Embedded assets
 
 Release-ready frontend assets are committed under `internal/webui/dist` so
-`go install github.com/flexdinesh/servediff/cmd/servediff@latest` produces a
+`go install github.com/flexdinesh/diffx/cmd/diffx@latest` produces a
 complete binary. CI rebuilds these assets and rejects drift. Frontend changes
 must include the regenerated assets:
 

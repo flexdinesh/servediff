@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: servediff API
+  title: diffx API
   version: 1.0.0
   description: Push-only diff ingestion and review API, shared by local and remote servers.
 servers:
@@ -38,7 +38,7 @@ paths:
       security:
         - bearerAuth: []
       parameters:
-        - name: X-Servediff-State
+        - name: X-Diffx-State
           in: header
           schema:
             type: string
@@ -73,7 +73,7 @@ paths:
           required: true
           schema:
             type: string
-        - name: X-Servediff-State
+        - name: X-Diffx-State
           in: header
           schema:
             type: string
@@ -193,7 +193,7 @@ paths:
       operationId: getServerMetricsV2
       responses:
         "200":
-          description: CPU and resident memory used by the ServeDiff server process.
+          description: CPU and resident memory used by the Diffx server process.
           content:
             application/json:
               schema:
@@ -782,7 +782,7 @@ components:
       properties:
         protocolVersion:
           type: integer
-          enum: [3]
+          enum: [4]
           description: Current producers send 2. Legacy version 1 remains accepted for ingestion and replay.
         submissionId:
           type: string

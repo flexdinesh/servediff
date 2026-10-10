@@ -1,4 +1,4 @@
-import { isDiffMode } from "@servediff/shared";
+import { isDiffMode } from "@diffx/shared";
 import {
   ChevronsDownUpIcon,
   ChevronsUpDownIcon,

@@ -1,7 +1,7 @@
 // Package controlapi implements the private, authenticated CLI-to-daemon API.
 package controlapi
 
-import "github.com/flexdinesh/servediff/internal/config"
+import "github.com/flexdinesh/diffx/internal/config"
 
 const ProtocolVersion = 5
 

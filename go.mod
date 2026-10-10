@@ -1,4 +1,4 @@
-module github.com/flexdinesh/servediff
+module github.com/flexdinesh/diffx
 
 go 1.25.0
 

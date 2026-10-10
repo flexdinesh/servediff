@@ -1,4 +1,5 @@
 version: 2
+project_name: diffx
 
 release:
   prerelease: false
@@ -10,30 +11,30 @@ before:
     - mise run web:stage
 
 builds:
-  - id: servediff
-    main: ./cmd/servediff
-    binary: servediff
+  - id: diffx
+    main: ./cmd/diffx
+    binary: diffx
     env:
       - CGO_ENABLED=0
     ldflags:
       - >-
         -s -w
-        -X github.com/flexdinesh/servediff/internal/version.Version={{.Version}}
-        -X github.com/flexdinesh/servediff/internal/version.Commit={{.Commit}}
-        -X github.com/flexdinesh/servediff/internal/version.Date={{.Date}}
+        -X github.com/flexdinesh/diffx/internal/version.Version={{.Version}}
+        -X github.com/flexdinesh/diffx/internal/version.Commit={{.Commit}}
+        -X github.com/flexdinesh/diffx/internal/version.Date={{.Date}}
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
-  - id: servediff-server
-    main: ./cmd/servediff-server
-    binary: servediff-server
+  - id: diffx-server
+    main: ./cmd/diffx-server
+    binary: diffx-server
     env:
       - CGO_ENABLED=0
     ldflags:
       - >-
         -s -w
-        -X github.com/flexdinesh/servediff/internal/version.Version={{.Version}}
-        -X github.com/flexdinesh/servediff/internal/version.Commit={{.Commit}}
-        -X github.com/flexdinesh/servediff/internal/version.Date={{.Date}}
+        -X github.com/flexdinesh/diffx/internal/version.Version={{.Version}}
+        -X github.com/flexdinesh/diffx/internal/version.Commit={{.Commit}}
+        -X github.com/flexdinesh/diffx/internal/version.Date={{.Date}}
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
 

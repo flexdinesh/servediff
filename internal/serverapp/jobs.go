@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/flexdinesh/servediff/internal/contextservice"
-	"github.com/flexdinesh/servediff/internal/ingestionqueue"
-	"github.com/flexdinesh/servediff/internal/reviewdata"
+	"github.com/flexdinesh/diffx/internal/contextservice"
+	"github.com/flexdinesh/diffx/internal/ingestionqueue"
+	"github.com/flexdinesh/diffx/internal/reviewdata"
 )
 
 func acceptJob(service *contextservice.Service, queue ingestionqueue.Queue, w http.ResponseWriter, r *http.Request) {
@@ -32,7 +32,7 @@ func getJob(service *contextservice.Service, queue ingestionqueue.Queue, w http.
 		problem(w, 405, "Method not allowed")
 		return
 	}
-	if expected := r.Header.Get("X-Servediff-State"); expected != "" && expected != service.UserID() {
+	if expected := r.Header.Get("X-Diffx-State"); expected != "" && expected != service.UserID() {
 		problem(w, 409, "Server database identity changed")
 		return
 	}

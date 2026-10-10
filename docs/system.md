@@ -1,6 +1,6 @@
 # System design
 
-servediff collects Git changes at the producer and pushes complete observations
+diffx collects Git changes at the producer and pushes complete observations
 to a server. The server validates and stores those observations, then serves
 them through REST, MCP and a web dashboard. Queries read stored state; they never
 ask a producer to inspect a checkout.
@@ -35,14 +35,14 @@ register paths for later server collection or maintain its own catalog.
 The application core has two compositions. See [architecture.md](architecture.md)
 for contracts, durability rules and migration details.
 
-`servediff [PATH]` is one foreground process: collect the selected checkout once,
+`diffx [PATH]` is one foreground process: collect the selected checkout once,
 ingest directly, and serve UI/REST/MCP. Omitted paths mean the current directory.
 The captured snapshot remains fixed after edits and branch switches.
 The home-directory database survives process termination. Only one local process
 owns it; another invocation prompts before authenticated graceful replacement.
 Noninteractive callers use `--replace`. There is no collector daemon.
 
-`servediff sync` collects the originating checkout and registered worktrees once,
+`diffx sync` collects the originating checkout and registered worktrees once,
 saves immutable pending payloads, and submits them over authenticated HTTP.
 The Docker server owns durable queue admission, the ingestion worker, shared
 application services and persistent storage. Sync waits for committed results.

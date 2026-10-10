@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/processlock"
-	"github.com/flexdinesh/servediff/internal/reviewdata"
+	"github.com/flexdinesh/diffx/internal/processlock"
+	"github.com/flexdinesh/diffx/internal/reviewdata"
 	_ "modernc.org/sqlite"
 )
 
@@ -41,7 +41,7 @@ func DefaultPath() (string, error) {
 		}
 		state = filepath.Join(home, ".local", "state")
 	}
-	return filepath.Join(state, "servediff", "state.db"), nil
+	return filepath.Join(state, "diffx", "state.db"), nil
 }
 
 func newID() (string, error) {
@@ -140,7 +140,7 @@ func validateStateFile(path string) error {
 	if count == 0 || string(header) == "SQLite format 3\x00" {
 		return nil
 	}
-	return errors.New("unrecognized or unsupported servediff state file; existing data preserved")
+	return errors.New("unrecognized or unsupported diffx state file; existing data preserved")
 }
 
 func (store *Store) initialize() error {
@@ -149,7 +149,7 @@ func (store *Store) initialize() error {
 		return err
 	}
 	if version > schemaVersion {
-		return fmt.Errorf("servediff state schema %d is newer than supported schema %d", version, schemaVersion)
+		return fmt.Errorf("diffx state schema %d is newer than supported schema %d", version, schemaVersion)
 	}
 	if _, err := store.db.Exec("PRAGMA foreign_keys=OFF"); err != nil {
 		return err

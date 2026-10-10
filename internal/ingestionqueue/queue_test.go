@@ -3,8 +3,8 @@ package ingestionqueue
 import (
 	"context"
 	"errors"
-	"github.com/flexdinesh/servediff/internal/ingestion"
-	"github.com/flexdinesh/servediff/internal/review"
+	"github.com/flexdinesh/diffx/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/review"
 	"testing"
 	"time"
 )

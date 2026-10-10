@@ -1,6 +1,6 @@
 # Development
 
-servediff is a Go server with a React/Vite web application embedded into the
+diffx is a Go server with a React/Vite web application embedded into the
 release binary. Node and pnpm are build and test dependencies only.
 
 ## Install development version
@@ -8,7 +8,7 @@ release binary. Node and pnpm are build and test dependencies only.
 Install the latest development changes from `main` with Go 1.25 or later:
 
 ```sh
-go install github.com/flexdinesh/servediff/cmd/servediff@main
+go install github.com/flexdinesh/diffx/cmd/diffx@main
 ```
 
 ## Requirements
@@ -41,7 +41,7 @@ List available tasks with `mise tasks`. Keep personal overrides in
 | Start a standalone Go fixture server with built web assets | `mise run dev:server`            |
 | Generate the TypeScript API types                          | `mise run generate`              |
 | Build the web application                                  | `mise run web:build`             |
-| Build the dependency-free CLI at `dist/servediff`          | `mise run build`                 |
+| Build the dependency-free CLI at `dist/diffx`              | `mise run build`                 |
 | Build and locally install the CLI                          | `mise run install`               |
 | Build agent plugin adapters                                | `mise run plugins:build`         |
 | Install Playwright Chromium                                | `pnpm test:browser:install`      |
@@ -58,7 +58,7 @@ List available tasks with `mise tasks`. Keep personal overrides in
 | Run all pre-push checks, including Go race tests           | `pnpm check:push`                |
 | Run lightweight CI checks                                  | `mise run check:ci`              |
 
-Set `SERVEDIFF_TEST_PORT` for a separate browser-test server (default 4173), e.g. `SERVEDIFF_TEST_PORT=4183 mise exec -- pnpm --filter @servediff/web test:browser`.
+Set `DIFFX_TEST_PORT` for a separate browser-test server (default 4173), e.g. `DIFFX_TEST_PORT=4183 mise exec -- pnpm --filter @diffx/web test:browser`.
 
 `mise run setup` enables the Husky `pre-push` hook. Every push runs
 `mise run check:push`: all repository suites, boundary contracts and Go race tests, then rejects
@@ -77,10 +77,9 @@ GitHub's `ci-required` ruleset requires the lightweight `checks` status on an
 up-to-date `main` change, including administrators; it is configured in GitHub,
 not by mise. PR evidence records full local validation.
 
-`mise run install` embeds the current web build and installs `servediff` into
+`mise run install` embeds the current web build and installs `diffx` into
 `$GOBIN`, or `$GOPATH/bin` when `GOBIN` is unset. Ensure that directory is on
-`PATH`. The task also removes obsolete pnpm-global Node shims created by older
-versions of the repository.
+`PATH`.
 
 The production web build is committed under `internal/webui/dist` so installs
 from tags and `main` contain the complete application. Run `mise run web:stage` and
@@ -103,8 +102,8 @@ not use personal lifecycle discovery. `sync` collects the originating checkout a
 worktrees against the default branch merge base, plus working changes. Use
 `--base HEAD` for working changes only, and `--branch` for explicit object-only
 recovery. `sync` submits to one configured destination and exits.
-Redirected stdin (`git diff | servediff`) starts a foreground local process with
-a fixed patch and ignores remote config. `servediff [PATH]` likewise collects
+Redirected stdin (`git diff | diffx`) starts a foreground local process with
+a fixed patch and ignores remote config. `diffx [PATH]` likewise collects
 once, defaults to the current directory, and opens a fixed checkout snapshot.
 Neither mode watches Git or automatically replaces the selected snapshot.
 A path argument or
@@ -112,8 +111,8 @@ A path argument or
 `CollectPatch` preserves the supplied patch without Git lookup;
 its absolute submission directory is provenance only, not repository identity.
 Use isolated
-runtime directories (`SERVEDIFF_RUNTIME_DIR`) and in-memory state for lifecycle tests; fixture processes
-must not register inputs in the personal service. `SERVEDIFF_EXIT_ON_STDIN_CLOSE`
+runtime directories (`DIFFX_RUNTIME_DIR`) and in-memory state for lifecycle tests; fixture processes
+must not register inputs in the personal service. `DIFFX_EXIT_ON_STDIN_CLOSE`
 is a foreground development-process lifecycle hook.
 
 Stop running processes before upgrading. Schema 9 resets older versioned
@@ -121,7 +120,7 @@ databases transactionally on first open. Current databases survive restart;
 in-memory state does not. Server `retentionDays` defaults to seven; fresh
 submissions apply the current setting, while exact retries preserve expiry.
 
-For isolated production-user tests, start `servediff-server` with a temporary
+For isolated production-user tests, start `diffx-server` with a temporary
 persistent database. Initial admin credentials live in `<database>.admin-token`;
 startup reports its path. Stop the server before `user create --name NAME --state
 DB`, save its printed token and restart. Users share one database, while credentials
@@ -131,7 +130,7 @@ scope REST, MCP and events. Do not provision against the running personal servic
 
 The production build generates API types, builds the web application, stages the
 Vite output under `internal/webui`, and embeds those assets into the Go binary.
-The resulting `dist/servediff` and `dist/servediff-server` executables have no
+The resulting `dist/diffx` and `dist/diffx-server` executables have no
 Node runtime dependency. Git is required only for producer-side checkout
 collection. Local/remote server queries read SQLite and never invoke Git.
 
@@ -201,7 +200,7 @@ across writes or owner disposal. Keep section-only state within its component.
 See [architecture.md](architecture.md) for repository boundaries and dependency
 rules.
 
-Shared producer orchestration in `cmd/servediff` resolves config → environment →
+Shared producer orchestration in `cmd/diffx` resolves config → environment →
 flags once, pins retries to destination/database identity and serves manual/hook
 delivery. Hooks use session-scoped acknowledgements plus server reconciliation;
 their private pending data retains a separate seven-day expiry. REST and MCP

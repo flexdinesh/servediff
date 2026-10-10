@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/processlock"
+	"github.com/flexdinesh/diffx/internal/processlock"
 )
 
 const startupCooldown = time.Minute

@@ -1,4 +1,4 @@
-import { api, errorDetail, type ApiContext } from "@servediff/api";
+import { api, errorDetail, type ApiContext } from "@diffx/api";
 import {
   createContext,
   type ReactNode,
@@ -252,8 +252,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       ) : (
         <>
           <header className="topbar">
-            <a className="brand" href="/" aria-label="servediff home">
-              servediff
+            <a className="brand" href="/" aria-label="diffx home">
+              diffx
             </a>
             <Separator className="header-divider" orientation="vertical" />
             <ContextSwitcher />
@@ -270,12 +270,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
                   ? "No changes to review"
                   : "No review contexts yet"
                 : state.status === "error" || catalogError
-                  ? "Cannot load servediff"
-                  : "Loading servediff"}
+                  ? "Cannot load diffx"
+                  : "Loading diffx"}
             </h1>
             <p>
               {empty
-                ? "Run servediff to review a checkout, or servediff sync to publish remotely."
+                ? "Run diffx to review a checkout, or diffx sync to publish remotely."
                 : state.status === "error"
                   ? state.detail
                   : catalogError || "Reading review context…"}

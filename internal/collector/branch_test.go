@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/flexdinesh/servediff/internal/diffsource"
-	"github.com/flexdinesh/servediff/internal/ingestion"
-	"github.com/flexdinesh/servediff/internal/review"
+	"github.com/flexdinesh/diffx/internal/diffsource"
+	"github.com/flexdinesh/diffx/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/review"
 )
 
 func branchOptions() Options { return Options{SourceID: "machine", Hostname: "host", Base: "auto"} }
@@ -213,20 +213,20 @@ func TestBranchCollectionRetriesWithFreshHeadAfterRefMoves(t *testing.T) {
 	script := `#!/bin/sh
 case " $* " in
   *" --numstat "*)
-    if [ ! -f "$SERVEDIFF_TEST_MOVED" ]; then
-      "$SERVEDIFF_TEST_REAL_GIT" update-ref refs/heads/feature "$SERVEDIFF_TEST_NEXT_HEAD" || exit 9
-      printf 'moved\n' > "$SERVEDIFF_TEST_MOVED"
+    if [ ! -f "$DIFFX_TEST_MOVED" ]; then
+      "$DIFFX_TEST_REAL_GIT" update-ref refs/heads/feature "$DIFFX_TEST_NEXT_HEAD" || exit 9
+      printf 'moved\n' > "$DIFFX_TEST_MOVED"
     fi
     ;;
 esac
-exec "$SERVEDIFF_TEST_REAL_GIT" "$@"
+exec "$DIFFX_TEST_REAL_GIT" "$@"
 `
 	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("SERVEDIFF_TEST_REAL_GIT", realGit)
-	t.Setenv("SERVEDIFF_TEST_MOVED", filepath.Join(bin, "moved"))
-	t.Setenv("SERVEDIFF_TEST_NEXT_HEAD", next)
+	t.Setenv("DIFFX_TEST_REAL_GIT", realGit)
+	t.Setenv("DIFFX_TEST_MOVED", filepath.Join(bin, "moved"))
+	t.Setenv("DIFFX_TEST_NEXT_HEAD", next)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	request, err := Collect(t.Context(), root, branchOptions())
 	if err != nil {

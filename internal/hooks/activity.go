@@ -10,7 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/flexdinesh/servediff/internal/processlock"
+	"github.com/flexdinesh/diffx/internal/processlock"
 )
 
 const maxActivityBytes = 4096
@@ -166,7 +166,7 @@ func boundedActivity(activity Activity) Activity {
 }
 
 func redactActivity(value string) string {
-	if token := os.Getenv("SERVEDIFF_TOKEN"); token != "" {
+	if token := os.Getenv("DIFFX_TOKEN"); token != "" {
 		value = strings.ReplaceAll(value, token, "[redacted]")
 	}
 	return activityURL.ReplaceAllStringFunc(value, func(value string) string {

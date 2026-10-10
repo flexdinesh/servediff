@@ -1,4 +1,4 @@
-import { api, type ApiServerMetrics } from "@servediff/api";
+import { api, type ApiServerMetrics } from "@diffx/api";
 import { useEffect, useState } from "react";
 import { formatBytes } from "./server-metrics.ts";
 
@@ -31,8 +31,8 @@ export function ServerMetrics() {
   const cpu = metrics ? `${metrics.cpuUsage.toFixed(1)}%` : "--%";
   const ram = metrics ? formatBytes(metrics.rssBytes) : "-- MB";
   const title = metrics
-    ? `ServeDiff server process\nResident RAM (RSS): ${ram}\nCPU usage: ${cpu}`
-    : "ServeDiff server process metrics";
+    ? `Diffx server process\nResident RAM (RSS): ${ram}\nCPU usage: ${cpu}`
+    : "Diffx server process metrics";
   return (
     <span id="server-metrics" className="server-metrics" title={title}>
       <span>

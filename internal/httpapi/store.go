@@ -1,5 +1,5 @@
 package httpapi
 
-import "github.com/flexdinesh/servediff/internal/reviewservice"
+import "github.com/flexdinesh/diffx/internal/reviewservice"
 
 type Store interface{ reviewservice.MutationStore }

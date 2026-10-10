@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/flexdinesh/servediff/internal/review"
+	"github.com/flexdinesh/diffx/internal/review"
 )
 
 func fixturePatch(t *testing.T) string {
@@ -27,7 +27,7 @@ func TestOpenPatchMatchesSharedFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snapshot.Revision != "25bec613f1ae9a88b5d5e29927eb9ca697a2a8c8ecdb42985feeee35e3483198" {
+	if snapshot.Revision != "edc8f25590b6a3a6ec6b1bbd5f9b2f94358e00c4638163be756a5cffad25a116" {
 		t.Fatalf("unexpected revision: %s", snapshot.Revision)
 	}
 	if len(snapshot.Files) != 12 {
