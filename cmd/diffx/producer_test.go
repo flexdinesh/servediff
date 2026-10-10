@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/flexdinesh/diffx/internal/contextservice"
@@ -53,10 +52,16 @@ func TestCollectorDestinationConfigAndExplicitLocalOverride(t *testing.T) {
 	}
 }
 
-func TestHookDiscoveryIgnoresNonGitAndObjectOnlyBranches(t *testing.T) {
+func TestHookDiscoverySelectsCheckoutAndIgnoresNonGitAndObjectOnlyBranches(t *testing.T) {
 	workspace := t.TempDir()
 	root := cliRepository(t)
 	producerGit(t, root, "branch", "unopened")
+	linked := filepath.Join(t.TempDir(), "linked")
+	producerGit(t, root, "worktree", "add", "-b", "other", linked)
+	subdir := filepath.Join(linked, "subdir")
+	if err := os.Mkdir(subdir, 0700); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("DIFFX_SOURCE_ID", "machine")
 	engine := newHookEngine(t.TempDir())
 	events, err := engine.Expand(t.Context(), hooks.Event{Path: workspace, InputPath: workspace, Agent: "codex", Base: "auto"})
@@ -66,6 +71,10 @@ func TestHookDiscoveryIgnoresNonGitAndObjectOnlyBranches(t *testing.T) {
 	events, err = engine.Expand(t.Context(), hooks.Event{Path: root, InputPath: root, Agent: "codex", Base: "auto"})
 	if err != nil || len(events) != 1 || events[0].Branch != "" {
 		t.Fatalf("registered checkouts: %#v %v", events, err)
+	}
+	events, err = engine.Expand(t.Context(), hooks.Event{Path: subdir, InputPath: subdir, Agent: "codex", Base: "auto"})
+	if err != nil || len(events) != 1 || events[0].Path != linked || events[0].InputPath != subdir || events[0].Identity == "" || !events[0].Resolved {
+		t.Fatalf("selected linked checkout: %#v %v", events, err)
 	}
 }
 
@@ -170,18 +179,18 @@ func TestRemoteFailureNeverStartsLocalService(t *testing.T) {
 	}
 }
 
-func TestUnavailableWorktreeNeverProducesFalseEmptyCapture(t *testing.T) {
+func TestUnavailableOtherWorktreeDoesNotAffectSelectedCheckout(t *testing.T) {
 	root := cliRepository(t)
 	linked := filepath.Join(t.TempDir(), "removed")
 	producerGit(t, root, "worktree", "add", "-b", "removed", linked)
 	if err := os.RemoveAll(linked); err != nil {
 		t.Fatal(err)
 	}
-	requests, err := collectSubmissions(t.Context(), options{directory: root, sourceID: "machine", trigger: "manual"})
-	if err == nil || !strings.Contains(err.Error(), "unavailable") {
-		t.Fatalf("missing worktree not reported: %v", err)
+	request, err := collectSubmission(t.Context(), options{directory: root, sourceID: "machine", trigger: "manual"})
+	if err != nil || request.Metadata.Root != root || len(request.Scopes[0].Snapshot.Files) == 0 {
+		t.Fatalf("selected checkout collection: %#v %v", request, err)
 	}
-	if len(requests) != 1 || requests[0].Metadata.Root != root || len(requests[0].Scopes[0].Snapshot.Files) == 0 {
-		t.Fatalf("false empty capture: %#v", requests)
+	if _, err := collectSubmission(t.Context(), options{directory: linked, sourceID: "machine", trigger: "manual"}); err == nil {
+		t.Fatal("missing selected checkout produced a capture")
 	}
 }

@@ -20,6 +20,15 @@ type Pending struct {
 	StateID string            `json:"stateId,omitempty"`
 }
 
+// Acknowledgement permits upload suppression only while its server context
+// remains current. Fingerprints are supplied by the collector composition.
+type Acknowledgement struct {
+	Fingerprint string    `json:"fingerprint"`
+	StateID     string    `json:"stateId"`
+	ContextID   string    `json:"contextId"`
+	At          time.Time `json:"at"`
+}
+
 type Outbox struct {
 	directory string
 	lock      *processlock.Lock
@@ -52,11 +61,54 @@ func (box *Outbox) path(id string) string {
 	return filepath.Join(box.directory, hex.EncodeToString(sum[:])+".json")
 }
 func (box *Outbox) Save(pending Pending) error {
-	raw, err := json.Marshal(pending)
+	return box.write(box.path(pending.Request.SubmissionID), pending)
+}
+
+func (box *Outbox) acknowledgementPath(request ingestion.Request) string {
+	metadata := request.Metadata
+	branch := metadata.BranchID
+	if branch == "" {
+		branch = metadata.Branch
+	}
+	data, _ := json.Marshal([]string{metadata.SourceID, metadata.RepositoryKey, metadata.CheckoutKey, branch, ingestion.ComparisonPolicy(metadata), metadata.Agent, metadata.RunID})
+	sum := sha256.Sum256(data)
+	return filepath.Join(box.directory, "acknowledgements", hex.EncodeToString(sum[:])+".json")
+}
+
+func (box *Outbox) Acknowledgement(request ingestion.Request) (Acknowledgement, error) {
+	raw, err := os.ReadFile(box.acknowledgementPath(request))
+	if errors.Is(err, os.ErrNotExist) {
+		return Acknowledgement{}, nil
+	}
+	if err != nil {
+		return Acknowledgement{}, err
+	}
+	var ack Acknowledgement
+	if err := json.Unmarshal(raw, &ack); err != nil {
+		return Acknowledgement{}, err
+	}
+	if time.Since(ack.At) >= 24*time.Hour {
+		return Acknowledgement{}, nil
+	}
+	return ack, nil
+}
+
+func (box *Outbox) Acknowledge(request ingestion.Request, fingerprint, stateID, contextID string) error {
+	if fingerprint == "" {
+		return nil
+	}
+	return box.write(box.acknowledgementPath(request), Acknowledgement{Fingerprint: fingerprint, StateID: stateID, ContextID: contextID, At: time.Now()})
+}
+
+func (box *Outbox) write(path string, value interface{}) error {
+	raw, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
-	file, err := os.CreateTemp(box.directory, ".pending-*")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+	file, err := os.CreateTemp(filepath.Dir(path), ".pending-*")
 	if err != nil {
 		return err
 	}
@@ -72,7 +124,7 @@ func (box *Outbox) Save(pending Pending) error {
 	if err := file.Close(); err != nil {
 		return err
 	}
-	return os.Rename(file.Name(), box.path(pending.Request.SubmissionID))
+	return os.Rename(file.Name(), path)
 }
 func (box *Outbox) Remove(id string) error { return os.Remove(box.path(id)) }
 func (box *Outbox) Pending() ([]Pending, error) {

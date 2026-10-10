@@ -42,11 +42,12 @@ The home-directory database survives process termination. Only one local process
 owns it; another invocation prompts before authenticated graceful replacement.
 Noninteractive callers use `--replace`. There is no collector daemon.
 
-`diffx sync` collects the originating checkout and registered worktrees once,
+`diffx sync` collects the selected checkout once,
 saves immutable pending payloads, and submits them over authenticated HTTP.
 The remote server binary owns durable queue admission, the ingestion worker, shared
 application services and persistent storage. Sync waits for committed results.
-Plugins schedule finite remote-only collector invocations with harness metadata.
+Plugins schedule finite remote-only collection of the triggering checkout with
+harness metadata.
 
 `diffx-server` runs directly or as the same binary inside a container. It resolves
 deployment config without reading or writing personal CLI settings. Container
@@ -63,8 +64,9 @@ and review operations. Their lifecycle and submission delivery differ.
 
 Collection resolves the baseline and all/staged/unstaged scopes together with
 full-content identity and bounded immutable previews. It never fetches refs.
-Local collection selects one checkout; remote sync discovers all registered
-worktrees. Explicit `--branch` recovery remains available for remote collection.
+Local, sync and hook collection select one checkout, resolving nested paths to
+its root. Other registered worktrees are not collected. Explicit `--branch`
+recovery remains available for remote collection.
 
 Local composition calls `contextservice.Ingest` directly. Remote collectors
 POST to `/api/v2/ingestion-jobs`, receiving 202 with a durable job/status URL.
@@ -188,6 +190,13 @@ eligible transport failure. It does not recollect the checkout during that
 retry. A lost response can mean the transaction committed; replay resolves that
 uncertainty without creating a second observation. Validation and conflicting
 requests fail explicitly rather than being retried as transport errors.
+
+Manual sync suppresses unchanged uploads only with an acknowledgement less than
+24 hours old, a matching complete fingerprint and session metadata, the same
+server database identity, and a still-current server context. Matching pending
+payloads reuse their original submission ID; stale saved collections require a
+fresh submission to advance the stream head. Expired or deleted contexts are
+recollected rather than suppressed.
 
 Hook workers persist bounded immutable pending payloads and acknowledgements.
 They retry after subsequent triggers or `collector retry`; no perpetual upload

@@ -100,8 +100,9 @@ mise run dev:server -- --no-browser
 ```
 
 `dev --fixture` collects its fixture before starting in the foreground and does
-not use personal lifecycle discovery. `sync` collects the originating checkout and all registered
-worktrees against the default branch merge base, plus working changes. Use
+not use personal lifecycle discovery. `sync` collects only the selected checkout
+against the default branch merge base, plus working changes. Hooks collect only
+the triggering checkout. Use
 `--base HEAD` for working changes only, and `--branch` for explicit object-only
 recovery. `sync` submits to one configured destination and exits.
 Redirected stdin (`git diff | diffx`) starts a foreground local process with

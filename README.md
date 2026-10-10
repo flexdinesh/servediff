@@ -65,8 +65,9 @@ diffx sync --debug
 diffx sync --retry
 ```
 
-Sync waits for all observations to commit. `--print` prints only the configured
-server URL on success; progress/errors use stderr. `--debug` uses one updating
+Sync collects only the selected checkout and waits for pending observations to
+commit. Unchanged uploads are skipped after server freshness checks. `--print`
+prints only the configured server URL on success; progress/errors use stderr. `--debug` uses one updating
 terminal line, or plain lines when redirected. Failed uploads remain private,
 immutable pending submissions; `sync --retry` recovers them without the checkout.
 Cancelling a wait does not cancel an accepted server job.
@@ -104,8 +105,8 @@ codex plugin add diffx@diffx
 ```
 
 Configure a remote server and token first. Plugins are remote-only.
-The plugin returns after scheduling; a detached Go worker collects the checkout
-and all registered worktrees using the same branch comparison as manual review.
+The plugin returns after scheduling; a detached Go worker collects only the
+triggering checkout using the same branch comparison as manual review.
 Non-Git directories are ignored. Child repositories and branches without live
 checkouts are excluded; use `sync --branch` for explicit object-only recovery.
 Persistent Git identities survive checkout moves and branch renames.

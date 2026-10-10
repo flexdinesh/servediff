@@ -2,7 +2,6 @@ package collector
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -124,7 +123,7 @@ func TestComparisonCanonicalRefsAndBaselineChanges(t *testing.T) {
 	}
 }
 
-func TestWorktreeDiscoveryOriginFirstWithoutWorkspaceOrBranchRecovery(t *testing.T) {
+func TestCheckoutDiscoverySelectsOnlyInputWithoutWorkspaceOrBranchRecovery(t *testing.T) {
 	root := branchRepository(t)
 	git(t, root, "branch", "recoverable")
 	linked := filepath.Join(t.TempDir(), "linked")
@@ -133,60 +132,25 @@ func TestWorktreeDiscoveryOriginFirstWithoutWorkspaceOrBranchRecovery(t *testing
 	if err := os.Mkdir(subdir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	result, err := DiscoverWorktrees(t.Context(), subdir, "machine", "")
-	if err != nil || len(result.Sources) != 2 || len(result.Diagnostics) != 0 {
-		t.Fatalf("registered worktrees: %+v %v", result, err)
+	result, err := DiscoverCheckout(t.Context(), subdir, "machine", "")
+	if err != nil || len(result.Sources) != 1 || len(result.Diagnostics) != 0 {
+		t.Fatalf("selected checkout: %+v %v", result, err)
 	}
-	if result.Sources[0].Path != linked || result.Sources[1].Path != root || result.Sources[0].Identity == result.Sources[1].Identity {
-		t.Fatalf("origin/worktree identities lost: %+v", result.Sources)
+	source := result.Sources[0]
+	if source.Path != linked || source.InputPath != subdir || source.Base != "auto" || source.Branch != "" || source.Identity == "" {
+		t.Fatalf("selected checkout lost identity or trigger: %+v", source)
 	}
-	for _, source := range result.Sources {
-		if source.InputPath != subdir || source.Base != "auto" || source.Branch != "" {
-			t.Fatalf("implicit branch recovery or lost trigger directory: %+v", source)
-		}
-	}
-	if result, err := DiscoverWorktrees(t.Context(), filepath.Dir(linked), "machine", "auto"); !errors.Is(err, diffsource.ErrNotRepository) || len(result.Sources) != 0 {
+	if result, err := DiscoverCheckout(t.Context(), filepath.Dir(linked), "machine", "auto"); !errors.Is(err, diffsource.ErrNotRepository) || len(result.Sources) != 0 {
 		t.Fatalf("non-Git workspace silently scanned: %+v %v", result, err)
 	}
-	git(t, root, "worktree", "remove", "--force", linked)
-	result, err = DiscoverWorktrees(t.Context(), root, "machine", "HEAD")
-	if err != nil || len(result.Sources) != 1 || result.Sources[0].Base != "HEAD" {
-		t.Fatalf("removed worktree recovered by default: %+v %v", result, err)
-	}
-}
-
-func TestWorktreeDiscoveryReportsUnavailableCheckout(t *testing.T) {
-	root := branchRepository(t)
-	linked := filepath.Join(t.TempDir(), "linked")
-	git(t, root, "worktree", "add", "-b", "other", linked)
 	if err := os.RemoveAll(linked); err != nil {
 		t.Fatal(err)
 	}
-	result, err := DiscoverWorktrees(t.Context(), root, "machine", "auto")
-	if err != nil || len(result.Sources) != 1 || len(result.Diagnostics) != 1 {
-		t.Fatalf("missing checkout needs diagnostic without false source: %+v %v", result, err)
+	result, err = DiscoverCheckout(t.Context(), root, "machine", "HEAD")
+	if err != nil || len(result.Sources) != 1 || len(result.Diagnostics) != 0 || result.Sources[0].Path != root || result.Sources[0].Base != "HEAD" {
+		t.Fatalf("unrelated missing checkout affected selection: %+v %v", result, err)
 	}
-}
-
-func TestWorktreeDiscoveryIncludesEveryRegisteredCheckout(t *testing.T) {
-	root := branchRepository(t)
-	worktrees := t.TempDir()
-	// The registered Git list is finite and must not inherit workspace scanning's
-	// unrelated safety bound. No checkout files are needed for discovery.
-	for index := 0; index < discoveryLimit; index++ {
-		linked := filepath.Join(worktrees, fmt.Sprintf("linked-%03d", index))
-		git(t, root, "worktree", "add", "--detach", "--no-checkout", linked)
-	}
-	result, err := DiscoverWorktrees(t.Context(), root, "machine", "auto")
-	if err != nil || len(result.Diagnostics) != 0 || len(result.Sources) != discoveryLimit+1 {
-		t.Fatalf("registered checkout list truncated: %d sources, diagnostics %v, err %v", len(result.Sources), result.Diagnostics, err)
-	}
-	if result.Sources[0].Path != root {
-		t.Fatalf("origin not first: %+v", result.Sources[0])
-	}
-	for _, source := range result.Sources {
-		if source.InputPath != root || source.Branch != "" {
-			t.Fatalf("registered checkout lost trigger directory: %+v", source)
-		}
+	if result, err := DiscoverCheckout(t.Context(), linked, "machine", "auto"); err == nil || len(result.Sources) != 0 {
+		t.Fatalf("unavailable selected checkout accepted: %+v %v", result, err)
 	}
 }
