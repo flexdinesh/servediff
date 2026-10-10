@@ -80,10 +80,12 @@ describe atomic application operations, not independently committed CRUD steps.
 
 `mise run test:contracts` runs production dependency checks, storage/lifecycle/
 queue/transport boundaries, frontend token guards, shared Go/TypeScript comment
-examples and real HTTP schema validation. CI, release verification and pre-push
-run these checks. CI also runs the web unit/browser and plugin/shared suites.
-`test:contracts:rules` reuses built binaries so the full check does not rebuild or
-repeat the distribution smoke test and JavaScript suites.
+examples and real HTTP schema validation. Local `mise run check` and pre-push
+run these checks alongside the web unit/browser and plugin/shared suites.
+`test:contracts:rules` reuses built binaries so the full local check does not
+rebuild or repeat the distribution smoke test and JavaScript suites. CI and
+release verification retain static checks, builds, generated-file consistency
+and the distribution API smoke test; full suites and guards stay local.
 
 `mise run check:boundaries` classifies every package under `cmd/` and `internal/`
 using `tools/check-boundaries`. Unclassified packages, forbidden dependencies and
@@ -105,7 +107,9 @@ intentional design changes. Change a boundary policy only for a concrete new
 responsibility, updating its rationale and tests in the same PR. Passing checks
 does not establish cohesive modules, correct DRY abstractions or visual quality;
 those remain review responsibilities. `main` requires the GitHub Actions `checks`
-status through the `ci-required` ruleset; local hooks alone are not a merge gate.
+status through the `ci-required` ruleset. That status covers lightweight CI;
+architecture/design guards and full-suite validation are enforced locally by
+pre-push and recorded in the PR evidence.
 
 ## Adapter and schema evolution
 

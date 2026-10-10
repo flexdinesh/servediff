@@ -467,7 +467,7 @@ Before adding a value or visual pattern:
 
 `mise run check:design` scans CSS, TypeScript and TSX under `apps/web/src`,
 including new nested files, static utilities, inline style objects, SVG colors
-and Pierre's `unsafeCSS`. CI, release verification and pre-push run the guard
+and Pierre's `unsafeCSS`. Local `mise run check` and pre-push run the guard
 and its contracts. It rejects literal palettes outside `tokens.css` definitions,
 independent typography, literal radii/elevation, and arbitrary padding/margin/gap
 lengths. Existing ordinary Tailwind numeric spacing utilities remain allowed;

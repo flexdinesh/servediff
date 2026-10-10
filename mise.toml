@@ -111,7 +111,7 @@ fi
 '''
 
 [tasks."check:ci"]
-description = "CI: static checks, build, generated drift, contracts, and JavaScript suites"
+description = "Lightweight CI: static checks, build, generated drift, API smoke test"
 run = [
   { tasks = [
     "check:static",
@@ -119,14 +119,18 @@ run = [
   ] },
   { task = "build" },
   { task = "check:generated" },
-  { task = "test:contracts:rules" },
   "pnpm test:conformance",
-  "pnpm test",
 ]
 
 [tasks.check]
 description = "Run all repository checks and test suites"
-run = [{ task = "check:ci" }, "pnpm test:release", { task = "test:go" }]
+run = [
+  { task = "check:ci" },
+  { task = "test:contracts:rules" },
+  "pnpm test",
+  "pnpm test:release",
+  { task = "test:go" },
+]
 
 [tasks."test:contracts"]
 description = "Build and run architecture, boundary, shared-rule and real HTTP contracts"

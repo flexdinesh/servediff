@@ -42,9 +42,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Install browser test dependencies
-        run: pnpm --filter @servediff/web exec playwright install --with-deps chromium
-
       - name: Select release version
         id: version
         env:

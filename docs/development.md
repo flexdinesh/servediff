@@ -56,7 +56,7 @@ List available tasks with `mise tasks`. Keep personal overrides in
 | Format supported files                                     | `pnpm format`                    |
 | Run every repository check                                 | `mise run check`                 |
 | Run all pre-push checks, including Go race tests           | `pnpm check:push`                |
-| Run CI checks and contract/browser suites                  | `mise run check:ci`              |
+| Run lightweight CI checks                                  | `mise run check:ci`              |
 
 Set `SERVEDIFF_TEST_PORT` for a separate browser-test server (default 4173), e.g. `SERVEDIFF_TEST_PORT=4183 mise exec -- pnpm --filter @servediff/web test:browser`.
 
@@ -68,13 +68,14 @@ The hook needs mise on `PATH`; mise activates project tools. Checks run on your
 local platform.
 
 Both CI and release verification run `mise run check:ci`: static checks, web and
-CLI builds, generated-file consistency, dependency/design guards, behavioral
-contracts, the distribution API smoke test, and JavaScript unit/browser suites.
-Workflows install Chromium and its system dependencies. `mise run check` adds
-release-tool and remaining Go tests; pre-push adds Go race tests. CI does not run
-a native OS test matrix. GitHub's `ci-required` ruleset requires the `checks`
-status on an up-to-date `main` change, including administrators; it is configured
-in GitHub, not by mise.
+CLI builds, generated-file consistency, and the distribution API smoke test.
+Local `mise run check` adds dependency/design guards, behavioral contracts,
+JavaScript unit/browser suites, release-tool tests and all Go tests; pre-push
+adds Go race tests. Keep these full suites and guards local. Chromium is installed
+by local setup, not CI/release workflows. CI does not run a native OS test matrix.
+GitHub's `ci-required` ruleset requires the lightweight `checks` status on an
+up-to-date `main` change, including administrators; it is configured in GitHub,
+not by mise. PR evidence records full local validation.
 
 `mise run install` embeds the current web build and installs `servediff` into
 `$GOBIN`, or `$GOPATH/bin` when `GOBIN` is unset. Ensure that directory is on
