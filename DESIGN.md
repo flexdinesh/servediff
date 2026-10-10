@@ -193,7 +193,9 @@ such detail into a token. New layout spacing must use the scale.
 
 - Use a full-width application shell, not a centered marketing container.
   The diff receives all width remaining after navigation.
-- Header: `--topbar-height` (56 desktop, 48 narrow). Toolbar and sidebar tabs: `--toolbar-height`
+- Header: `--topbar-height` (40 desktop, 48 narrow or coarse pointer). Keep
+  desktop controls at 32px, header icons at 16px, the divider at 16px, and group
+  spacing at 8px so the header recedes into the editor chrome. Toolbar and sidebar tabs: `--toolbar-height`
   (44) as the desktop baseline. The narrow toolbar matches the 48px page header;
   its icon buttons match the header theme button's 32px control height.
 - Header uses `--panel`, a quiet brand, and the review trigger as its primary
@@ -345,7 +347,7 @@ such detail into a token. New layout spacing must use the scale.
   branch, worktree, and directory identity.
   Use a search icon and shortcut hint, never a dropdown chevron. Click and
   Cmd/Ctrl+K open the same searchable “Switch review” dialog. Position it at
-  `--topbar-height` plus `--space-6` on desktop (80px default), `--space-4` on
+  `--topbar-height` plus `--space-6` on desktop (64px default), `--space-4` on
   mobile (16px default). Bound picker width to 35rem and viewport gutters. The
   picker owns focus and stays available during context errors.
 - Search leads the picker; keep “Switch review” as its screen-reader title.

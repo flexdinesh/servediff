@@ -62,7 +62,7 @@
   --control-small: 1.75rem;
   --control-large: 2.5rem;
   --touch-target: 2.75rem;
-  --topbar-height: 3.5rem;
+  --topbar-height: 2.5rem;
   --toolbar-height: 2.75rem;
   --statusbar-height: calc(
     var(--text-xs) * var(--leading-ui) + 2 * var(--space-2) + 1px
@@ -121,6 +121,10 @@
 @media (max-width: 767px) {
   :root {
     --page-gutter: var(--space-3);
+  }
+}
+@media (max-width: 767px), (pointer: coarse) {
+  :root {
     --topbar-height: 3rem;
   }
 }

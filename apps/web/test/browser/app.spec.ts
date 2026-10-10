@@ -1260,17 +1260,19 @@ test("header icons and sidebar tab indicator use design-system sizes", async ({
           (dividerBox.top + dividerBox.height / 2),
       ),
       dividerHeight: dividerBox.height,
+      headerHeight: topbarBox.height,
       accent,
     };
   });
 
   expect(styles).toMatchObject({
-    sidebar: "20px",
+    sidebar: "16px",
     refresh: "16px",
-    theme: "20px",
+    theme: "16px",
     tabBorderWidth: "1px",
     indicatorOpacity: "1",
-    dividerHeight: 24,
+    dividerHeight: 16,
+    headerHeight: 40,
   });
   expect(styles.branch).toBe(styles.viewOptions);
   expect(styles.dividerCenterOffset).toBeLessThanOrEqual(0.5);

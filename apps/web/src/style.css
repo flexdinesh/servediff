@@ -99,7 +99,7 @@ kbd {
 .topbar {
   height: var(--topbar-height);
   display: flex;
-  gap: var(--space-3);
+  gap: var(--space-2);
   align-items: center;
   border-bottom: 1px solid var(--border);
   background: var(--panel);
@@ -118,7 +118,7 @@ kbd {
 }
 .header-divider {
   width: 1px;
-  height: var(--space-6);
+  height: var(--space-4);
   align-self: center;
   background: var(--border);
   flex-shrink: 0;
@@ -126,10 +126,9 @@ kbd {
 .header-heading {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   flex: 1;
   min-width: 0;
-  margin-left: var(--space-2);
 }
 .header-heading h1 {
   flex-shrink: 0;
