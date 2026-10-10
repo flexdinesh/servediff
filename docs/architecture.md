@@ -42,6 +42,9 @@ personal lifecycle discovery.
 - `httpapi`, `mcpapi`: transport parsing, projection and error mapping.
 - `serverapp`: transport/task composition; `daemon`: local lifecycle;
   `remoteserver`: remote authentication and worker composition.
+- `config`, `processlock`, `browser`, `version`: configuration, process ownership,
+  browser launch and build metadata; `processmetrics`: server process metrics;
+  `webui`: embedded assets. `testsupport` is test-only.
 
 Interfaces live beside consumers and require the needed operation. Optional
 interface assertions must not change application behavior. Storage contracts
@@ -76,9 +79,35 @@ describe atomic application operations, not independently committed CRUD steps.
 ## Contracts and evolution
 
 `mise run test:contracts` runs production dependency checks, storage/lifecycle/
-queue/transport boundaries, shared Go/TypeScript comment examples and real HTTP
-schema validation. Run locally or wherever useful; pre-push invokes it.
-CI configuration does not enforce this suite.
+queue/transport boundaries, frontend token guards, shared Go/TypeScript comment
+examples and real HTTP schema validation. CI, release verification and pre-push
+run these checks. CI also runs the web unit/browser and plugin/shared suites.
+`test:contracts:rules` reuses built binaries so the full check does not rebuild or
+repeat the distribution smoke test and JavaScript suites.
+
+`mise run check:boundaries` classifies every package under `cmd/` and `internal/`
+using `tools/check-boundaries`. Unclassified packages, forbidden dependencies and
+production imports of `testsupport` fail. Process execution and SQL access stay
+with their explicit owners. The checker inspects production imports for the
+current build platform; tests may import adapters to exercise their contracts.
+
+## Making changes
+
+Before implementation, identify the behavior's owner, consuming contract and
+invariants from this document and [system.md](system.md). Put shared rules in
+their existing owner and compose delivery/lifecycle differences at entry points.
+For shared changes, verify both compositions through existing boundary tests;
+add a regression test when coverage is missing. Check semantic outcomes rather
+than private implementation shape.
+
+The PR template records ownership, contract/mode implications, validation and
+intentional design changes. Change a boundary policy only for a concrete new
+responsibility, updating its rationale and tests in the same PR. Passing checks
+does not establish cohesive modules, correct DRY abstractions or visual quality;
+those remain review responsibilities. `main` requires the GitHub Actions `checks`
+status through the `ci-required` ruleset; local hooks alone are not a merge gate.
+
+## Adapter and schema evolution
 
 New adapters must preserve ownership, atomic publication, retention, replay,
 lease fencing and commit-before-ack recovery. External brokers require atomic

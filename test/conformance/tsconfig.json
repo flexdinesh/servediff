@@ -3,5 +3,9 @@
   "compilerOptions": {
     "paths": { "@servediff/shared": ["../../packages/shared/src/index.ts"] }
   },
-  "include": ["server.test.ts", "../contracts/*.test.ts"]
+  "include": [
+    "server.test.ts",
+    "../contracts/*.test.ts",
+    "../../tools/check-design.ts"
+  ]
 }

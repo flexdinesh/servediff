@@ -28,4 +28,5 @@ jobs:
           key: ${{ runner.os }}-dependencies-${{ hashFiles('mise.toml', '.node-version', 'package.json', 'pnpm-lock.yaml', 'go.sum') }}
           restore-keys: ${{ runner.os }}-dependencies-
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @servediff/web exec playwright install --with-deps chromium
       - run: mise run check:ci

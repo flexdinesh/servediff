@@ -26,6 +26,7 @@
     "check": "mise run check"
   },
   "devDependencies": {
+    "@babel/parser": "^7.29.8",
     "@earendil-works/pi-coding-agent": "catalog:",
     "@opencode/plugin": "catalog:",
     "@types/node": "catalog:",

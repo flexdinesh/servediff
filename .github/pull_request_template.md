@@ -1,0 +1,5 @@
+- Behavior owner and resulting change:
+- Contracts/invariants affected; local/remote implications:
+- Validation results; remaining risks:
+- Intentional architecture/design changes and rationale (if any):
+- UI evidence: affected themes/layouts, keyboard use, Pierre geometry (if applicable):
