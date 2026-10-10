@@ -256,7 +256,7 @@ func newHookEngine(directory string) hooks.Engine {
 		if err != nil {
 			return nil, err
 		}
-		discovery, err := collector.DiscoverWorktrees(ctx, event.Path, sourceID, event.Base)
+		discovery, err := collector.DiscoverCheckout(ctx, event.Path, sourceID, event.Base)
 		if errors.Is(err, diffsource.ErrNotRepository) {
 			return nil, nil
 		}

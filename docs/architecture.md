@@ -19,6 +19,7 @@ canonical record of package boundaries and architectural decisions.
 Source support and review policy resolve snapshot capabilities. A mode never
 invents contents, scopes or refresh support. Queue presence at the composition
 root enables remote admission; no queue means no admission routes.
+Local, manual sync and hook producers collect only the selected checkout.
 Stored observations cannot refresh from Git.
 
 Private local control supports authenticated status/shutdown only. Replacement
