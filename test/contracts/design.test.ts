@@ -219,7 +219,7 @@ test("utility guards distinguish styling from displayed data and follow aliases"
 });
 
 test("new nested frontend files enter the check automatically", () => {
-  const directory = mkdtempSync(join(tmpdir(), "servediff-design-"));
+  const directory = mkdtempSync(join(tmpdir(), "diffx-design-"));
   try {
     mkdirSync(join(directory, "new"));
     writeFileSync(join(directory, "new", "control.css"), ".new { color: red }");

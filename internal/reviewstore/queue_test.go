@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/ingestion"
-	"github.com/flexdinesh/servediff/internal/ingestionqueue"
+	"github.com/flexdinesh/diffx/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/ingestionqueue"
 )
 
 func queuedRequest(id string) ingestion.Request {

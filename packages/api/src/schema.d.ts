@@ -442,7 +442,7 @@ export interface components {
        * @description Current producers send 2. Legacy version 1 remains accepted for ingestion and replay.
        * @enum {integer}
        */
-      protocolVersion: 3;
+      protocolVersion: 4;
       /** @description Retry identity. Reusing it with different content fails. */
       submissionId: string;
       /** @description Optional SHA256 of complete contents and staging state, independent of preview truncation and timestamps. Omit when complete identity cannot be proven. */
@@ -737,7 +737,7 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
-        "X-Servediff-State"?: string;
+        "X-Diffx-State"?: string;
       };
       path?: never;
       cookie?: never;
@@ -765,7 +765,7 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
-        "X-Servediff-State"?: string;
+        "X-Diffx-State"?: string;
       };
       path: {
         jobId: string;
@@ -896,7 +896,7 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description CPU and resident memory used by the ServeDiff server process. */
+      /** @description CPU and resident memory used by the Diffx server process. */
       200: {
         headers: {
           [name: string]: unknown;

@@ -125,10 +125,10 @@ importers:
       '@pierre/diffs':
         specifier: 'catalog:'
         version: 1.4.1(@shikijs/themes@4.4.3)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@servediff/api':
+      '@diffx/api':
         specifier: workspace:*
         version: link:../../packages/api
-      '@servediff/shared':
+      '@diffx/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       class-variance-authority:
@@ -213,7 +213,7 @@ importers:
       '@pierre/diffs':
         specifier: 'catalog:'
         version: 1.4.1(@shikijs/themes@4.4.3)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@servediff/api':
+      '@diffx/api':
         specifier: workspace:*
         version: link:../api
 

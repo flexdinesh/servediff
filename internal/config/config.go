@@ -13,8 +13,8 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/flexdinesh/servediff/internal/processlock"
-	"github.com/flexdinesh/servediff/internal/reviewstore"
+	"github.com/flexdinesh/diffx/internal/processlock"
+	"github.com/flexdinesh/diffx/internal/reviewstore"
 )
 
 type ServerSettings struct {
@@ -41,14 +41,14 @@ func Default() (Values, error) {
 }
 
 func Path() (string, error) {
-	if path := os.Getenv("SERVEDIFF_CONFIG_PATH"); path != "" {
+	if path := os.Getenv("DIFFX_CONFIG_PATH"); path != "" {
 		return filepath.Abs(path)
 	}
-	if runtime := os.Getenv("SERVEDIFF_RUNTIME_DIR"); runtime != "" {
+	if runtime := os.Getenv("DIFFX_RUNTIME_DIR"); runtime != "" {
 		return filepath.Abs(filepath.Join(runtime, "config.json"))
 	}
 	home, err := os.UserHomeDir()
-	return filepath.Join(home, ".config", "servediff", "config.json"), err
+	return filepath.Join(home, ".config", "diffx", "config.json"), err
 }
 
 // Load creates defaults once. The lock also serializes first-use and config edits.
@@ -88,27 +88,27 @@ func LoadFile(path string) (Values, error) {
 		name   string
 		target *string
 	}{
-		{"SERVEDIFF_HOST", &values.Host},
-		{"SERVEDIFF_STATE", &values.State},
-		{"SERVEDIFF_WEB_DIR", &values.WebDir},
-		{"SERVEDIFF_SERVER_URL", &values.Server},
-		{"SERVEDIFF_TOKEN", &values.Token},
+		{"DIFFX_HOST", &values.Host},
+		{"DIFFX_STATE", &values.State},
+		{"DIFFX_WEB_DIR", &values.WebDir},
+		{"DIFFX_SERVER_URL", &values.Server},
+		{"DIFFX_TOKEN", &values.Token},
 	} {
 		if value, exists := os.LookupEnv(field.name); exists {
 			*field.target = value
 		}
 	}
-	if raw, exists := os.LookupEnv("SERVEDIFF_PORT"); exists {
+	if raw, exists := os.LookupEnv("DIFFX_PORT"); exists {
 		port, err := strconv.Atoi(raw)
 		if err != nil {
-			return values, fmt.Errorf("invalid SERVEDIFF_PORT: %w", err)
+			return values, fmt.Errorf("invalid DIFFX_PORT: %w", err)
 		}
 		values.Port = &port
 	}
-	if raw, exists := os.LookupEnv("SERVEDIFF_RETENTION_DAYS"); exists {
+	if raw, exists := os.LookupEnv("DIFFX_RETENTION_DAYS"); exists {
 		days, err := strconv.Atoi(raw)
 		if err != nil {
-			return values, fmt.Errorf("invalid SERVEDIFF_RETENTION_DAYS: %w", err)
+			return values, fmt.Errorf("invalid DIFFX_RETENTION_DAYS: %w", err)
 		}
 		values.RetentionDays = days
 	}

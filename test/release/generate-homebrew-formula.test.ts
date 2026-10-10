@@ -24,7 +24,7 @@ test("generates a formula for every Homebrew target", async (t) => {
   await runGenerator(workspace);
 
   const formula = await readFile(workspace.outputPath, "utf8");
-  assert.match(formula, /class Servediff < Formula/);
+  assert.match(formula, /class Diffx < Formula/);
   assert.match(formula, /license "MIT"/);
   assert.doesNotMatch(formula, /^\s*version\s/m);
   for (const target of [
@@ -33,19 +33,16 @@ test("generates a formula for every Homebrew target", async (t) => {
     "linux_amd64",
     "linux_arm64",
   ]) {
-    assert.match(
-      formula,
-      new RegExp(`servediff_0\\.1\\.0_${target}\\.tar\\.gz`),
-    );
+    assert.match(formula, new RegExp(`diffx_0\\.1\\.0_${target}\\.tar\\.gz`));
   }
-  assert.match(formula, /bin\.install "servediff"/);
-  assert.match(formula, /assert_match "servediff #\{version\}"/);
+  assert.match(formula, /bin\.install "diffx"/);
+  assert.match(formula, /assert_match "diffx #\{version\}"/);
 });
 
 test("rejects malformed checksums", async (t) => {
   const workspace = await createWorkspace(t.after.bind(t));
   await writeChecksums(workspace.checksumsPath, [
-    "not-a-checksum servediff.tar.gz",
+    "not-a-checksum diffx.tar.gz",
   ]);
   await assert.rejects(runGenerator(workspace), /invalid checksum line/);
 });
@@ -79,20 +76,20 @@ test("generates valid Ruby", async (t) => {
 async function createWorkspace(
   registerCleanup: (cleanup: () => Promise<void>) => void,
 ): Promise<FormulaWorkspace> {
-  const directory = await mkdtemp(join(tmpdir(), "servediff-formula-"));
+  const directory = await mkdtemp(join(tmpdir(), "diffx-formula-"));
   registerCleanup(() => rm(directory, { recursive: true, force: true }));
   return {
     checksumsPath: join(directory, "checksums.txt"),
-    outputPath: join(directory, "servediff.rb"),
+    outputPath: join(directory, "diffx.rb"),
   };
 }
 
 function completeChecksums(): string[] {
   return [
-    `${"a".repeat(64)}  servediff_0.1.0_darwin_amd64.tar.gz`,
-    `${"b".repeat(64)}  servediff_0.1.0_darwin_arm64.tar.gz`,
-    `${"c".repeat(64)}  servediff_0.1.0_linux_amd64.tar.gz`,
-    `${"d".repeat(64)}  servediff_0.1.0_linux_arm64.tar.gz`,
+    `${"a".repeat(64)}  diffx_0.1.0_darwin_amd64.tar.gz`,
+    `${"b".repeat(64)}  diffx_0.1.0_darwin_arm64.tar.gz`,
+    `${"c".repeat(64)}  diffx_0.1.0_linux_amd64.tar.gz`,
+    `${"d".repeat(64)}  diffx_0.1.0_linux_arm64.tar.gz`,
   ];
 }
 

@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/diffsource"
-	"github.com/flexdinesh/servediff/internal/ingestion"
-	"github.com/flexdinesh/servediff/internal/review"
+	"github.com/flexdinesh/diffx/internal/diffsource"
+	"github.com/flexdinesh/diffx/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/review"
 )
 
 func git(t *testing.T, directory string, args ...string) string {
@@ -254,7 +254,7 @@ func TestCancellationStopsBothCollectionEntrypoints(t *testing.T) {
 
 func TestSourceIdentityPersistsAcrossConcurrentInvocations(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("SERVEDIFF_SOURCE_ID", "")
+	t.Setenv("DIFFX_SOURCE_ID", "")
 	var group sync.WaitGroup
 	ids := make(chan string, 8)
 	errors := make(chan error, 8)
@@ -282,7 +282,7 @@ func TestSourceIdentityPersistsAcrossConcurrentInvocations(t *testing.T) {
 			t.Fatalf("inconsistent IDs: %q and %q", id, expected)
 		}
 	}
-	t.Setenv("SERVEDIFF_SOURCE_ID", "explicit-container")
+	t.Setenv("DIFFX_SOURCE_ID", "explicit-container")
 	id, err := SourceID()
 	if err != nil || id != "explicit-container" {
 		t.Fatalf("explicit ID: %q %v", id, err)

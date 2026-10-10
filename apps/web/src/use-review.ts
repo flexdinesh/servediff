@@ -1,10 +1,6 @@
 import type { FileDiffMetadata, SelectedLineRange } from "@pierre/diffs";
-import { api, errorDetail } from "@servediff/api";
-import type {
-  ChangedFile,
-  RepositoryDiff,
-  ReviewComment,
-} from "@servediff/shared";
+import { api, errorDetail } from "@diffx/api";
+import type { ChangedFile, RepositoryDiff, ReviewComment } from "@diffx/shared";
 import {
   type Dispatch,
   type SetStateAction,
@@ -60,7 +56,7 @@ export function useReview(
     key: string;
     comments: ReviewComment[];
   }>({ key: "", comments: [] });
-  const key = contextId ? `servediff:comments:${contextId}` : stored.key;
+  const key = contextId ? `diffx:comments:${contextId}` : stored.key;
   const previousKey = useRef("");
   const requests = useRef<ReturnType<typeof createRequestOwner> | null>(null);
   const refreshComments = useRef<() => void>(() => {});

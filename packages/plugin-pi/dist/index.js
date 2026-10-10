@@ -4,7 +4,7 @@ export function register(pi, request = requestSync) {
         request(context.cwd, context.sessionManager.getSessionId(), context.sessionManager.getSessionName?.());
     });
 }
-export default function servediff(pi) {
+export default function diffx(pi) {
     register(pi);
 }
 // The CLI schedules its own detached worker. Do not wait for collection or upload.
@@ -21,7 +21,7 @@ function requestSync(directory, sessionID, sessionName) {
         ];
         if (sessionName)
             args.push("--session-name", sessionName);
-        const child = spawn(process.env.SERVEDIFF_BINARY ?? "servediff", args, {
+        const child = spawn(process.env.DIFFX_BINARY ?? "diffx", args, {
             detached: true,
             stdio: "ignore",
             shell: false,

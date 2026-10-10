@@ -28,7 +28,7 @@ export async function startFixtureServer(): Promise<{
     "go",
     [
       "run",
-      "./cmd/servediff",
+      "./cmd/diffx",
       "dev",
       "--fixture",
       "test/fixtures/sample.diff",
@@ -41,7 +41,7 @@ export async function startFixtureServer(): Promise<{
     {
       cwd: root,
       detached: process.platform !== "win32",
-      env: { ...process.env, SERVEDIFF_EXIT_ON_STDIN_CLOSE: "1" },
+      env: { ...process.env, DIFFX_EXIT_ON_STDIN_CLOSE: "1" },
       stdio: ["pipe", "pipe", "inherit"],
     },
   );
@@ -96,7 +96,7 @@ export async function startFixtureServer(): Promise<{
   return {
     target,
     plugin: {
-      name: "servediff-fixture",
+      name: "diffx-fixture",
       configureServer(server) {
         server.httpServer?.once("close", () => {
           process.off("exit", stop);

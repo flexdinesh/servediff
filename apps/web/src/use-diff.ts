@@ -4,12 +4,12 @@ import {
   parsePatchFiles,
   setLanguageOverride,
 } from "@pierre/diffs";
-import { api, errorDetail } from "@servediff/api";
+import { api, errorDetail } from "@diffx/api";
 import {
   type ChangedFile,
   type DiffMode,
   type RepositoryDiff,
-} from "@servediff/shared";
+} from "@diffx/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CommentAnnotation } from "./review-model.ts";
 import { languageOverride } from "./display-options.ts";

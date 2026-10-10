@@ -2,9 +2,9 @@
 // It contains no collector filesystem or server persistence behavior.
 package ingestion
 
-import "github.com/flexdinesh/servediff/internal/review"
+import "github.com/flexdinesh/diffx/internal/review"
 
-const ProtocolVersion = 3
+const ProtocolVersion = 4
 const MaxRequestBytes = 64 << 20
 
 // Comparison records the interpretation and resolved Git baseline of a capture.

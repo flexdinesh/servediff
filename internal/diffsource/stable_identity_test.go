@@ -17,8 +17,8 @@ func stableTestRepository(t *testing.T) string {
 		t.Fatal(err)
 	}
 	testGit(t, root, "init", "-qb", "main")
-	testGit(t, root, "config", "user.email", "servediff@example.com")
-	testGit(t, root, "config", "user.name", "servediff")
+	testGit(t, root, "config", "user.email", "diffx@example.com")
+	testGit(t, root, "config", "user.name", "diffx")
 	testGit(t, root, "commit", "--allow-empty", "-qm", "initial")
 	return root
 }
@@ -46,7 +46,7 @@ func TestStableIdentityAdoptsLegacyAndSurvivesMovedCheckout(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, file := range []string{"repository.json", "checkout.json", "identity.lock"} {
-		info, err := os.Stat(filepath.Join(facts.GitDir, "servediff", file))
+		info, err := os.Stat(filepath.Join(facts.GitDir, "diffx", file))
 		if err != nil || info.Mode().Perm() != 0o600 {
 			t.Fatalf("private %s: %v, %v", file, info, err)
 		}
@@ -130,14 +130,14 @@ func TestStableIdentityCorruptionAndAmbiguousCopyFailVisibly(t *testing.T) {
 	root := stableTestRepository(t)
 	id := uuid.NewString()
 	testGit(t, root, "branch", "copy")
-	testGit(t, root, "config", "branch.main.servediff-id", id)
-	testGit(t, root, "config", "branch.copy.servediff-id", id)
+	testGit(t, root, "config", "branch.main.diffx-id", id)
+	testGit(t, root, "config", "branch.copy.diffx-id", id)
 	if _, err := StableIdentity(t.Context(), root, "installation", "main"); err == nil || !strings.Contains(err.Error(), "ambiguous copied") {
 		t.Fatalf("ambiguous identity should fail: %v", err)
 	}
-	testGit(t, root, "config", "--unset", "branch.copy.servediff-id")
+	testGit(t, root, "config", "--unset", "branch.copy.diffx-id")
 	mustStableIdentity(t, root, "main")
-	path := filepath.Join(root, ".git", "servediff", "repository.json")
+	path := filepath.Join(root, ".git", "diffx", "repository.json")
 	if err := os.WriteFile(path, []byte("broken"), 0o600); err != nil {
 		t.Fatal(err)
 	}

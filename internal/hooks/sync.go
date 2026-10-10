@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/ingestion"
 )
 
 // Collection is durable before health checks or local startup. A saved payload

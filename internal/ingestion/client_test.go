@@ -9,6 +9,16 @@ import (
 	"testing"
 )
 
+func TestClientRejectsPreviousProtocol(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(Health{StateID: "database", ProtocolVersion: 3, QueuedIngestion: true, IngestionEnabled: true})
+	}))
+	defer server.Close()
+	if _, err := NewClient(server.URL, "secret").Health(t.Context()); err == nil {
+		t.Fatal("accepted server with incompatible retry protection")
+	}
+}
+
 func TestClientRejectsRedirects(t *testing.T) {
 	var received atomic.Bool
 	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { received.Store(true) }))

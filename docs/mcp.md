@@ -1,6 +1,6 @@
 # MCP
 
-servediff exposes stored reviews and comments to coding agents through MCP.
+diffx exposes stored reviews and comments to coding agents through MCP.
 `/mcp` discovers contexts for the authenticated user; `/mcp/contexts/{id}` fixes
 the default context for diff and comment tools to one immutable observation or
 retained capture.
@@ -12,7 +12,7 @@ The browser does not need to remain open while an MCP client works.
 
 ## Connect
 
-Start `servediff` with a path or piped patch and use the printed MCP URL to
+Start `diffx` with a path or piped patch and use the printed MCP URL to
 search stored reviews. Remote snapshots are available through the server’s `/mcp` catalog or a scoped
 `/mcp/contexts/{id}` URL.
 For example:
@@ -30,7 +30,7 @@ example, current OpenCode can be configured in `opencode.jsonc`:
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
     "servers": {
-      "servediff": {
+      "diffx": {
         "type": "remote",
         "url": "http://127.0.0.1:7981/mcp/contexts/CONTEXT_ID",
         "protocol": "2026-07-28",
@@ -43,7 +43,7 @@ example, current OpenCode can be configured in `opencode.jsonc`:
 
 Use the equivalent remote MCP configuration in Codex, Claude Code, or another
 harness only when that version supports protocol `2026-07-28`. Supplying the
-servediff web-page URL alone is not enough; a coding harness connects to the
+diffx web-page URL alone is not enough; a coding harness connects to the
 MCP endpoint as an MCP client. In local mode MCP stops when the foreground
 command exits. Context IDs remain stable across persistent-service restarts.
 
@@ -117,7 +117,7 @@ comment body, lifecycle `status`, and `applicability`:
 - `anchored`: the stored file fingerprint still matches the selected scope.
 - `stale`: the file has changed since the comment was created.
 - `other-scope`: the comment belongs to a different diff scope.
-- `unknown`: servediff cannot compare the comment with a current snapshot.
+- `unknown`: diffx cannot compare the comment with a current snapshot.
 
 `actionable` is true only for an open, anchored comment. Stale comments remain
 visible because their concern may still apply, but an agent must inspect the
@@ -150,7 +150,7 @@ does not reopen comments and does not require a revision or version token.
 
 Example prompt:
 
-> Get the open servediff review comments. Apply each valid concern carefully,
+> Get the open diffx review comments. Apply each valid concern carefully,
 > verify the change, then resolve only the comments you handled.
 
 Use `include_resolved: true` for review-history or auditing workflows.
@@ -160,7 +160,7 @@ Use `include_resolved: true` for review-history or auditing workflows.
 The local endpoint is unauthenticated. Anyone who can reach the local server can
 read and resolve its comments. Keep its default loopback binding, or expose it
 only on a trusted network. Browser origin checks do not authenticate MCP clients.
-The remote `servediff-server` requires `Authorization: Bearer TOKEN` for MCP;
+The remote `diffx-server` requires `Authorization: Bearer TOKEN` for MCP;
 configure that header in the MCP client. Credentials select an individual user;
 catalog results, diffs, comments and resolution are scoped to that user.
 

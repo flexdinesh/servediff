@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/flexdinesh/servediff/internal/review"
+	"github.com/flexdinesh/diffx/internal/review"
 )
 
 func validRequest() Request {
@@ -126,7 +126,7 @@ func TestValidateEmptyAndUnavailableSnapshots(t *testing.T) {
 
 func TestRejectLegacyProtocols(t *testing.T) {
 	r := validRequest()
-	for _, version := range []int{1, 2} {
+	for _, version := range []int{1, 2, 3} {
 		r.ProtocolVersion = version
 		if err := Validate(r); err == nil {
 			t.Fatalf("accepted retired protocol %d", version)

@@ -1,6 +1,6 @@
 package diffsource
 
-import "github.com/flexdinesh/servediff/internal/review"
+import "github.com/flexdinesh/diffx/internal/review"
 
 type Source = review.Source
 type Support = review.Support

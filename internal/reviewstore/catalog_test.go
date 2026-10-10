@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/flexdinesh/servediff/internal/processlock"
+	"github.com/flexdinesh/diffx/internal/processlock"
 )
 
 func TestDatabaseOwnershipLock(t *testing.T) {

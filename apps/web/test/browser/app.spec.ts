@@ -73,7 +73,7 @@ test("shows server process metrics in the compact status bar", async ({
   await expect(page.locator("#server-ram")).toHaveText("50.0 MB");
   await expect(page.locator("#server-metrics")).toHaveAttribute(
     "title",
-    /ServeDiff server process/,
+    /Diffx server process/,
   );
   const sidebar = await page.locator(".sidebar-footer").boundingBox();
   const main = await page.locator(".main-footer").boundingBox();
@@ -682,7 +682,7 @@ test("inline comments use a distinct structured surface while sidebar comments r
             side: "additions",
             start: 3,
             end: 3,
-            code: '  export const label = "servediff";',
+            code: '  export const label = "diffx";',
             body: "Keep the exported value stable.",
             status: "open",
             createdAt: 1,
@@ -1187,7 +1187,7 @@ test("header icons and sidebar tab indicator use design-system sizes", async ({
   page,
 }) => {
   await page.goto("/");
-  await expect(page.locator(".brand")).toHaveText("servediff");
+  await expect(page.locator(".brand")).toHaveText("diffx");
   await expect(page.locator('img[src="/logo.png"]')).toHaveCount(0);
 
   const styles = await page.evaluate(() => {
@@ -1595,7 +1595,7 @@ test("file review comments save and reopen without selecting lines", async ({
   page,
 }) => {
   await page.goto("/");
-  for (const path of ["config/servediff.json", "docs/legacy.md"]) {
+  for (const path of ["config/diffx.json", "docs/legacy.md"]) {
     const file = page
       .locator("#viewer diffs-container")
       .filter({ hasText: path });
@@ -1637,7 +1637,7 @@ test("file review comments save and reopen without selecting lines", async ({
   await page.reload();
   const card = page
     .locator("#viewer .comment-card")
-    .filter({ hasText: "Review entire config/servediff.json" });
+    .filter({ hasText: "Review entire config/diffx.json" });
   await expect(card).toBeVisible();
   await card.getByRole("button", { name: "Edit", exact: true }).click();
   await expect(page.locator("#viewer .comment-editor")).toBeVisible();
@@ -1662,11 +1662,11 @@ test("file comments remain available without a text diff", async ({ page }) => {
   await page.goto("/");
   const file = page
     .locator("#viewer diffs-container")
-    .filter({ hasText: "config/servediff.json" });
+    .filter({ hasText: "config/diffx.json" });
   await expect(file).toContainText("No text preview available");
   await file
     .getByRole("button", {
-      name: "Leave review comment on file config/servediff.json",
+      name: "Leave review comment on file config/diffx.json",
       exact: true,
     })
     .click();

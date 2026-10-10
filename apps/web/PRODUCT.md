@@ -12,7 +12,7 @@ Developers checking Git diffs of their changes. They review the code in a browse
 
 ## Product Purpose
 
-servediff helps developers inspect local Git changes, leave review comments, and pass actionable feedback to a coding agent. A successful session lets the developer understand the changes and communicate the work they want done.
+diffx helps developers inspect local Git changes, leave review comments, and pass actionable feedback to a coding agent. A successful session lets the developer understand the changes and communicate the work they want done.
 
 ## Positioning
 
@@ -20,11 +20,11 @@ A local review workspace that combines a browser-based Git diff with comments th
 
 ## Operating Context
 
-- A developer runs `servediff` from a Git repository. The Go server opens the review UI in a browser.
+- A developer runs `diffx` from a Git repository. The Go server opens the review UI in a browser.
 - Reviews can cover all, staged, or unstaged changes. The file tree, reviewed-file marks, and comments help track progress.
 - Comments can be copied as agent-ready XML. The same review comments are available to compatible coding agents through MCP and, in supported browsers, WebMCP.
 - The CLI can also display a piped Git patch as a fixed review.
-- Review data is stored by the local servediff server, as documented in the README.
+- Review data is stored by the local diffx server, as documented in the README.
 
 ## Capabilities and Constraints
 

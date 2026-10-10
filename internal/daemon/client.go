@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/controlapi"
-	"github.com/flexdinesh/servediff/internal/processlock"
+	"github.com/flexdinesh/diffx/internal/controlapi"
+	"github.com/flexdinesh/diffx/internal/processlock"
 )
 
 var ErrUnavailable = errors.New("service unavailable; ownership held but control endpoint is unreachable")

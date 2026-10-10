@@ -25,7 +25,7 @@ export function register(pi: PiHost, request = requestSync): void {
   });
 }
 
-export default function servediff(pi: ExtensionAPI): void {
+export default function diffx(pi: ExtensionAPI): void {
   register(pi);
 }
 
@@ -46,7 +46,7 @@ function requestSync(
       sessionID,
     ];
     if (sessionName) args.push("--session-name", sessionName);
-    const child = spawn(process.env.SERVEDIFF_BINARY ?? "servediff", args, {
+    const child = spawn(process.env.DIFFX_BINARY ?? "diffx", args, {
       detached: true,
       stdio: "ignore",
       shell: false,

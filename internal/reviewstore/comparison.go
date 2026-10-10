@@ -1,7 +1,7 @@
 package reviewstore
 
 import (
-	"github.com/flexdinesh/servediff/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/ingestion"
 )
 
 // HEAD and missing comparisons share legacy identity. Resolved commits belong

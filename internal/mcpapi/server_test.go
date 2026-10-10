@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/flexdinesh/servediff/internal/review"
-	"github.com/flexdinesh/servediff/internal/reviewservice"
+	"github.com/flexdinesh/diffx/internal/review"
+	"github.com/flexdinesh/diffx/internal/reviewservice"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -28,7 +28,7 @@ func (service fakeReviewService) ResolveComment(commentID string) (reviewservice
 
 func connect(t *testing.T, server *httptest.Server, protocolVersion string) *mcp.ClientSession {
 	t.Helper()
-	client := mcp.NewClient(&mcp.Implementation{Name: "servediff-test", Version: "test"}, &mcp.ClientOptions{
+	client := mcp.NewClient(&mcp.Implementation{Name: "diffx-test", Version: "test"}, &mcp.ClientOptions{
 		Capabilities: &mcp.ClientCapabilities{},
 	})
 	session, err := client.Connect(t.Context(), &mcp.StreamableClientTransport{

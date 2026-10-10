@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/ingestion"
-	"github.com/flexdinesh/servediff/internal/processlock"
+	"github.com/flexdinesh/diffx/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/processlock"
 )
 
 type Pending struct {
@@ -27,7 +27,7 @@ type Outbox struct {
 
 func Open(ctx context.Context, root, route string) (*Outbox, error) {
 	sum := sha256.Sum256([]byte(route))
-	directory := filepath.Join(root, "sync-v3", hex.EncodeToString(sum[:]))
+	directory := filepath.Join(root, "sync-v4", hex.EncodeToString(sum[:]))
 	if err := os.MkdirAll(directory, 0700); err != nil {
 		return nil, err
 	}

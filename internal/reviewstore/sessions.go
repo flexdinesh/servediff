@@ -3,8 +3,8 @@ package reviewstore
 import (
 	"database/sql"
 
-	"github.com/flexdinesh/servediff/internal/ingestion"
-	"github.com/flexdinesh/servediff/internal/reviewdata"
+	"github.com/flexdinesh/diffx/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/reviewdata"
 )
 
 // SessionAssociation records observation, never ownership or authorship.

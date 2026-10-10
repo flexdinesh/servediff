@@ -10,8 +10,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/ingestion"
-	"github.com/flexdinesh/servediff/internal/ingestionqueue"
+	"github.com/flexdinesh/diffx/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/ingestionqueue"
 )
 
 func initializeQueue(tx *sql.Tx) error {

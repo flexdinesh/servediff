@@ -1,4 +1,4 @@
-import type { ApiContext } from "@servediff/api";
+import type { ApiContext } from "@diffx/api";
 import {
   ArrowLeftIcon,
   ChevronRightIcon,

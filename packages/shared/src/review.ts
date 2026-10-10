@@ -5,7 +5,7 @@ import type {
 } from "@pierre/diffs";
 import type { DiffMode, RepositoryDiff } from "./index.ts";
 
-import type { ApiReviewComment, ApiReviewMark } from "@servediff/api";
+import type { ApiReviewComment, ApiReviewMark } from "@diffx/api";
 export type ReviewComment = ApiReviewComment;
 export type ReviewOrigin = NonNullable<ReviewComment["origin"]>;
 

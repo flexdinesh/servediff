@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/ingestion"
-	"github.com/flexdinesh/servediff/internal/review"
+	"github.com/flexdinesh/diffx/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/review"
 )
 
 func changed(t *testing.T, root, previous string) (ingestion.Request, string) {
@@ -182,25 +182,25 @@ case " $* " in
   *" --patch "*) exit 9 ;;
   *" ls-files --stage -z "*)
     count=0
-    if [ -f "$SERVEDIFF_TEST_HASH_COUNT" ]; then
-      read -r count < "$SERVEDIFF_TEST_HASH_COUNT"
+    if [ -f "$DIFFX_TEST_HASH_COUNT" ]; then
+      read -r count < "$DIFFX_TEST_HASH_COUNT"
     fi
     count=$((count + 1))
-    printf '%s\n' "$count" > "$SERVEDIFF_TEST_HASH_COUNT"
-    if [ "$SERVEDIFF_TEST_MUTATE" = yes ] && [ "$count" -eq 2 ]; then
-      printf 'changed!\n' > "$SERVEDIFF_TEST_CHANGED_FILE"
+    printf '%s\n' "$count" > "$DIFFX_TEST_HASH_COUNT"
+    if [ "$DIFFX_TEST_MUTATE" = yes ] && [ "$count" -eq 2 ]; then
+      printf 'changed!\n' > "$DIFFX_TEST_CHANGED_FILE"
     fi
     ;;
 esac
-exec "$SERVEDIFF_TEST_REAL_GIT" "$@"
+exec "$DIFFX_TEST_REAL_GIT" "$@"
 `
 			if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o700); err != nil {
 				t.Fatal(err)
 			}
-			t.Setenv("SERVEDIFF_TEST_REAL_GIT", realGit)
-			t.Setenv("SERVEDIFF_TEST_HASH_COUNT", filepath.Join(bin, "count"))
-			t.Setenv("SERVEDIFF_TEST_CHANGED_FILE", filepath.Join(root, "tracked"))
-			t.Setenv("SERVEDIFF_TEST_MUTATE", mutate)
+			t.Setenv("DIFFX_TEST_REAL_GIT", realGit)
+			t.Setenv("DIFFX_TEST_HASH_COUNT", filepath.Join(bin, "count"))
+			t.Setenv("DIFFX_TEST_CHANGED_FILE", filepath.Join(root, "tracked"))
+			t.Setenv("DIFFX_TEST_MUTATE", mutate)
 			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 			_, fingerprint, err := CollectChanged(t.Context(), root, Options{SourceID: "machine", Hostname: "host"}, initial)
 			if mutate == "" {

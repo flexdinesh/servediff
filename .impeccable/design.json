@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "generatedAt": "2026-10-04T00:47:42.231Z",
-  "title": "Design system: servediff",
+  "title": "Design system: diffx",
   "extensions": {
     "colorMeta": {
       "diff-canvas": {

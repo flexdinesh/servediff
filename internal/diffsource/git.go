@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/review"
+	"github.com/flexdinesh/diffx/internal/review"
 )
 
 var errOutputLimit = errors.New("git output exceeds limit")

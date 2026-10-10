@@ -1,4 +1,4 @@
-import type { ApiRepositoryDiff } from "@servediff/api";
+import type { ApiRepositoryDiff } from "@diffx/api";
 export type DiffMode = ApiRepositoryDiff["mode"];
 
 export function isDiffMode(value: unknown): value is DiffMode {
@@ -9,6 +9,6 @@ export type {
   ApiChangedFile as ChangedFile,
   ApiRepositoryDiff as RepositoryDiff,
   ApiFilePatch as FilePatch,
-} from "@servediff/api";
+} from "@diffx/api";
 
 export * from "./review.ts";

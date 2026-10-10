@@ -12,11 +12,11 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/collector"
-	"github.com/flexdinesh/servediff/internal/ingestion"
-	"github.com/flexdinesh/servediff/internal/mcpapi"
-	"github.com/flexdinesh/servediff/internal/reviewstore"
-	"github.com/flexdinesh/servediff/internal/testsupport"
+	"github.com/flexdinesh/diffx/internal/collector"
+	"github.com/flexdinesh/diffx/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/mcpapi"
+	"github.com/flexdinesh/diffx/internal/reviewstore"
+	"github.com/flexdinesh/diffx/internal/testsupport"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

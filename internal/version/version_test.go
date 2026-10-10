@@ -7,14 +7,14 @@ import (
 
 func TestStringDefaultsToDevelopmentVersion(t *testing.T) {
 	setBuildMetadata(t, "dev", "", "", &debug.BuildInfo{Main: debug.Module{Version: "(devel)"}}, true)
-	if got, want := String(), "servediff dev"; got != want {
+	if got, want := String(), "diffx dev"; got != want {
 		t.Fatalf("String() = %q, want %q", got, want)
 	}
 }
 
 func TestStringIncludesReleaseMetadata(t *testing.T) {
 	setBuildMetadata(t, "0.1.0", "abc123", "2026-09-17T00:00:00Z", nil, false)
-	if got, want := String(), "servediff 0.1.0 abc123 2026-09-17T00:00:00Z"; got != want {
+	if got, want := String(), "diffx 0.1.0 abc123 2026-09-17T00:00:00Z"; got != want {
 		t.Fatalf("String() = %q, want %q", got, want)
 	}
 }
@@ -28,7 +28,7 @@ func TestStringUsesTaggedGoInstallMetadata(t *testing.T) {
 		},
 	}
 	setBuildMetadata(t, "dev", "", "", info, true)
-	if got, want := String(), "servediff 0.2.0 def456 2026-09-17T01:00:00Z"; got != want {
+	if got, want := String(), "diffx 0.2.0 def456 2026-09-17T01:00:00Z"; got != want {
 		t.Fatalf("String() = %q, want %q", got, want)
 	}
 }

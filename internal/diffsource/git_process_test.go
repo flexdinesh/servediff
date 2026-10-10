@@ -24,7 +24,7 @@ type gitHelperReady struct {
 }
 
 func TestMain(tests *testing.M) {
-	if mode := os.Getenv("SERVEDIFF_GIT_TEST_HELPER"); mode != "" {
+	if mode := os.Getenv("DIFFX_GIT_TEST_HELPER"); mode != "" {
 		os.Exit(runGitTestHelper(mode))
 	}
 	os.Exit(tests.Run())
@@ -58,14 +58,14 @@ func runGitTestHelper(mode string) int {
 		}
 	}
 	signal.Ignore(syscall.SIGTERM)
-	root := os.Getenv("SERVEDIFF_GIT_TEST_ROOT")
+	root := os.Getenv("DIFFX_GIT_TEST_ROOT")
 	if mode != "child" {
 		executable, err := os.Executable()
 		if err != nil {
 			return 20
 		}
 		child := exec.Command(executable)
-		child.Env = append(os.Environ(), "SERVEDIFF_GIT_TEST_HELPER=child")
+		child.Env = append(os.Environ(), "DIFFX_GIT_TEST_HELPER=child")
 		child.Stdout, child.Stderr = os.Stdout, os.Stderr
 		if err := child.Start(); err != nil {
 			return 21
@@ -134,7 +134,7 @@ func installGitTestHelper(t *testing.T) string {
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	root := t.TempDir()
-	t.Setenv("SERVEDIFF_GIT_TEST_ROOT", root)
+	t.Setenv("DIFFX_GIT_TEST_ROOT", root)
 	return root
 }
 
@@ -190,7 +190,7 @@ func assertGitHelperStopped(t *testing.T, ready gitHelperReady) {
 
 func TestGitCancellationKillsOwnedDescendantsAndReleasesSlots(t *testing.T) {
 	root := installGitTestHelper(t)
-	t.Setenv("SERVEDIFF_GIT_TEST_HELPER", "hang")
+	t.Setenv("DIFFX_GIT_TEST_HELPER", "hang")
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	finished := make(chan error, 1)
@@ -216,7 +216,7 @@ func TestGitCancellationKillsOwnedDescendantsAndReleasesSlots(t *testing.T) {
 	if len(gitProcesses.active) != 0 || len(gitProcesses.admitted) != 0 {
 		t.Fatal("cancelled Git invocation retained admission")
 	}
-	t.Setenv("SERVEDIFF_GIT_TEST_HELPER", "success")
+	t.Setenv("DIFFX_GIT_TEST_HELPER", "success")
 	if output, err := runGit(t.Context(), root, 1024, "ignored"); err != nil || output != "ok\n" {
 		t.Fatalf("subsequent Git command failed: %q %v", output, err)
 	}
@@ -224,7 +224,7 @@ func TestGitCancellationKillsOwnedDescendantsAndReleasesSlots(t *testing.T) {
 
 func TestGitLeaderExitBoundsInheritedOutputDrain(t *testing.T) {
 	root := installGitTestHelper(t)
-	t.Setenv("SERVEDIFF_GIT_TEST_HELPER", "exit")
+	t.Setenv("DIFFX_GIT_TEST_HELPER", "exit")
 	finished := make(chan error, 1)
 	go func() {
 		_, err := runGit(t.Context(), root, 1024, "ignored")
@@ -247,7 +247,7 @@ func TestGitLeaderExitBoundsInheritedOutputDrain(t *testing.T) {
 
 func TestGitDeadlineKillsOwnedDescendantsAndPreservesDeadlineError(t *testing.T) {
 	root := installGitTestHelper(t)
-	t.Setenv("SERVEDIFF_GIT_TEST_HELPER", "hang")
+	t.Setenv("DIFFX_GIT_TEST_HELPER", "hang")
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 	finished := make(chan error, 1)
@@ -272,7 +272,7 @@ func TestGitDeadlineKillsOwnedDescendantsAndPreservesDeadlineError(t *testing.T)
 
 func TestGitHeadDrainFailureCannotBecomeUnbornHeadFallback(t *testing.T) {
 	root := installGitTestHelper(t)
-	t.Setenv("SERVEDIFF_GIT_TEST_HELPER", "head-drain")
+	t.Setenv("DIFFX_GIT_TEST_HELPER", "head-drain")
 	finished := make(chan error, 1)
 	go func() {
 		source := gitSource{root: root}
@@ -297,14 +297,14 @@ func TestGitHeadDrainFailureCannotBecomeUnbornHeadFallback(t *testing.T) {
 
 func TestGitProcessErrorsAndOutputLimitsRemainVisible(t *testing.T) {
 	root := installGitTestHelper(t)
-	t.Setenv("SERVEDIFF_GIT_TEST_HELPER", "error")
+	t.Setenv("DIFFX_GIT_TEST_HELPER", "error")
 	_, err := runGit(t.Context(), root, 1024, "ignored")
 	var exit *exec.ExitError
 	if !errors.As(err, &exit) || exit.ExitCode() != 7 || !strings.Contains(err.Error(), "helper failure") {
 		t.Fatalf("process error changed: %v", err)
 	}
 	for _, mode := range []string{"overflow", "stderr-overflow"} {
-		t.Setenv("SERVEDIFF_GIT_TEST_HELPER", mode)
+		t.Setenv("DIFFX_GIT_TEST_HELPER", mode)
 		if _, err := runGit(t.Context(), root, 8, "ignored"); !errors.Is(err, errOutputLimit) {
 			t.Fatalf("%s error hidden: %v", mode, err)
 		}
@@ -313,7 +313,7 @@ func TestGitProcessErrorsAndOutputLimitsRemainVisible(t *testing.T) {
 
 func TestGitOutputLimitTerminatesContinuousWriter(t *testing.T) {
 	root := installGitTestHelper(t)
-	t.Setenv("SERVEDIFF_GIT_TEST_HELPER", "continuous-output")
+	t.Setenv("DIFFX_GIT_TEST_HELPER", "continuous-output")
 	started := time.Now()
 	if _, err := runGit(t.Context(), root, 8, "ignored"); !errors.Is(err, errOutputLimit) {
 		t.Fatalf("continuous output limit hidden: %v", err)

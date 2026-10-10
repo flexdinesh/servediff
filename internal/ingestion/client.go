@@ -78,7 +78,7 @@ func (client *Client) Health(ctx context.Context) (Health, error) {
 		return Health{}, fmt.Errorf("invalid health response: %w", err)
 	}
 	if decoder.Decode(&struct{}{}) != io.EOF || health.StateID == "" || health.ProtocolVersion != ProtocolVersion {
-		return Health{}, errors.New("incompatible ingestion health response; update servediff-server")
+		return Health{}, errors.New("incompatible ingestion health response; update diffx-server")
 	}
 	return health, nil
 }

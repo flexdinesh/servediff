@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/ingestion"
-	"github.com/flexdinesh/servediff/internal/processlock"
-	"github.com/flexdinesh/servediff/internal/review"
+	"github.com/flexdinesh/diffx/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/processlock"
+	"github.com/flexdinesh/diffx/internal/review"
 )
 
 func fixture(t *testing.T) (Engine, *string) {
@@ -353,9 +353,9 @@ func TestPrunePendingRetentionAndPrivateFiles(t *testing.T) {
 
 func TestRuntimeIsolationAndSafeJobNames(t *testing.T) {
 	runtime := t.TempDir()
-	t.Setenv("SERVEDIFF_RUNTIME_DIR", runtime)
+	t.Setenv("DIFFX_RUNTIME_DIR", runtime)
 	directory, err := StateDirectory()
-	if err != nil || directory != filepath.Join(runtime, "hooks-v3") {
+	if err != nil || directory != filepath.Join(runtime, "hooks-v4") {
 		t.Fatalf("directory = %q %v", directory, err)
 	}
 	engine := Engine{Directory: directory}

@@ -1,4 +1,4 @@
-import type { ReviewComment } from "@servediff/shared";
+import type { ReviewComment } from "@diffx/shared";
 
 export {
   anchored,
@@ -8,13 +8,13 @@ export {
   lineContext,
   parseComments,
   reviewRounds,
-} from "@servediff/shared";
+} from "@diffx/shared";
 export type {
   CommentApplicability,
   ReviewComment,
   ReviewOrigin,
   ReviewRound,
-} from "@servediff/shared";
+} from "@diffx/shared";
 
 export type CommentAnnotation =
   | { kind: "saved"; comment: ReviewComment }

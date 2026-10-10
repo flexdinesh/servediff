@@ -40,7 +40,7 @@ export async function consume(events, directory, request = requestSync) {
     }
 }
 export default {
-    id: "servediff",
+    id: "diffx",
     setup(context) {
         const controller = new AbortController();
         void consume(context.event.subscribe({ signal: controller.signal }), context.location.directory);
@@ -61,7 +61,7 @@ function requestSync(directory, sessionID, sessionName) {
         ];
         if (sessionName)
             args.push("--session-name", sessionName);
-        const child = spawn(process.env.SERVEDIFF_BINARY ?? "servediff", args, {
+        const child = spawn(process.env.DIFFX_BINARY ?? "diffx", args, {
             detached: true,
             stdio: "ignore",
             shell: false,

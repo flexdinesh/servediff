@@ -1,5 +1,5 @@
 ---
-name: servediff
+name: diffx
 description: Focused, compact, calm code review workspace
 colors:
   diff-canvas: "#ffffff"
@@ -12,7 +12,7 @@ colors:
 
 ## Design direction
 
-servediff is a focused review workspace around [Pierre diffs](https://diffs.com).
+diffx is a focused review workspace around [Pierre diffs](https://diffs.com).
 The code is the primary content. Navigation, display controls, comments, and
 review progress help people read and act on it.
 
@@ -118,7 +118,7 @@ measured elements or replace the application tokens with framework defaults.
   file-kind hints. They are a bounded categorical palette, not extra UI accents.
 - Status always includes text, a sign, an icon, or a shape. Preserve staging's
   empty/half/full dot distinction; its half-fill is information, not decoration.
-- CPU and RAM in the status bar describe the ServeDiff server process, not
+- CPU and RAM in the status bar describe the Diffx server process, not
   the browser or whole machine. Keep that scope explicit in the tooltip.
 - Pierre owns syntax colors, changed-line fills, word highlights, line selection,
   and code-theme surfaces. App status tokens govern the surrounding UI only.

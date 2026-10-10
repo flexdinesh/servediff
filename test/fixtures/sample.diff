@@ -6,7 +6,7 @@ index 1111111..2222222 100644
 -export const value = 1;
 +export const value = 2;
  
- export const label = "servediff";
+ export const label = "diffx";
 diff --git a/src/components/Badge.tsx b/src/components/Badge.tsx
 new file mode 100644
 index 0000000..3333333
@@ -49,11 +49,11 @@ index 7777777..8888888 100644
 +  "type": "module",
    "scripts": {}
  }
-diff --git a/config/servediff.json b/config/servediff.json
+diff --git a/config/diffx.json b/config/diffx.json
 new file mode 100644
 index 0000000..9999999
 --- /dev/null
-+++ b/config/servediff.json
++++ b/config/diffx.json
 @@ -0,0 +1,6 @@
 +{
 +  "theme": "system",

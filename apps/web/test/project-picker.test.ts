@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { ApiContext } from "@servediff/api";
+import type { ApiContext } from "@diffx/api";
 import {
   contextChangeLabel,
   contextIsLinkedWorktree,
@@ -22,10 +22,10 @@ const main: ApiContext = {
   id: "main",
   kind: "observation",
   source: "local",
-  name: "servediff",
+  name: "diffx",
   branch: "main",
   worktreeName: null,
-  root: "/repos/servediff",
+  root: "/repos/diffx",
   repositoryId: "repo",
   locationId: "main",
   createdAt: 1,
@@ -58,7 +58,7 @@ const clone: ApiContext = {
   ...main,
   id: "clone",
   repositoryId: "other-repo",
-  root: "/other/servediff",
+  root: "/other/diffx",
 };
 const allFilters = { ...defaultPickerFilters, includeAll: true };
 
@@ -165,7 +165,7 @@ test("lists individual checkouts by recency without repository grouping", () => 
 test("repo name search includes all its checkouts and excludes other repos", () => {
   const other = { ...clone, name: "dotfiles", root: "/repos/dotfiles" };
   assert.deepEqual(
-    pickerResults([main, other, worktree], "servediff", allFilters).map(
+    pickerResults([main, other, worktree], "diffx", allFilters).map(
       (context) => context.id,
     ),
     ["picker", "main"],
@@ -174,7 +174,7 @@ test("repo name search includes all its checkouts and excludes other repos", () 
 
 test("search matches repo, branch, worktree, and external paths with all query words", () => {
   for (const query of [
-    "servediff picker",
+    "diffx picker",
     "PICKER-folder",
     "external team",
     "ftprpck",
@@ -231,7 +231,7 @@ test("changed checkouts precede newer empty projects, including search results",
   const changed = { ...worktree, changedFileCount: 2 };
   const newerEmpty = { ...main, lastSubmittedAt: 10 };
   const newerChanged = { ...clone, changedFileCount: 1, lastSubmittedAt: 4 };
-  for (const query of ["", "servediff"]) {
+  for (const query of ["", "diffx"]) {
     assert.deepEqual(
       pickerResults([newerEmpty, changed, newerChanged], query, allFilters).map(
         (context) => context.id,
@@ -277,8 +277,8 @@ function observation(id: string, hostname: string, runId: string): ApiContext {
       agent: "agent",
       trigger: "hook",
       repositoryKey: "repository",
-      repositoryName: "servediff",
-      remoteUrl: "https://example.test/servediff.git",
+      repositoryName: "diffx",
+      remoteUrl: "https://example.test/diffx.git",
       checkoutKey: "checkout",
       root: main.root ?? "",
       worktreeName: "main-worktree",
@@ -330,7 +330,7 @@ test("observation search distinguishes containers on the same branch and retains
     observation("second", "container-b", "run-b"),
     observation("third", "container-a", "run-a"),
   ];
-  assert.equal(pickerResults(contexts, "servediff main").length, 3);
+  assert.equal(pickerResults(contexts, "diffx main").length, 3);
   assert.deepEqual(
     pickerResults(contexts, "container-b run-b").map((context) => context.id),
     ["second"],
@@ -363,7 +363,7 @@ test("All includes unavailable entries without making them selectable", () => {
   assert.equal(all.length, 2);
   assert.equal(all.filter(pickerEntryAvailable).length, 1);
   assert.deepEqual(
-    pickerResults([main, unavailable], "servediff", allFilters)
+    pickerResults([main, unavailable], "diffx", allFilters)
       .map((context) => context.id)
       .sort(),
     ["clone", "main"],
@@ -498,14 +498,14 @@ test("Piped groups stdin observations independently of repositories and filters"
   );
   assert.equal(contextIsPiped(piped), true);
   assert.equal(contextIsLinkedWorktree(piped), false);
-  assert.deepEqual(pickerResults([piped], "servediff"), []);
+  assert.deepEqual(pickerResults([piped], "diffx"), []);
   assert.deepEqual(pickerResults([piped], "main"), []);
   assert.deepEqual(pickerFilterOptions([piped, capture]), {
     hosts: [],
     branches: [],
     worktrees: [],
   });
-  assert.ok(!contextDiagnostics(piped).includes("servediff"));
+  assert.ok(!contextDiagnostics(piped).includes("diffx"));
   assert.ok(!contextDiagnostics(piped).includes("main"));
   assert.ok(contextDiagnostics(piped).includes("Context: piped-old"));
   assert.deepEqual(

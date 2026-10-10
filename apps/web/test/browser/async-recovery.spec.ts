@@ -1,6 +1,6 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
-import { createApiClient, type ApiRepositoryDiff } from "@servediff/api";
-import type { ReviewComment } from "@servediff/shared";
+import { createApiClient, type ApiRepositoryDiff } from "@diffx/api";
+import type { ReviewComment } from "@diffx/shared";
 
 declare global {
   interface Window {
@@ -448,7 +448,7 @@ test("session failure retries without reloading the page", async ({ page }) => {
   );
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: "Cannot load servediff" }),
+    page.getByRole("heading", { name: "Cannot load diffx" }),
   ).toBeVisible();
   fail = false;
   await page.getByRole("button", { name: "Retry" }).click();

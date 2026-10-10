@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/ingestion"
-	"github.com/flexdinesh/servediff/internal/review"
+	"github.com/flexdinesh/diffx/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/review"
 )
 
 func TestSessionAssociationsReuseReviewAndFilterEveryCollection(t *testing.T) {

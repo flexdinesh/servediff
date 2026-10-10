@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/review"
+	"github.com/flexdinesh/diffx/internal/review"
 )
 
 func TestGitProcessLimitBoundsWorkAndCancelsQueue(t *testing.T) {
@@ -66,8 +66,8 @@ func newRuntimeTestRepository(t *testing.T, filename string) string {
 	t.Helper()
 	root := t.TempDir()
 	testGit(t, root, "init", "-q")
-	testGit(t, root, "config", "user.email", "servediff@example.com")
-	testGit(t, root, "config", "user.name", "servediff")
+	testGit(t, root, "config", "user.email", "diffx@example.com")
+	testGit(t, root, "config", "user.name", "diffx")
 	if err := os.WriteFile(filepath.Join(root, filename), []byte("base\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -167,11 +167,11 @@ func TestRepositoryAliasesCanonicalizeAndClonesRemainSeparate(t *testing.T) {
 
 func TestGitEnvironmentPreservesUserConfiguration(t *testing.T) {
 	config := filepath.Join(t.TempDir(), "global-config")
-	if err := os.WriteFile(config, []byte("[servediff]\n\tuser-setting = kept\n"), 0o600); err != nil {
+	if err := os.WriteFile(config, []byte("[diffx]\n\tuser-setting = kept\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("GIT_CONFIG_GLOBAL", config)
-	value, err := runGit(t.Context(), t.TempDir(), 1024, "config", "--get", "servediff.user-setting")
+	value, err := runGit(t.Context(), t.TempDir(), 1024, "config", "--get", "diffx.user-setting")
 	if err != nil {
 		t.Fatal(err)
 	}

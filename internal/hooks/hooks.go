@@ -12,9 +12,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/ingestion"
-	"github.com/flexdinesh/servediff/internal/processlock"
-	"github.com/flexdinesh/servediff/internal/submission"
+	"github.com/flexdinesh/diffx/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/processlock"
+	"github.com/flexdinesh/diffx/internal/submission"
 )
 
 var ErrUnchanged = errors.New("checkout unchanged")
@@ -81,8 +81,8 @@ type pending struct {
 }
 
 func StateDirectory() (string, error) {
-	if runtime := os.Getenv("SERVEDIFF_RUNTIME_DIR"); runtime != "" {
-		return filepath.Join(runtime, "hooks-v3"), nil
+	if runtime := os.Getenv("DIFFX_RUNTIME_DIR"); runtime != "" {
+		return filepath.Join(runtime, "hooks-v4"), nil
 	}
 	root := os.Getenv("XDG_STATE_HOME")
 	if root == "" {
@@ -92,7 +92,7 @@ func StateDirectory() (string, error) {
 		}
 		root = filepath.Join(home, ".local", "state")
 	}
-	return filepath.Join(root, "servediff", "hooks-v3"), nil
+	return filepath.Join(root, "diffx", "hooks-v4"), nil
 }
 
 func key(parts ...string) string {

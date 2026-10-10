@@ -1,9 +1,5 @@
 import type { CodeViewHandle } from "@pierre/diffs/react";
-import type {
-  DiffMode,
-  RepositoryDiff,
-  ReviewComment,
-} from "@servediff/shared";
+import type { DiffMode, RepositoryDiff, ReviewComment } from "@diffx/shared";
 import {
   useCallback,
   useEffect,

@@ -4,8 +4,8 @@ package reviewdata
 import (
 	"errors"
 
-	"github.com/flexdinesh/servediff/internal/ingestion"
-	"github.com/flexdinesh/servediff/internal/review"
+	"github.com/flexdinesh/diffx/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/review"
 )
 
 var ErrNotFound = errors.New("diff not found")

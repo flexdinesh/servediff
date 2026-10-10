@@ -3,7 +3,7 @@ package submission
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/flexdinesh/servediff/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/ingestion"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -20,7 +20,7 @@ func TestDeliveryRetriesExactPayloadAtPinnedDestination(t *testing.T) {
 			json.NewEncoder(w).Encode(ingestion.Health{ProtocolVersion: ingestion.ProtocolVersion, StateID: "database", QueuedIngestion: true, IngestionEnabled: true})
 			return
 		}
-		if r.URL.Path != "/api/v2/ingestion-jobs" || r.Header.Get("X-Servediff-State") != "database" {
+		if r.URL.Path != "/api/v2/ingestion-jobs" || r.Header.Get("X-Diffx-State") != "database" {
 			t.Error("delivery lost destination identity")
 		}
 		raw, err := io.ReadAll(r.Body)

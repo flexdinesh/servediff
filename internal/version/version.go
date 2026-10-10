@@ -1,4 +1,4 @@
-// Package version reports servediff build metadata.
+// Package version reports diffx build metadata.
 package version
 
 import (
@@ -17,7 +17,7 @@ var (
 // String returns the CLI name and available build metadata.
 func String() string {
 	version, commit, date := metadata()
-	parts := []string{"servediff", version}
+	parts := []string{"diffx", version}
 	if strings.TrimSpace(commit) != "" {
 		parts = append(parts, commit)
 	}

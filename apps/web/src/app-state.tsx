@@ -1,4 +1,4 @@
-import type { DiffMode, ReviewComment } from "@servediff/shared";
+import type { DiffMode, ReviewComment } from "@diffx/shared";
 import {
   createContext,
   useCallback,
@@ -90,7 +90,7 @@ function WorkspaceProvider({ children }: { children: ReactNode }) {
   });
   const piped = repository?.source === "stdin";
   useEffect(() => {
-    document.title = `servediff · ${piped ? "Piped" : "Git diff"}`;
+    document.title = `diffx · ${piped ? "Piped" : "Git diff"}`;
   }, [piped]);
   const source = useMemo(
     () => ({ diff, repository, mode, piped, changeMode }),

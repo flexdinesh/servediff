@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/flexdinesh/servediff/internal/collector"
-	"github.com/flexdinesh/servediff/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/collector"
+	"github.com/flexdinesh/diffx/internal/ingestion"
 )
 
 func catalogGit(t *testing.T, root string, args ...string) {
@@ -26,7 +26,7 @@ func TestCatalogContainsOnlySubmittedWorktreeObservations(t *testing.T) {
 	root := testRepo(t)
 	catalogGit(t, root, "symbolic-ref", "HEAD", "refs/heads/main")
 	catalogGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-qm", "initial")
-	catalogGit(t, root, "remote", "add", "origin", "https://github.com/owner/servediff.git")
+	catalogGit(t, root, "remote", "add", "origin", "https://github.com/owner/diffx.git")
 	linked := filepath.Join(t.TempDir(), "elsewhere")
 	catalogGit(t, root, "worktree", "add", "-qb", "feature/picker", linked)
 	input, err := collector.Collect(t.Context(), linked, collector.Options{SourceID: "source", SubmissionID: "linked"})
@@ -44,7 +44,7 @@ func TestCatalogContainsOnlySubmittedWorktreeObservations(t *testing.T) {
 		t.Fatalf("server discovered unsubmitted worktrees: %#v, %v", page, err)
 	}
 	item := page.Contexts[0]
-	if item.Name != "servediff" || item.Root == nil || *item.Root != linked || item.Branch == nil || *item.Branch != "feature/picker" || item.WorktreeName == nil || *item.WorktreeName != "elsewhere" {
+	if item.Name != "diffx" || item.Root == nil || *item.Root != linked || item.Branch == nil || *item.Branch != "feature/picker" || item.WorktreeName == nil || *item.WorktreeName != "elsewhere" {
 		t.Fatalf("captured Git metadata: %#v", item)
 	}
 }
@@ -52,7 +52,7 @@ func TestCatalogContainsOnlySubmittedWorktreeObservations(t *testing.T) {
 func TestOldObservationUsesRemoteNameWithoutReadingGit(t *testing.T) {
 	service := testService(t)
 	root := testRepo(t)
-	catalogGit(t, root, "remote", "add", "origin", "git@github.com:owner/servediff.git")
+	catalogGit(t, root, "remote", "add", "origin", "git@github.com:owner/diffx.git")
 	input, err := collector.Collect(t.Context(), root, collector.Options{SourceID: "source", SubmissionID: "old"})
 	if err != nil {
 		t.Fatal(err)
@@ -65,11 +65,11 @@ func TestOldObservationUsesRemoteNameWithoutReadingGit(t *testing.T) {
 	}
 	t.Setenv("PATH", t.TempDir())
 	opened, err := service.Get(t.Context(), submitted.Context.ID)
-	if err != nil || opened.Name != "servediff" || opened.Observation == nil || opened.Observation.LinkedWorktree != nil {
+	if err != nil || opened.Name != "diffx" || opened.Observation == nil || opened.Observation.LinkedWorktree != nil {
 		t.Fatalf("old snapshot presentation: %#v, %v", opened, err)
 	}
 	page, err := service.List(t.Context(), 100, "")
-	if err != nil || len(page.Contexts) != 1 || page.Contexts[0].Name != "servediff" {
+	if err != nil || len(page.Contexts) != 1 || page.Contexts[0].Name != "diffx" {
 		t.Fatalf("old snapshot catalog: %#v, %v", page, err)
 	}
 }
@@ -118,7 +118,7 @@ func TestCatalogSearchKeepsSameBranchSourcesSeparate(t *testing.T) {
 	service := testService(t)
 	root := testRepo(t)
 	catalogGit(t, root, "symbolic-ref", "HEAD", "refs/heads/shared")
-	catalogGit(t, root, "remote", "add", "origin", "https://example.com/acme/servediff.git")
+	catalogGit(t, root, "remote", "add", "origin", "https://example.com/acme/diffx.git")
 	for _, source := range []string{"container-a", "container-b"} {
 		input, err := collector.Collect(t.Context(), root, collector.Options{SourceID: source, Hostname: "agent-host", RunID: "run-" + source, SubmissionID: "same-submission"})
 		if err != nil {
@@ -129,7 +129,7 @@ func TestCatalogSearchKeepsSameBranchSourcesSeparate(t *testing.T) {
 		}
 	}
 	t.Setenv("PATH", t.TempDir())
-	both, err := service.ListFiltered(t.Context(), 100, "", ingestion.Filter{Repository: "servediff", Branch: "shared"})
+	both, err := service.ListFiltered(t.Context(), 100, "", ingestion.Filter{Repository: "diffx", Branch: "shared"})
 	if err != nil || len(both.Contexts) != 2 || both.Contexts[0].ID == both.Contexts[1].ID || both.Contexts[0].RepositoryID == nil || both.Contexts[1].RepositoryID == nil || *both.Contexts[0].RepositoryID != *both.Contexts[1].RepositoryID {
 		t.Fatalf("source grouping: %#v, %v", both, err)
 	}

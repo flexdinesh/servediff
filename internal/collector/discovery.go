@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/flexdinesh/servediff/internal/diffsource"
+	"github.com/flexdinesh/diffx/internal/diffsource"
 )
 
 const discoveryLimit = 128

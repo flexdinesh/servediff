@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Trash2Icon } from "lucide-react";
-import { errorDetail } from "@servediff/api";
+import { errorDetail } from "@diffx/api";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

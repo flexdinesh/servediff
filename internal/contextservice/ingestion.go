@@ -4,10 +4,10 @@ import (
 	"context"
 	"sync"
 
-	"github.com/flexdinesh/servediff/internal/ingestion"
-	"github.com/flexdinesh/servediff/internal/review"
-	"github.com/flexdinesh/servediff/internal/reviewdata"
-	"github.com/flexdinesh/servediff/internal/session"
+	"github.com/flexdinesh/diffx/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/review"
+	"github.com/flexdinesh/diffx/internal/reviewdata"
+	"github.com/flexdinesh/diffx/internal/session"
 )
 
 func (service *Service) Ingest(ctx context.Context, input ingestion.Request) (Submission, error) {

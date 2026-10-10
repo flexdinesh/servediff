@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/ingestion"
 )
 
 func TestCaptureSurvivesDestinationFailureAndSourceRemoval(t *testing.T) {

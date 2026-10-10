@@ -12,7 +12,7 @@ import (
 	"runtime"
 	"strconv"
 
-	"github.com/flexdinesh/servediff/internal/controlapi"
+	"github.com/flexdinesh/diffx/internal/controlapi"
 )
 
 type Settings = controlapi.Settings
@@ -32,11 +32,11 @@ func normalizeSettings(settings Settings) Settings {
 }
 
 func RuntimeDir() (string, error) {
-	if dir := os.Getenv("SERVEDIFF_RUNTIME_DIR"); dir != "" {
+	if dir := os.Getenv("DIFFX_RUNTIME_DIR"); dir != "" {
 		return prepareRuntime(dir)
 	}
 	if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" {
-		return prepareRuntime(filepath.Join(dir, "servediff"))
+		return prepareRuntime(filepath.Join(dir, "diffx"))
 	}
 	state := os.Getenv("XDG_STATE_HOME")
 	if runtime.GOOS == "windows" && state == "" {
@@ -49,7 +49,7 @@ func RuntimeDir() (string, error) {
 		}
 		state = filepath.Join(home, ".local", "state")
 	}
-	return prepareRuntime(filepath.Join(state, "servediff", "runtime"))
+	return prepareRuntime(filepath.Join(state, "diffx", "runtime"))
 }
 
 func prepareRuntime(dir string) (string, error) {

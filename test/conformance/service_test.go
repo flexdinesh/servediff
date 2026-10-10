@@ -19,17 +19,17 @@ import (
 var serviceBinary string
 
 func TestMain(m *testing.M) {
-	directory, err := os.MkdirTemp("", "servediff-process-tests-")
+	directory, err := os.MkdirTemp("", "diffx-process-tests-")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	name := "servediff"
+	name := "diffx"
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
 	serviceBinary = filepath.Join(directory, name)
-	build := exec.Command("go", "build", "-o", serviceBinary, "../../cmd/servediff")
+	build := exec.Command("go", "build", "-o", serviceBinary, "../../cmd/diffx")
 	build.Stdout, build.Stderr = os.Stdout, os.Stderr
 	if err := build.Run(); err != nil {
 		os.RemoveAll(directory)
@@ -86,13 +86,13 @@ func newServiceHarness(t *testing.T) serviceHarness {
 	environment := make([]string, 0, len(os.Environ())+1)
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")
-		if !strings.EqualFold(key, "SERVEDIFF_RUNTIME_DIR") && !strings.EqualFold(key, "SERVEDIFF_EXIT_ON_STDIN_CLOSE") && !strings.EqualFold(key, "XDG_STATE_HOME") {
+		if !strings.EqualFold(key, "DIFFX_RUNTIME_DIR") && !strings.EqualFold(key, "DIFFX_EXIT_ON_STDIN_CLOSE") && !strings.EqualFold(key, "XDG_STATE_HOME") {
 			environment = append(environment, entry)
 		}
 	}
 	runtimeDir := filepath.Join(directory, "runtime")
 	defaultState := filepath.Join(directory, "default-state")
-	environment = append(environment, "SERVEDIFF_RUNTIME_DIR="+runtimeDir, "XDG_STATE_HOME="+defaultState)
+	environment = append(environment, "DIFFX_RUNTIME_DIR="+runtimeDir, "XDG_STATE_HOME="+defaultState)
 	harness := serviceHarness{environment: environment, state: filepath.Join(directory, "state.db"), runtimeDir: runtimeDir, defaultState: defaultState}
 
 	return harness
@@ -113,7 +113,7 @@ func (harness serviceHarness) requireRun(t *testing.T, input []byte, arguments .
 	t.Helper()
 	output, err := harness.run(input, arguments...)
 	if err != nil {
-		t.Fatalf("servediff %v: %v\n%s", arguments, err, output)
+		t.Fatalf("diffx %v: %v\n%s", arguments, err, output)
 	}
 	return output
 }
@@ -143,8 +143,8 @@ func createWorktree(t *testing.T, name string) string {
 	}
 	commands := [][]string{
 		{"init", "--quiet"},
-		{"config", "user.email", "servediff-test@example.invalid"},
-		{"config", "user.name", "servediff test"},
+		{"config", "user.email", "diffx-test@example.invalid"},
+		{"config", "user.name", "diffx test"},
 		{"config", "commit.gpgsign", "false"},
 	}
 	for _, arguments := range commands {

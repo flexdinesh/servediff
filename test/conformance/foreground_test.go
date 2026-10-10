@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/config"
-	"github.com/flexdinesh/servediff/internal/contextservice"
-	"github.com/flexdinesh/servediff/internal/daemon"
-	"github.com/flexdinesh/servediff/internal/review"
+	"github.com/flexdinesh/diffx/internal/config"
+	"github.com/flexdinesh/diffx/internal/contextservice"
+	"github.com/flexdinesh/diffx/internal/daemon"
+	"github.com/flexdinesh/diffx/internal/review"
 )
 
 func TestForegroundPipedPatchAndPersistentHistory(t *testing.T) {
@@ -34,7 +34,7 @@ func TestForegroundPipedPatchAndPersistentHistory(t *testing.T) {
 	if err := os.WriteFile(configPath, configuration, 0600); err != nil {
 		t.Fatal(err)
 	}
-	harness.environment = append(harness.environment, "SERVEDIFF_CONFIG_PATH="+configPath, "SERVEDIFF_SERVER_URL=http://127.0.0.1:1", "SSH_CONNECTION=test")
+	harness.environment = append(harness.environment, "DIFFX_CONFIG_PATH="+configPath, "DIFFX_SERVER_URL=http://127.0.0.1:1", "SSH_CONNECTION=test")
 	client := &daemon.Client{RuntimeDirectory: harness.runtimeDir}
 	var original review.RepositoryDiff
 	for _, source := range []string{"pipe", "file"} {
@@ -171,7 +171,7 @@ func TestForegroundSnapshotReplacementAndPersistentHistory(t *testing.T) {
 		args = append(args, extra...)
 		command := exec.Command(serviceBinary, args...)
 		command.Dir = first
-		command.Env = append(harness.environment, "SERVEDIFF_SERVER_URL=http://127.0.0.1:1")
+		command.Env = append(harness.environment, "DIFFX_SERVER_URL=http://127.0.0.1:1")
 		command.Stdout, command.Stderr = io.Discard, io.Discard
 		if err := command.Start(); err != nil {
 			t.Fatal(err)

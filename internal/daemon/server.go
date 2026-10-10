@@ -16,14 +16,14 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/flexdinesh/servediff/internal/contextservice"
-	"github.com/flexdinesh/servediff/internal/controlapi"
-	"github.com/flexdinesh/servediff/internal/ingestion"
-	"github.com/flexdinesh/servediff/internal/processlock"
-	"github.com/flexdinesh/servediff/internal/reviewstore"
-	"github.com/flexdinesh/servediff/internal/serverapp"
-	buildversion "github.com/flexdinesh/servediff/internal/version"
-	"github.com/flexdinesh/servediff/internal/webui"
+	"github.com/flexdinesh/diffx/internal/contextservice"
+	"github.com/flexdinesh/diffx/internal/controlapi"
+	"github.com/flexdinesh/diffx/internal/ingestion"
+	"github.com/flexdinesh/diffx/internal/processlock"
+	"github.com/flexdinesh/diffx/internal/reviewstore"
+	"github.com/flexdinesh/diffx/internal/serverapp"
+	buildversion "github.com/flexdinesh/diffx/internal/version"
+	"github.com/flexdinesh/diffx/internal/webui"
 )
 
 func Run(ctx context.Context, settings Settings, runtimeDir string, initial *ingestion.Request, ready func(Status, *contextservice.Submission)) error {
@@ -45,10 +45,10 @@ func Run(ctx context.Context, settings Settings, runtimeDir string, initial *ing
 			return err
 		}
 		defer output.Close()
-		logger := log.New(output, "servediff: ", log.LstdFlags)
+		logger := log.New(output, "diffx: ", log.LstdFlags)
 		return runServer(ctx, cancel, settings, runtimeDir, instanceID, initial, ready, logger)
 	}
-	return runServer(ctx, cancel, settings, "", instanceID, initial, ready, log.New(os.Stderr, "servediff: ", log.LstdFlags))
+	return runServer(ctx, cancel, settings, "", instanceID, initial, ready, log.New(os.Stderr, "diffx: ", log.LstdFlags))
 }
 
 func runServer(ctx context.Context, cancel context.CancelFunc, settings Settings, runtimeDir, instanceID string, initial *ingestion.Request, ready func(Status, *contextservice.Submission), logger *log.Logger) error {
@@ -189,7 +189,7 @@ func listenWeb(settings Settings) (net.Listener, error) {
 			return listener, nil
 		}
 	}
-	return nil, errors.New("no available servediff port (7981-7990); choose --port")
+	return nil, errors.New("no available diffx port (7981-7990); choose --port")
 }
 
 func publicRequests(next http.Handler, settings Settings) http.Handler {

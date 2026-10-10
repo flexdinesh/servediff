@@ -55,10 +55,10 @@ test("settled run queues current checkout/session without registering earlier li
 });
 
 test("launch preserves argument boundaries and returns before child completes", async () => {
-  const temp = await mkdtemp(join(tmpdir(), "servediff-adapter-"));
-  const binary = join(temp, "servediff with spaces");
+  const temp = await mkdtemp(join(tmpdir(), "diffx-adapter-"));
+  const binary = join(temp, "diffx with spaces");
   const output = join(temp, "args.json");
-  const previous = process.env.SERVEDIFF_BINARY;
+  const previous = process.env.DIFFX_BINARY;
   await writeFile(
     binary,
     `#!/usr/bin/env node
@@ -67,7 +67,7 @@ setTimeout(() => writeFileSync(${JSON.stringify(output)}, JSON.stringify(process
 `,
   );
   await chmod(binary, 0o700);
-  process.env.SERVEDIFF_BINARY = binary;
+  process.env.DIFFX_BINARY = binary;
   try {
     register({
       on(_event, handler) {
@@ -100,15 +100,15 @@ setTimeout(() => writeFileSync(${JSON.stringify(output)}, JSON.stringify(process
       "session ; value",
     ]);
   } finally {
-    if (previous === undefined) delete process.env.SERVEDIFF_BINARY;
-    else process.env.SERVEDIFF_BINARY = previous;
+    if (previous === undefined) delete process.env.DIFFX_BINARY;
+    else process.env.DIFFX_BINARY = previous;
     await rm(temp, { recursive: true, force: true });
   }
 });
 
 test("missing binary never rejects or emits a host error", async () => {
-  const previous = process.env.SERVEDIFF_BINARY;
-  process.env.SERVEDIFF_BINARY = "/missing/servediff";
+  const previous = process.env.DIFFX_BINARY;
+  process.env.DIFFX_BINARY = "/missing/diffx";
   try {
     register({
       on(_event, handler) {
@@ -120,14 +120,14 @@ test("missing binary never rejects or emits a host error", async () => {
     });
     await setTimeout(20);
   } finally {
-    if (previous === undefined) delete process.env.SERVEDIFF_BINARY;
-    else process.env.SERVEDIFF_BINARY = previous;
+    if (previous === undefined) delete process.env.DIFFX_BINARY;
+    else process.env.DIFFX_BINARY = previous;
   }
 });
 
 test("agent host can exit while detached sync scheduling remains alive", async () => {
-  const temp = await mkdtemp(join(tmpdir(), "servediff-detached-"));
-  const binary = join(temp, "fake-servediff");
+  const temp = await mkdtemp(join(tmpdir(), "diffx-detached-"));
+  const binary = join(temp, "fake-diffx");
   const completed = join(temp, "completed");
   await writeFile(
     binary,
@@ -143,7 +143,7 @@ test("agent host can exit while detached sync scheduling remains alive", async (
       process.execPath,
       ["--input-type=module", "-e", script],
       {
-        env: { ...process.env, SERVEDIFF_BINARY: binary },
+        env: { ...process.env, DIFFX_BINARY: binary },
         timeout: 750,
       },
     );
@@ -165,13 +165,13 @@ test("agent host can exit while detached sync scheduling remains alive", async (
 
 for (const agent of ["pi", "opencode"]) {
   test(`${agent} native package uses runtime binary/config environment without mutating it`, async () => {
-    const temp = await mkdtemp(join(tmpdir(), "servediff-configured-"));
-    const binary = join(temp, "servediff with spaces");
+    const temp = await mkdtemp(join(tmpdir(), "diffx-configured-"));
+    const binary = join(temp, "diffx with spaces");
     const output = join(temp, "args.json");
     const configFile = join(temp, "custom config.json");
     await writeFile(
       binary,
-      `#!/usr/bin/env node\nimport { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(output)}, JSON.stringify({args: process.argv.slice(2), config: process.env.SERVEDIFF_CONFIG_PATH}));\n`,
+      `#!/usr/bin/env node\nimport { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(output)}, JSON.stringify({args: process.argv.slice(2), config: process.env.DIFFX_CONFIG_PATH}));\n`,
     );
     await chmod(binary, 0o700);
     const packageRoot = new URL(`../../plugin-${agent}/`, import.meta.url);
@@ -201,8 +201,8 @@ for (const agent of ["pi", "opencode"]) {
         {
           env: {
             ...process.env,
-            SERVEDIFF_BINARY: binary,
-            SERVEDIFF_CONFIG_PATH: configFile,
+            DIFFX_BINARY: binary,
+            DIFFX_CONFIG_PATH: configFile,
           },
           timeout: 750,
         },
