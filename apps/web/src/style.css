@@ -1170,6 +1170,9 @@ h2 {
   .context-switcher-name {
     max-width: 40%;
   }
+  .context-switcher-worktree {
+    flex-shrink: 0;
+  }
   .project-picker {
     top: var(--space-4);
     max-height: calc(100dvh - var(--space-4) - var(--page-gutter));

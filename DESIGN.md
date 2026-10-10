@@ -418,6 +418,7 @@ Do not add motion for decoration. New animation must honor
 - Mobile retains the review trigger's repository/branch or Piped/time context; truncate long
   labels and hide its shortcut hint. Hide the secondary heading/path and refresh
   text, preserving accessible labels and theme/sidebar controls.
+  Keep the linked-worktree icon visible when its text label is hidden.
 - Collapse navigation to the toggle-controlled modal drawer; its width is
   `min(320px, 88vw)`. Keep file selection, comments, and export reachable there.
   Its tab strip matches `--topbar-height`, including the tablet header height.
